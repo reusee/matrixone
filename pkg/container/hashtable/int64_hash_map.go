@@ -68,22 +68,20 @@ func (ht *Int64HashMap) Insert(hash uint64, keyPtr unsafe.Pointer) (inserted boo
 		hash = Crc32Int64HashAsm(key)
 	}
 
-	var cell *Int64HashMapCell
 	if hash == ht.cachedHash && key == ht.cachedKey {
-		cell = ht.cachedCell
-	} else {
-		var idx uint64
-		inserted, idx, cell = ht.findBucket(hash, key)
-		if inserted {
-			ht.elemCnt++
-			cell.Key = key
-			ht.cachedHash = hash
-			ht.cachedKey = key
-			ht.cachedIdx = idx
-			ht.cachedCell = cell
-		}
+		value = &ht.cachedCell.Mapped
+		return
 	}
 
+	inserted, idx, cell := ht.findBucket(hash, key)
+	if inserted {
+		cell.Key = key
+		ht.elemCnt++
+		ht.cachedHash = hash
+		ht.cachedKey = key
+		ht.cachedIdx = idx
+		ht.cachedCell = cell
+	}
 	value = &cell.Mapped
 
 	return
@@ -140,15 +138,16 @@ func (ht *Int64HashMap) Find(hash uint64, keyPtr unsafe.Pointer) (value *uint64)
 
 	if hash == ht.cachedHash && key == ht.cachedKey {
 		value = &ht.cachedCell.Mapped
-	} else {
-		empty, idx, cell := ht.findBucket(hash, key)
-		if !empty {
-			value = &cell.Mapped
-			ht.cachedHash = hash
-			ht.cachedKey = key
-			ht.cachedIdx = idx
-			ht.cachedCell = cell
-		}
+		return
+	}
+
+	empty, idx, cell := ht.findBucket(hash, key)
+	if !empty {
+		value = &cell.Mapped
+		ht.cachedHash = hash
+		ht.cachedKey = key
+		ht.cachedIdx = idx
+		ht.cachedCell = cell
 	}
 
 	return
