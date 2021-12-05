@@ -33,6 +33,11 @@ type Int64HashMap struct {
 	zeroCell      Int64HashMapCell
 	rawData       []byte
 	bucketData    []Int64HashMapCell
+
+	cachedHash uint64
+	cachedKey  uint64
+	cachedIdx  uint64
+	cachedCell *Int64HashMapCell
 }
 
 func (ht *Int64HashMap) Init() {
@@ -63,10 +68,20 @@ func (ht *Int64HashMap) Insert(hash uint64, keyPtr unsafe.Pointer) (inserted boo
 		hash = Crc32Int64HashAsm(key)
 	}
 
-	inserted, _, cell := ht.findBucket(hash, key)
-	if inserted {
-		ht.elemCnt++
-		cell.Key = key
+	var cell *Int64HashMapCell
+	if hash == ht.cachedHash && key == ht.cachedKey {
+		cell = ht.cachedCell
+	} else {
+		var idx uint64
+		inserted, idx, cell = ht.findBucket(hash, key)
+		if inserted {
+			ht.elemCnt++
+			cell.Key = key
+			ht.cachedHash = hash
+			ht.cachedKey = key
+			ht.cachedIdx = idx
+			ht.cachedCell = cell
+		}
 	}
 
 	value = &cell.Mapped
@@ -82,17 +97,28 @@ func (ht *Int64HashMap) InsertBatch(n int, hashes []uint64, keysPtr unsafe.Point
 	}
 
 	keys := unsafe.Slice((*uint64)(keysPtr), n)
+	var isInserted bool
+	var cell *Int64HashMapCell
+	var idx uint64
 	for i, key := range keys {
 		if key == 0 {
 			inserted[i] = 1 - ht.hasZero
 			ht.hasZero = 1
 			values[i] = &ht.zeroCell.Mapped
 		} else {
-			isInserted, _, cell := ht.findBucket(hashes[i], key)
-			if isInserted {
-				ht.elemCnt++
-				inserted[i] = 1
-				cell.Key = key
+			if hashes[i] == ht.cachedHash && key == ht.cachedKey {
+				cell = ht.cachedCell
+			} else {
+				isInserted, idx, cell = ht.findBucket(hashes[i], key)
+				if isInserted {
+					ht.elemCnt++
+					inserted[i] = 1
+					cell.Key = key
+					ht.cachedHash = hashes[i]
+					ht.cachedKey = key
+					ht.cachedIdx = idx
+					ht.cachedCell = cell
+				}
 			}
 			values[i] = &cell.Mapped
 		}
@@ -112,9 +138,17 @@ func (ht *Int64HashMap) Find(hash uint64, keyPtr unsafe.Pointer) (value *uint64)
 		hash = Crc32Int64HashAsm(key)
 	}
 
-	empty, _, cell := ht.findBucket(hash, key)
-	if !empty {
-		value = &cell.Mapped
+	if hash == ht.cachedHash && key == ht.cachedKey {
+		value = &ht.cachedCell.Mapped
+	} else {
+		empty, idx, cell := ht.findBucket(hash, key)
+		if !empty {
+			value = &cell.Mapped
+			ht.cachedHash = hash
+			ht.cachedKey = key
+			ht.cachedIdx = idx
+			ht.cachedCell = cell
+		}
 	}
 
 	return
@@ -140,9 +174,17 @@ func (ht *Int64HashMap) FindBatch(n int, hashes []uint64, keysPtr unsafe.Pointer
 				values[i] = &ht.zeroCell.Mapped
 			}
 		} else {
-			empty, _, cell := ht.findBucket(hashes[i], key)
-			if !empty {
-				values[i] = &cell.Mapped
+			if hashes[i] == ht.cachedHash && key == ht.cachedKey {
+				values[i] = &ht.cachedCell.Mapped
+			} else {
+				empty, idx, cell := ht.findBucket(hashes[i], key)
+				if !empty {
+					values[i] = &cell.Mapped
+					ht.cachedHash = hashes[i]
+					ht.cachedKey = key
+					ht.cachedIdx = idx
+					ht.cachedCell = cell
+				}
 			}
 		}
 	}
@@ -196,6 +238,11 @@ func (ht *Int64HashMap) resizeOnDemand(n int) {
 	ht.maxElemCnt = newMaxElemCnt
 	ht.rawData = newRawData
 	ht.bucketData = newBucketData
+
+	ht.cachedHash = 0
+	ht.cachedKey = 0
+	ht.cachedIdx = 0
+	ht.cachedCell = nil
 
 	var hashes [kInitialBucketCnt]uint64
 
