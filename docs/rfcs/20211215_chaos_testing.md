@@ -30,24 +30,37 @@ Hardware or container specifications are also included in arguments.
 Actions includes normal operations that the system can do. 
 Faults also take place in actions as individual steps, instead of being randomly injected at running time.
 
+Every configuration has a unique id.
 Configurations can be saved to files, and committed to source repos. 
 They can be run repeatly, be updated as project evolves. 
 
 ### Setup and execution
 
-The setup module setup and boot the target system according to the configuration.  
+This module setups and executes tests according to configurations.
+
+Multiple testing instances can run in parallel.
 
 ### Model validation
 
-TODO
+During the execution, logs and history will be collected.
+In this module, logs and history will be feed to different model validation tools.
 
 ### Report generation
 
-TODO
+If one testing instance failed in validation stage, a report about the instance will be generated.
+The report includes the id of configuration being used, the target program version (usually the commit hash), and reasons to validation failures.
 
 ## Testing Programs
 
-TODO
+The library described above provides building blocks for testing.
+A standalone program must be written to glue the library and project-specific informations.
+
+These should be provided in the program
+* configuration items of the target project
+* basic actions the project can do
+* compound actions to be schedule randomly in configuration generation stage
+* how to setup the testing environment
+* what validation model to use
 
 # Drawbacks
 
@@ -55,8 +68,15 @@ TODO
 
 # Rationale / Alternatives
 
-TODO
+This framework is heavily inspired by these methods or projects
+
+* fuzz testing, for generate random input before execution
+* jepsen, for history collection and model validation
 
 # Unresolved Questions
 
-TODO
+Possible improvements to this framework
+
+* Distributed multi-machine execution
+* Move more components from testing program to the library, enabling more code reusing.
+* 
