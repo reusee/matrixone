@@ -6,7 +6,7 @@ require (
 	github.com/fatih/color v1.7.0
 	github.com/google/uuid v1.3.0
 	github.com/matrixorigin/matrixcube v0.2.1-0.20220113035639-cc502639bb82
-	github.com/reusee/dscope v0.0.0-20220108183820-13ad9cd1ee11
+	github.com/reusee/dscope v0.0.0-20220119032332-45ce3e0474b3
 	github.com/reusee/e4 v0.0.0-20211111112921-a1e3637d4313
 	github.com/reusee/sb v0.0.0-20211229022642-c56103cb09e8
 	github.com/reusee/starlarkutil v0.0.0-20211219090033-2a5093890e47

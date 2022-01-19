@@ -16,7 +16,9 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"runtime/trace"
 	"sync"
 	"time"
 
@@ -98,10 +100,16 @@ func (_ Def) NewKV() NewKV {
 			}))
 		}
 
+		ctx := context.TODO()
+
 		return &KV{
 
 			Set: func(key any, value any, timeout time.Duration) (err error) {
 				defer he(&err)
+
+				ctx, task := trace.NewTask(ctx, "kv set")
+				defer task.End()
+				trace.Logf(ctx, "kv", "set %v -> %v", key, value)
 
 				req := rpc.Request{}
 				id := uuid.NewV4()
@@ -158,6 +166,10 @@ func (_ Def) NewKV() NewKV {
 
 			Get: func(key any, target any, timeout time.Duration) (ok bool, err error) {
 				defer he(&err)
+
+				ctx, task := trace.NewTask(ctx, "kv get")
+				defer task.End()
+				trace.Logf(ctx, "kv", "get %v", key)
 
 				req := rpc.Request{}
 				id := uuid.NewV4()

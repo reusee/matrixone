@@ -85,6 +85,10 @@ func loadScript() (
 				defs = append(defs, &use)
 			}),
 
+			"enable_runtime_trace": starlarkutil.MakeFunc("enable_runtime_trace", func(enable EnableRuntimeTrace) {
+				defs = append(defs, &enable)
+			}),
+
 			//
 		},
 	)
