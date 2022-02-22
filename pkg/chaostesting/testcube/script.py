@@ -2,7 +2,7 @@
 parallel(4)
 
 # port range for cube to use
-port_range(50000, 55000)
+port_range(20000, 30000)
 
 # threshold for timeout reporting
 timeout_report_threshold(10)
@@ -33,7 +33,7 @@ enable_runtime_trace(True)
 #    else:
 #        network_model("localhost")
 #set_network_model()
-network_model("dummy")
+network_model("localhost")
 
 # temp dir model
 # os: use os.TempDir()
