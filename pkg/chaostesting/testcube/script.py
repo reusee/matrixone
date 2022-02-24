@@ -1,5 +1,5 @@
 # number of parallel test cases running in `run` command
-parallel(4)
+parallel(1)
 
 # faults to inject
 faults(
@@ -15,6 +15,9 @@ faults(
         "fully-isolate",
         )
 
+# retry times in `run` command
+retry_in_run(3)
+
 # port range for cube to use
 port_range(20000, 30000)
 
@@ -26,13 +29,14 @@ timeout_report_threshold(10)
 retry_timeout(second * 15)
 
 # timeout of single test case
-execute_timeout(1 * minute)
+execute_timeout(10 * minute)
+execute_warn_timeout(1 * minute)
 
 # enable cpu profile for whole program
 enable_cpu_profile(False)
 
 # address for http server, mainly for net/http/pprof
-#http_server_addr("localhost:8889")
+http_server_addr("localhost:8889")
 
 # enable runtime/trace. trace files will be written to testdata/[uuid].runtiime.trace
 enable_runtime_trace(True)

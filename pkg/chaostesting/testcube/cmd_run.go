@@ -39,6 +39,7 @@ func (_ Def) CmdRun(
 	read fz.ReadConfig,
 	getCases GetTestCases,
 	parallel Parallel,
+	retryInRun RetryInRun,
 ) Commands {
 
 	errPanic := fmt.Errorf("panic")
@@ -99,8 +100,6 @@ func (_ Def) CmdRun(
 		return
 	}
 
-	numRetry := 0
-
 	run := func(configPath string, retry int) (err error) {
 		retried := false
 		for {
@@ -136,7 +135,7 @@ func (_ Def) CmdRun(
 
 			if len(args) > 0 {
 				for _, path := range args {
-					ce(run(path, numRetry))
+					ce(run(path, int(retryInRun)))
 				}
 				return
 			}
@@ -164,7 +163,7 @@ func (_ Def) CmdRun(
 						configPath = filePath(id, "config", "xml")
 					})
 
-					ce(run(configPath, numRetry))
+					ce(run(configPath, int(retryInRun)))
 
 				}()
 			}
@@ -181,7 +180,7 @@ func (_ Def) CmdRun(
 					defer func() {
 						<-sem
 					}()
-					ce(run(kase.ConfigPath, numRetry))
+					ce(run(kase.ConfigPath, int(retryInRun)))
 				}()
 			}
 			for i := 0; i < cap(sem); i++ {
@@ -190,4 +189,10 @@ func (_ Def) CmdRun(
 
 		},
 	}
+}
+
+type RetryInRun int
+
+func (_ Def) RetryInRun() RetryInRun {
+	return 3
 }

@@ -76,6 +76,10 @@ func (_ Def) ScriptBuiltins(
 			add(&t)
 		}),
 
+		"execute_warn_timeout": starlarkutil.MakeFunc("execute_warn_timeout", func(t ExecuteWarnTimeout) {
+			add(&t)
+		}),
+
 		"hour":        starlark.MakeUint64(uint64(time.Hour)),
 		"minute":      starlark.MakeUint64(uint64(time.Minute)),
 		"second":      starlark.MakeUint64(uint64(time.Second)),

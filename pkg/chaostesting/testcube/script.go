@@ -89,5 +89,9 @@ func (_ Def) ScriptBuiltins(
 
 			add(&makers)
 		}),
+
+		"retry_in_run": starlarkutil.MakeFunc("retry_in_run", func(n RetryInRun) {
+			add(&n)
+		}),
 	}
 }

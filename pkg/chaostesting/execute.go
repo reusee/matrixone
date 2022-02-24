@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/reusee/dscope"
 	"github.com/reusee/e4"
 )
@@ -51,6 +52,12 @@ func (_ Def) ExecuteTimeout() ExecuteTimeout {
 	return ExecuteTimeout(time.Minute * 10)
 }
 
+type ExecuteWarnTimeout time.Duration
+
+func (_ Def) ExecuteWarnTimeout() ExecuteWarnTimeout {
+	return ExecuteWarnTimeout(time.Minute * 5)
+}
+
 type Execute func() error
 
 func (_ Def) Execute(
@@ -65,6 +72,8 @@ func (_ Def) Execute(
 	processReports processReports,
 	logger Logger,
 	timeout ExecuteTimeout,
+	warnTimeout ExecuteWarnTimeout,
+	id uuid.UUID,
 ) Execute {
 
 	return func() (err error) {
@@ -123,10 +132,16 @@ func (_ Def) Execute(
 
 		}()
 
-		select {
-		case <-done:
-		case <-time.After(time.Duration(timeout)):
-			return fmt.Errorf("execute timeout")
+	loop:
+		for {
+			select {
+			case <-done:
+				break loop
+			case <-time.After(time.Duration(timeout)):
+				return fmt.Errorf("execute timeout")
+			case <-time.After(time.Duration(warnTimeout)):
+				pt("timeout warning: %s\n", id.String())
+			}
 		}
 
 		return

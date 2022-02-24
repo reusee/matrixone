@@ -87,11 +87,14 @@ func (_ Def2) MainAction(
 			seq.Actions = newActions
 		}
 
-		if numFaults < maxFaults {
-			if rand.Intn(2) == 0 {
-				action := faultMakers[rand.Intn(len(faultMakers))](fz.NodeID(i))
-				if action != nil {
-					randomInsert(action)
+		if i > 0 {
+			// do not trigger faults on node 0 for now TODO
+			if numFaults < maxFaults {
+				if rand.Intn(2) == 0 {
+					action := faultMakers[rand.Intn(len(faultMakers))](fz.NodeID(i))
+					if action != nil {
+						randomInsert(action)
+					}
 				}
 			}
 		}

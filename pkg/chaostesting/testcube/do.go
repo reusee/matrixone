@@ -42,7 +42,7 @@ func (_ Def2) Do(
 	for i := 0; i < len(nodes); i++ {
 		kvs = append(kvs, newKV(nodes[i].(*Node)))
 	}
-	var stopped sync.Map
+	var ignoreReadWrite sync.Map
 
 	// see https://drive.google.com/file/d/1nPdvhB0PutEJzdCq5ms6UI58dp50fcAN/view, p70
 	waitChan := make(chan chan struct{}, 1)
@@ -74,7 +74,7 @@ func (_ Def2) Do(
 		switch action := action.(type) {
 
 		case ActionSet:
-			if _, ok := stopped.Load(fz.NodeID(action.ClientID)); ok {
+			if _, ok := ignoreReadWrite.Load(fz.NodeID(action.ClientID)); ok {
 				return nil
 			}
 			wait()
@@ -101,7 +101,7 @@ func (_ Def2) Do(
 			)
 
 		case ActionGet:
-			if _, ok := stopped.Load(fz.NodeID(action.ClientID)); ok {
+			if _, ok := ignoreReadWrite.Load(fz.NodeID(action.ClientID)); ok {
 				return nil
 			}
 			wait()
@@ -136,7 +136,7 @@ func (_ Def2) Do(
 		case ActionStopNode:
 			lock()
 			defer unlock()
-			stopped.Store(action.NodeID, true)
+			ignoreReadWrite.Store(action.NodeID, true)
 			return closeNode(fz.NodeID(action.NodeID))
 
 		case ActionRestartNode:
@@ -145,13 +145,18 @@ func (_ Def2) Do(
 			return restartNode(fz.NodeID(action.NodeID))
 
 		case ActionIsolateNode:
+			lock()
+			defer unlock()
 			for _, between := range action.Between {
 				block(action.NodeID, between)
 				block(between, action.NodeID)
 			}
+			ignoreReadWrite.Store(action.NodeID, true)
 			return nil
 
 		case ActionCrashNode:
+			lock()
+			defer unlock()
 			// network isolate
 			for between := 0; between < int(numNodes); between++ {
 				if between == int(action.NodeID) {
@@ -169,6 +174,8 @@ func (_ Def2) Do(
 			return restartNode(fz.NodeID(action.NodeID))
 
 		case ActionFullyIsolateNode:
+			lock()
+			defer unlock()
 			for between := 0; between < int(numNodes); between++ {
 				if between == int(action.NodeID) {
 					continue
@@ -176,6 +183,7 @@ func (_ Def2) Do(
 				block(action.NodeID, fz.NodeID(between))
 				block(fz.NodeID(between), action.NodeID)
 			}
+			ignoreReadWrite.Store(action.NodeID, true)
 			return nil
 
 		default:

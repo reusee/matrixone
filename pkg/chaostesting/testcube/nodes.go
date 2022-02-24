@@ -143,34 +143,24 @@ func (_ Def2) Nodes(
 		node.Config = conf
 
 		store := raftstore.NewStore(conf)
+		store.Start()
 		if nodeID == 0 {
 			// first node
-			store.Start()
 			node.Cond.L.Lock()
 			for !node.IsLeader || !node.Created {
 				node.Cond.Wait()
 			}
 			node.Cond.L.Unlock()
 		} else {
-			go func() {
-				store.Start()
-			}()
-		}
-		node.RaftStore = store
-
-		nodes = append(nodes, node)
-	}
-
-	// wait ready
-	for i, fzNode := range nodes {
-		if i > 0 {
-			node := fzNode.(*Node)
 			node.Cond.L.Lock()
 			for !node.IsFollower {
 				node.Cond.Wait()
 			}
 			node.Cond.L.Unlock()
 		}
+		node.RaftStore = store
+
+		nodes = append(nodes, node)
 	}
 
 	return
