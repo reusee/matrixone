@@ -21,7 +21,7 @@ func Group(vecs []vector.VectorLike, rows int) error {
 		copy(keys, zKeys)
 		copy(keyOffs, zKeyOffs)
 		for _, vec := range vecs {
-			switch v := (interface{})(vec).(type) {
+			switch v := (any)(vec).(type) {
 			case *vector.Vector[types.Int8]:
 				fillGroup(v, n, uint32(types.TypeSize(v.Typ.Oid)), keys, keyOffs)
 			case *vector.Vector[types.Int16]:

@@ -61,7 +61,7 @@ func (v *Vector[T]) Realloc(size int, m *mheap.Mheap) error {
 	}
 	mheap.Free(m, v.Data)
 	v.Data = data[:oldLen]
-	switch vec := (interface{})(v).(type) {
+	switch vec := (any)(v).(type) {
 	case *Vector[types.Bytes]:
 		vec.Col = vec.Col[:0]
 		for i, off := range vec.Offsets {
@@ -80,9 +80,9 @@ func (v *Vector[T]) Append(w T, m *mheap.Mheap) error {
 			return err
 		}
 	}
-	switch vec := (interface{})(v).(type) {
+	switch vec := (any)(v).(type) {
 	case *Vector[types.Bytes]:
-		wv, _ := (interface{})(w).(types.Bytes)
+		wv, _ := (any)(w).(types.Bytes)
 		vec.Lengths = append(vec.Lengths, uint64(len(wv)))
 		vec.Offsets = append(vec.Offsets, uint64(len(v.Data)))
 		size := len(vec.Data)

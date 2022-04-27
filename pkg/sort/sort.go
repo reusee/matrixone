@@ -7,7 +7,7 @@ import (
 )
 
 func VectorSort(vec vector.VectorLike) {
-	switch vs := (interface{})(vec).(type) {
+	switch vs := (any)(vec).(type) {
 	case *vector.Vector[types.Int8]:
 		Sort(vs.Col)
 	case *vector.Vector[types.Int16]:

@@ -7,15 +7,15 @@ import (
 )
 
 func VectorPlus(vx, vy, vz vector.VectorLike) {
-	switch xs := (interface{})(vx).(type) {
+	switch xs := (any)(vx).(type) {
 	case *vector.Vector[types.Int8]:
-		Plus(xs.Col, (interface{})(vy).(*vector.Vector[types.Int8]).Col, (interface{})(vz).(*vector.Vector[types.Int8]).Col)
+		Plus(xs.Col, (any)(vy).(*vector.Vector[types.Int8]).Col, (interface{})(vz).(*vector.Vector[types.Int8]).Col)
 	case *vector.Vector[types.Int16]:
-		Plus(xs.Col, (interface{})(vy).(*vector.Vector[types.Int16]).Col, (interface{})(vz).(*vector.Vector[types.Int16]).Col)
+		Plus(xs.Col, (any)(vy).(*vector.Vector[types.Int16]).Col, (interface{})(vz).(*vector.Vector[types.Int16]).Col)
 	case *vector.Vector[types.Int32]:
-		Plus(xs.Col, (interface{})(vy).(*vector.Vector[types.Int32]).Col, (interface{})(vz).(*vector.Vector[types.Int32]).Col)
+		Plus(xs.Col, (any)(vy).(*vector.Vector[types.Int32]).Col, (interface{})(vz).(*vector.Vector[types.Int32]).Col)
 	case *vector.Vector[types.Int64]:
-		Plus(xs.Col, (interface{})(vy).(*vector.Vector[types.Int64]).Col, (interface{})(vz).(*vector.Vector[types.Int64]).Col)
+		Plus(xs.Col, (any)(vy).(*vector.Vector[types.Int64]).Col, (interface{})(vz).(*vector.Vector[types.Int64]).Col)
 	}
 }
 
