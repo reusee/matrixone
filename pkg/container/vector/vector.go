@@ -37,6 +37,18 @@ func Reset[T types.Element[T]](v *Vector[T]) {
 	}
 }
 
+func Length[T types.Element[T]](v *Vector[T]) int {
+	return len(v.Col)
+}
+
+func SetLength[T types.Element[T]](v *Vector[T], n int) {
+	v.Col = v.Col[:n]
+	if len(v.Offsets) > 0 {
+		v.Offsets = v.Offsets[:n]
+		v.Lengths = v.Lengths[:n]
+	}
+}
+
 func Free[T types.Element[T]](v *Vector[T], m *mheap.Mheap) {
 	mheap.Free(m, v.Data)
 }

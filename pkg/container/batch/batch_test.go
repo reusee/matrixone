@@ -11,5 +11,7 @@ import (
 func TestBacth(t *testing.T) {
 	bat := New([]string{"id", "price"})
 	bat.Vecs[0] = vector.New[types.Int64](types.New(types.T_int64))
+	bat.Vecs[1] = vector.New[types.Bytes](types.New(types.T_varchar))
+	SetLength(bat, 0)
 	fmt.Printf("%v\n", bat)
 }
