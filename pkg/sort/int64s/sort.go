@@ -1,28 +1,9 @@
-package sort
-
-import (
-	"github.com/matrixorigin/matrixone/pkg/container/types"
-	"github.com/matrixorigin/matrixone/pkg/container/vector"
-	"golang.org/x/exp/constraints"
-)
-
-func VectorSort[T types.Element[T]](vec *vector.Vector[T]) {
-	switch vs := (interface{})(vec.Col).(type) {
-	case []types.Int8:
-		Sort(vs)
-	case []types.Int16:
-		Sort(vs)
-	case []types.Int32:
-		Sort(vs)
-	case []types.Int64:
-		Sort(vs)
-	}
-}
+package int64s
 
 // Sort sorts data.
 // It makes one call to data.Len to determine n, and Operator(n*log(n)) calls to
 // data.Less and data.Swap. The sort is not guaranteed to be stable.
-func Sort[T constraints.Ordered](vs []T) {
+func Sort(vs []int64) {
 	n := len(vs)
 	quickSort(vs, 0, n, maxDepth(n))
 }
@@ -37,7 +18,7 @@ func maxDepth(n int) int {
 	return depth * 2
 }
 
-func quickSort[T constraints.Ordered](vs []T, a, b, maxDepth int) {
+func quickSort(vs []int64, a, b, maxDepth int) {
 	for b-a > 12 { // Use ShellSort for slices <= 12 elements
 		if maxDepth == 0 {
 			heapSort(vs, a, b)
@@ -68,7 +49,7 @@ func quickSort[T constraints.Ordered](vs []T, a, b, maxDepth int) {
 }
 
 // Insertion sort
-func insertionSort[T constraints.Ordered](vs []T, a, b int) {
+func insertionSort(vs []int64, a, b int) {
 	for i := a + 1; i < b; i++ {
 		for j := i; j > a && vs[j] < vs[j-1]; j-- {
 			vs[j], vs[j-1] = vs[j-1], vs[j]
@@ -78,7 +59,7 @@ func insertionSort[T constraints.Ordered](vs []T, a, b int) {
 
 // siftDown implements the heap property on data[lo, hi).
 // first is an offset into the array where the root of the heap lies.
-func siftDown[T constraints.Ordered](vs []T, lo, hi, first int) {
+func siftDown(vs []int64, lo, hi, first int) {
 	root := lo
 	for {
 		child := 2*root + 1
@@ -96,7 +77,7 @@ func siftDown[T constraints.Ordered](vs []T, lo, hi, first int) {
 	}
 }
 
-func heapSort[T constraints.Ordered](vs []T, a, b int) {
+func heapSort(vs []int64, a, b int) {
 	first := a
 	lo := 0
 	hi := b - a
@@ -117,7 +98,7 @@ func heapSort[T constraints.Ordered](vs []T, a, b int) {
 // ``Engineering a Sort Function,'' SP&E November 1993.
 
 // medianOfThree moves the median of the three values data[m0], data[m1], data[m2] into data[m1].
-func medianOfThree[T constraints.Ordered](vs []T, m1, m0, m2 int) {
+func medianOfThree(vs []int64, m1, m0, m2 int) {
 	// sort 3 elements
 	if vs[m1] < vs[m0] {
 		vs[m1], vs[m0] = vs[m0], vs[m1]
@@ -133,7 +114,7 @@ func medianOfThree[T constraints.Ordered](vs []T, m1, m0, m2 int) {
 	// now data[m0] <= data[m1] <= data[m2]
 }
 
-func doPivot[T constraints.Ordered](vs []T, lo, hi int) (midlo, midhi int) {
+func doPivot(vs []int64, lo, hi int) (midlo, midhi int) {
 	m := int(uint(lo+hi) >> 1) // Written like this to avoid integer overflow.
 	if hi-lo > 40 {
 		// Tukey's ``Ninther,'' median of three medians of three.

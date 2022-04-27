@@ -14,310 +14,105 @@
 
 #include "textflag.h"
 
-DATA aesIV<>+0x00(SB)/8, $0x5A8279996ED9EBA1
-DATA aesIV<>+0x08(SB)/8, $0x8F1BBCDCCA62C1D6
-DATA aesIV<>+0x10(SB)/8, $0x5A8279996ED9EBA1
-DATA aesIV<>+0x18(SB)/8, $0x8F1BBCDCCA62C1D6
-DATA aesIV<>+0x20(SB)/8, $0x5A8279996ED9EBA1
-DATA aesIV<>+0x28(SB)/8, $0x8F1BBCDCCA62C1D6
-DATA aesIV<>+0x30(SB)/8, $0x5A8279996ED9EBA1
-DATA aesIV<>+0x38(SB)/8, $0x8F1BBCDCCA62C1D6
-GLOBL aesIV<>(SB), (NOPTR+RODATA), $64
-
-// func crc32BytesHashAsm(data unsafe.Pointer, length int) uint64
+// func Crc32Int64BatchHash(data *uint64, hashes *uint64, length int)
 // Requires: SSE4.2
-TEXT ·crc32BytesHashAsm(SB), NOSPLIT, $0-24
-	MOVQ data+0(FP), AX
-	MOVQ length+8(FP), CX
-	MOVQ CX, BX
-	MOVQ $-1, DX
-	ADDQ AX, CX
+TEXT ·Crc32Int64BatchHash(SB), NOSPLIT, $0-24
+	MOVQ data+0(FP), SI
+	MOVQ hashes+8(FP), DI
+	MOVQ length+16(FP), CX
+
+loop:
 	SUBQ $8, CX
+	JL   tail
 
-loop:
-	CMPQ   AX, CX
-	JGE    done
-	CRC32Q (AX), DX
-	ADDQ   $8, AX
-	JMP    loop
+	MOVQ $-1, R8
+	MOVQ $-1, R9
+	MOVQ $-1, R10
+	MOVQ $-1, R11
+	MOVQ $-1, R12
+	MOVQ $-1, R13
+	MOVQ $-1, R14
+	MOVQ $-1, R15
 
-done:
-	CRC32Q (CX), DX
-	MOVD   DX, ret+16(FP)
-	MOVD   BX, ret+20(FP)
-	RET
+	CRC32Q 0x00(SI), R8
+	CRC32Q 0x08(SI), R9
+	CRC32Q 0x10(SI), R10
+	CRC32Q 0x18(SI), R11
+	CRC32Q 0x20(SI), R12
+	CRC32Q 0x28(SI), R13
+	CRC32Q 0x30(SI), R14
+	CRC32Q 0x38(SI), R15
 
-// func crc32Int64HashAsm(data uint64) uint64
-// Requires: SSE4.2
-TEXT ·crc32Int64HashAsm(SB), NOSPLIT, $0-16
-	MOVQ   $-1, AX
-	CRC32Q data+0(FP), AX
-	MOVQ   AX, ret+8(FP)
-	RET
+	MOVQ R8, 0x00(DI)
+	MOVQ R9, 0x08(DI)
+	MOVQ R10, 0x10(DI)
+	MOVQ R11, 0x18(DI)
+	MOVQ R12, 0x20(DI)
+	MOVQ R13, 0x28(DI)
+	MOVQ R14, 0x30(DI)
+	MOVQ R15, 0x38(DI)
 
-// func crc32Int64BatchHashAsm(data *uint64, hashes *uint64, length int)
-// Requires: SSE4.2
-TEXT ·crc32Int64BatchHashAsm(SB), NOSPLIT, $0-24
-	MOVQ data+0(FP), AX
-	MOVQ hashes+8(FP), DX
-	MOVQ length+16(FP), CX
-
-loop:
-	SUBQ   $8, CX
-	JL     tail
-	MOVQ   $-1, R8
-	CRC32Q (AX), R8
-	MOVQ   R8, (DX)
-	MOVQ   $-1, R9
-	CRC32Q 8(AX), R9
-	MOVQ   R9, 8(DX)
-	MOVQ   $-1, R10
-	CRC32Q 16(AX), R10
-	MOVQ   R10, 16(DX)
-	MOVQ   $-1, R11
-	CRC32Q 24(AX), R11
-	MOVQ   R11, 24(DX)
-	MOVQ   $-1, R12
-	CRC32Q 32(AX), R12
-	MOVQ   R12, 32(DX)
-	MOVQ   $-1, R13
-	CRC32Q 40(AX), R13
-	MOVQ   R13, 40(DX)
-	MOVQ   $-1, R14
-	CRC32Q 48(AX), R14
-	MOVQ   R14, 48(DX)
-	MOVQ   $-1, R15
-	CRC32Q 56(AX), R15
-	MOVQ   R15, 56(DX)
-	ADDQ   $64, AX
-	ADDQ   $64, DX
-	JMP    loop
-
-tail:
-	ADDQ $8, CX
-	JE   done
-
-tailLoop:
-	MOVQ   $-1, R8
-	CRC32Q (AX), R8
-	MOVQ   R8, (DX)
-	ADDQ   $8, AX
-	ADDQ   $8, DX
-	LOOP   tailLoop
-
-done:
-	RET
-
-// func crc32Int64CellBatchHashAsm(data *uint64, hashes *uint64, length int)
-// Requires: SSE4.2
-TEXT ·crc32Int64CellBatchHashAsm(SB), NOSPLIT, $0-24
-	MOVQ data+0(FP), AX
-	MOVQ hashes+8(FP), DX
-	MOVQ length+16(FP), CX
-
-loop:
-	SUBQ   $8, CX
-	JL     tail
-	MOVQ   $-1, R8
-	CRC32Q (AX), R8
-	MOVQ   R8, (DX)
-	MOVQ   $-1, R9
-	CRC32Q 16(AX), R9
-	MOVQ   R9, 8(DX)
-	MOVQ   $-1, R10
-	CRC32Q 32(AX), R10
-	MOVQ   R10, 16(DX)
-	MOVQ   $-1, R11
-	CRC32Q 48(AX), R11
-	MOVQ   R11, 24(DX)
-	MOVQ   $-1, R12
-	CRC32Q 64(AX), R12
-	MOVQ   R12, 32(DX)
-	MOVQ   $-1, R13
-	CRC32Q 80(AX), R13
-	MOVQ   R13, 40(DX)
-	MOVQ   $-1, R14
-	CRC32Q 96(AX), R14
-	MOVQ   R14, 48(DX)
-	MOVQ   $-1, R15
-	CRC32Q 112(AX), R15
-	MOVQ   R15, 56(DX)
-	ADDQ   $128, AX
-	ADDQ   $64, DX
-	JMP    loop
-
-tail:
-	ADDQ $8, CX
-	JE   done
-
-tailLoop:
-	MOVQ   $-1, R8
-	CRC32Q (AX), R8
-	MOVQ   R8, (DX)
-	ADDQ   $16, AX
-	ADDQ   $8, DX
-	LOOP   tailLoop
-
-done:
-	RET
-
-// func aesBytesHashAsm(data unsafe.Pointer, length int) [2]uint64
-// Requires: AES
-TEXT ·aesBytesHashAsm(SB), NOSPLIT, $0-32
-	MOVQ data+0(FP), AX
-	MOVQ length+8(FP), CX
-	ADDQ AX, CX
-	SUBQ $64, CX
-
-	VMOVDQU aesIV<>+0(SB), X0
-	VMOVDQU aesIV<>+16(SB), X1
-	VMOVDQU aesIV<>+32(SB), X2
-	VMOVDQU aesIV<>+48(SB), X3
-
-loop:
-	CMPQ AX, CX
-	JGE  tail0
-
-	VAESENC (AX), X0, X0
-	VAESENC 16(AX), X1, X1
-	VAESENC 32(AX), X2, X2
-	VAESENC 48(AX), X3, X3
-
-	ADDQ $64, AX
+	ADDQ $0x40, SI
+	ADDQ $0x40, DI
 	JMP  loop
 
-tail0:
-	ADDQ $48, CX
+tail:
+	ADDQ $8, CX
+	JE   done
 
-	CMPQ AX, CX
-	JGE  tail1
+tailLoop:
+	MOVQ   $-1, R8
+	CRC32Q (SI), R8
+	MOVQ   R8, (DI)
 
-	VAESENC (AX), X0, X0
-	ADDQ    $16, AX
+	ADDQ $0x08, SI
+	ADDQ $0x08, DI
+	LOOP tailLoop
 
-tail1:
-	CMPQ AX, CX
-	JGE  tail2
-
-	VAESENC (AX), X1, X1
-	ADDQ    $16, AX
-
-tail2:
-	CMPQ AX, CX
-	JGE  tail3
-
-	VAESENC (AX), X2, X2
-	ADDQ    $16, AX
-
-tail3:
-	VAESENC (CX), X3, X3
-
-	VAESENC X1, X0, X0
-	VAESENC X3, X2, X1
-	VAESENC X1, X0, X0
-
-	VAESENC X0, X0, X0
-	VAESENC X0, X0, X0
-	VAESENC X0, X0, X0
-
-	VMOVDQU X0, ret+16(FP)
-
+done:
 	RET
 
-////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////
-
-// func crc32Int192HashAsm(data *[3]uint64) uint64
+// func Crc32Int64CellBatchHash(data *uint64, hashes *uint64, length int)
 // Requires: SSE4.2
-TEXT ·crc32Int192HashAsm(SB), NOSPLIT, $0-16
-	MOVQ data+0(FP), AX
-	MOVQ   $-1, DX
-	CRC32Q (AX), DX
-	CRC32Q 8(AX), DX
-	CRC32Q 16(AX), DX
-	MOVQ   DX, ret+8(FP)
-	RET
-
-// func crc32Int256HashAsm(data *[4]uint64) uint64
-// Requires: SSE4.2
-TEXT ·crc32Int256HashAsm(SB), NOSPLIT, $0-16
-	MOVQ data+0(FP), AX
-	MOVQ   $-1, DX
-	CRC32Q (AX), DX
-	CRC32Q 8(AX), DX
-	CRC32Q 16(AX), DX
-	CRC32Q 24(AX), DX
-	MOVQ   DX, ret+8(FP)
-	RET
-
-// func crc32Int320HashAsm(data *[4]uint64) uint64
-// Requires: SSE4.2
-TEXT ·crc32Int320HashAsm(SB), NOSPLIT, $0-16
-	MOVQ data+0(FP), AX
-	MOVQ   $-1, DX
-	CRC32Q (AX), DX
-	CRC32Q 8(AX), DX
-	CRC32Q 16(AX), DX
-	CRC32Q 24(AX), DX
-	CRC32Q 32(AX), DX
-	MOVQ   DX, ret+8(FP)
-	RET
-
-// func crc32Int192BatchHashAsm(data *[3]uint64, hashes *uint64, length int)
-// Requires: SSE4.2
-TEXT ·crc32Int192BatchHashAsm(SB), NOSPLIT, $0-24
-	MOVQ data+0(FP), AX
-	MOVQ hashes+8(FP), DX
+TEXT ·Crc32Int64CellBatchHash(SB), NOSPLIT, $0-24
+	MOVQ data+0(FP), SI
+	MOVQ hashes+8(FP), DI
 	MOVQ length+16(FP), CX
 
 loop:
-	SUBQ   $8, CX
-	JL     tail
-	MOVQ   $-1, R8
-	CRC32Q (AX), R8
-	CRC32Q 8(AX), R8
-	CRC32Q 16(AX), R8
-	MOVQ   R8, (DX)
-	MOVQ   $-1, R9
-	CRC32Q 24(AX), R9
-	CRC32Q 32(AX), R9
-	CRC32Q 40(AX), R9
-	MOVQ   R9, 8(DX)
-	MOVQ   $-1, R10
-	CRC32Q 48(AX), R10
-	CRC32Q 56(AX), R10
-	CRC32Q 64(AX), R10
-	MOVQ   R10, 16(DX)
-	MOVQ   $-1, R11
-	CRC32Q 72(AX), R11
-	CRC32Q 80(AX), R11
-	CRC32Q 88(AX), R11
-	MOVQ   R11, 24(DX)
-	MOVQ   $-1, R12
-	CRC32Q 96(AX), R12
-	CRC32Q 104(AX), R12
-	CRC32Q 112(AX), R12
-	MOVQ   R12, 32(DX)
-	MOVQ   $-1, R13
-	CRC32Q 120(AX), R13
-	CRC32Q 128(AX), R13
-	CRC32Q 136(AX), R13
-	MOVQ   R13, 40(DX)
-	MOVQ   $-1, R14
-	CRC32Q 144(AX), R14
-	CRC32Q 152(AX), R14
-	CRC32Q 160(AX), R14
-	MOVQ   R14, 48(DX)
-	MOVQ   $-1, R15
-	CRC32Q 168(AX), R15
-	CRC32Q 176(AX), R15
-	CRC32Q 184(AX), R15
-	MOVQ   R15, 56(DX)
-	ADDQ   $192, AX
-	ADDQ   $64, DX
-	JMP    loop
+	SUBQ $8, CX
+	JL   tail
+
+	MOVQ $-1, R8
+	MOVQ $-1, R9
+	MOVQ $-1, R10
+	MOVQ $-1, R11
+	MOVQ $-1, R12
+	MOVQ $-1, R13
+	MOVQ $-1, R14
+	MOVQ $-1, R15
+
+	CRC32Q 0x00(SI), R8
+	CRC32Q 0x10(SI), R9
+	CRC32Q 0x20(SI), R10
+	CRC32Q 0x30(SI), R11
+	CRC32Q 0x40(SI), R12
+	CRC32Q 0x50(SI), R13
+	CRC32Q 0x60(SI), R14
+	CRC32Q 0x70(SI), R15
+
+	MOVQ R8, 0x00(DI)
+	MOVQ R9, 0x08(DI)
+	MOVQ R10, 0x10(DI)
+	MOVQ R11, 0x18(DI)
+	MOVQ R12, 0x20(DI)
+	MOVQ R13, 0x28(DI)
+	MOVQ R14, 0x30(DI)
+	MOVQ R15, 0x38(DI)
+
+	ADDQ $0x80, SI
+	ADDQ $0x40, DI
+	JMP  loop
 
 tail:
 	ADDQ $8, CX
@@ -325,182 +120,555 @@ tail:
 
 tailLoop:
 	MOVQ   $-1, R8
-	CRC32Q (AX), R8
-	CRC32Q 8(AX), R8
-	CRC32Q 16(AX), R8
-	MOVQ   R8, (DX)
-	ADDQ   $24, AX
-	ADDQ   $8, DX
-	LOOP   tailLoop
+	CRC32Q (SI), R8
+	MOVQ   R8, (DI)
+
+	ADDQ $0x10, SI
+	ADDQ $0x08, DI
+	LOOP tailLoop
 
 done:
 	RET
 
-// func crc32Int256BatchHashAsm(data *[4]uint64, hashes *uint64, length int)
-// Requires: SSE4.2
-TEXT ·crc32Int256BatchHashAsm(SB), NOSPLIT, $0-24
-	MOVQ data+0(FP), AX
-	MOVQ hashes+8(FP), DX
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
+
+DATA Pi<>+0x00(SB)/8, $0x3243f6a8885a308d
+DATA Pi<>+0x08(SB)/8, $0x313198a2e0370734
+DATA Pi<>+0x10(SB)/8, $0x4a4093822299f31d
+DATA Pi<>+0x18(SB)/8, $0x0082efa98ec4e6c8
+DATA Pi<>+0x20(SB)/8, $0x9452821e638d0137
+DATA Pi<>+0x28(SB)/8, $0x7be5466cf34e90c6
+DATA Pi<>+0x30(SB)/8, $0xcc0ac29b7c97c50d
+DATA Pi<>+0x38(SB)/8, $0xd3f84d5b5b547091
+DATA Pi<>+0x40(SB)/8, $0x79216d5d98979fb1
+DATA Pi<>+0x48(SB)/8, $0xbd1310ba698dfb5a
+DATA Pi<>+0x50(SB)/8, $0xc2ffd72dbd01adfb
+DATA Pi<>+0x58(SB)/8, $0x7b8e1afed6a267e9
+DATA Pi<>+0x60(SB)/8, $0x6ba7c9045f12c7f9
+DATA Pi<>+0x68(SB)/8, $0x924a19947b3916cf
+DATA Pi<>+0x70(SB)/8, $0x70801f2e2858efc1
+DATA Pi<>+0x78(SB)/8, $0x6636920d871574e6
+GLOBL Pi<>(SB), (NOPTR+RODATA), $0x80
+
+DATA CryptedPi<>+0x00(SB)/8, $0x822233b93c11087c
+DATA CryptedPi<>+0x08(SB)/8, $0xd2b32f4adde873da
+DATA CryptedPi<>+0x10(SB)/8, $0xae9c2fc7dd17bcdb
+DATA CryptedPi<>+0x18(SB)/8, $0x859110441a1569fc
+DATA CryptedPi<>+0x20(SB)/8, $0x47087d794fffb5c9
+DATA CryptedPi<>+0x28(SB)/8, $0xb7b6c8f565414445
+DATA CryptedPi<>+0x30(SB)/8, $0xfd260edabb308f8d
+DATA CryptedPi<>+0x38(SB)/8, $0x3ddefc67bc565a13
+DATA CryptedPi<>+0x40(SB)/8, $0xe4c1d50223544f10
+DATA CryptedPi<>+0x48(SB)/8, $0xaf40e05725c3192b
+DATA CryptedPi<>+0x50(SB)/8, $0x281d8ab9a16382e9
+DATA CryptedPi<>+0x58(SB)/8, $0xddc10c903b63a6cf
+DATA CryptedPi<>+0x60(SB)/8, $0x852d3ad603e8df72
+DATA CryptedPi<>+0x68(SB)/8, $0xa6642b57d1011deb
+DATA CryptedPi<>+0x70(SB)/8, $0x5063d25a1cb7b6b9
+DATA CryptedPi<>+0x78(SB)/8, $0xb2623e6241e8e46e
+GLOBL CryptedPi<>(SB), (NOPTR+RODATA), $0x80
+
+// func AesBytesBatchGenHashStates(data *[]byte, states *[3]uint64, length int)
+// Requires: AES
+TEXT ·AesBytesBatchGenHashStates(SB), NOSPLIT, $0-24
+	MOVQ data+0(FP), SI
+	MOVQ states+8(FP), DI
 	MOVQ length+16(FP), CX
 
+	VMOVDQU CryptedPi<>+0x00(SB), X0
+	VMOVDQU CryptedPi<>+0x10(SB), X1
+	VMOVDQU CryptedPi<>+0x20(SB), X2
+	VMOVDQU CryptedPi<>+0x30(SB), X3
+	VMOVDQU CryptedPi<>+0x40(SB), X4
+	VMOVDQU CryptedPi<>+0x50(SB), X5
+	VMOVDQU CryptedPi<>+0x60(SB), X6
+	VMOVDQU CryptedPi<>+0x70(SB), X7
+
 loop:
-	SUBQ   $8, CX
-	JL     tail
-	MOVQ   $-1, R8
-	CRC32Q (AX), R8
-	CRC32Q 8(AX), R8
-	CRC32Q 16(AX), R8
-	CRC32Q 24(AX), R8
-	MOVQ   R8, (DX)
-	MOVQ   $-1, R9
-	CRC32Q 32(AX), R9
-	CRC32Q 40(AX), R9
-	CRC32Q 48(AX), R9
-	CRC32Q 56(AX), R9
-	MOVQ   R9, 8(DX)
-	MOVQ   $-1, R10
-	CRC32Q 64(AX), R10
-	CRC32Q 72(AX), R10
-	CRC32Q 80(AX), R10
-	CRC32Q 88(AX), R10
-	MOVQ   R10, 16(DX)
-	MOVQ   $-1, R11
-	CRC32Q 96(AX), R11
-	CRC32Q 104(AX), R11
-	CRC32Q 112(AX), R11
-	CRC32Q 120(AX), R11
-	MOVQ   R11, 24(DX)
-	MOVQ   $-1, R12
-	CRC32Q 128(AX), R12
-	CRC32Q 136(AX), R12
-	CRC32Q 144(AX), R12
-	CRC32Q 152(AX), R12
-	MOVQ   R12, 32(DX)
-	MOVQ   $-1, R13
-	CRC32Q 160(AX), R13
-	CRC32Q 168(AX), R13
-	CRC32Q 176(AX), R13
-	CRC32Q 184(AX), R13
-	MOVQ   R13, 40(DX)
-	MOVQ   $-1, R14
-	CRC32Q 192(AX), R14
-	CRC32Q 200(AX), R14
-	CRC32Q 208(AX), R14
-	CRC32Q 216(AX), R14
-	MOVQ   R14, 48(DX)
-	MOVQ   $-1, R15
-	CRC32Q 224(AX), R15
-	CRC32Q 232(AX), R15
-	CRC32Q 240(AX), R15
-	CRC32Q 248(AX), R15
-	MOVQ   R15, 56(DX)
-	ADDQ   $256, AX
-	ADDQ   $64, DX
-	JMP    loop
+	MOVQ (SI), AX
+	MOVQ 8(SI), DX
+	MOVQ DX, BX
+
+	ADDQ AX, DX
+	SUBQ $0x40, DX
+
+	VMOVDQU X0, X8
+	VMOVDQU X1, X9
+	VMOVDQU X2, X10
+	VMOVDQU X3, X11
+	VMOVDQU X4, X12
+	VMOVDQU X5, X13
+	VMOVDQU X6, X14
+	VMOVDQU X7, X15
+
+innerLoop:
+	CMPQ AX, DX
+	JGE  tail
+
+	VAESENC 0x00(AX), X8, X8
+	VAESENC 0x00(AX), X12, X12
+	VAESENC 0x10(AX), X9, X9
+	VAESENC 0x10(AX), X13, X13
+	VAESENC 0x20(AX), X10, X10
+	VAESENC 0x20(AX), X14, X14
+	VAESENC 0x30(AX), X11, X11
+	VAESENC 0x30(AX), X15, X15
+
+	ADDQ $0x40, AX
+	JMP  innerLoop
 
 tail:
-	ADDQ $8, CX
-	JE   done
+	ADDQ $0x30, DX
+	CMPQ AX, DX
+	JGE  done
 
-tailLoop:
-	MOVQ   $-1, R8
-	CRC32Q (AX), R8
-	CRC32Q 8(AX), R8
-	CRC32Q 16(AX), R8
-	CRC32Q 24(AX), R8
-	MOVQ   R8, (DX)
-	ADDQ   $32, AX
-	ADDQ   $8, DX
-	LOOP   tailLoop
+	VAESENC (AX), X8, X8
+	VAESENC (AX), X12, X12
+
+	ADDQ $0x10, AX
+	CMPQ AX, DX
+	JGE  done
+
+	VAESENC (AX), X9, X9
+	VAESENC (AX), X13, X13
+
+	ADDQ $0x10, AX
+	CMPQ AX, DX
+	JGE  done
+
+	VAESENC (AX), X10, X10
+	VAESENC (AX), X14, X14
+
+done:
+	VAESENC (DX), X11, X11
+	VAESENC (DX), X15, X15
+
+	VAESENC X9, X8, X8
+	VAESENC X10, X11, X11
+	VAESENC X8, X11, X11
+
+	VAESENC X11, X11, X11
+	VAESENC X11, X11, X11
+	VAESENC X11, X11, X11
+
+	VAESENC X14, X13, X13
+	VAESENC X15, X12, X12
+	VAESENC X13, X12, X12
+
+	VPSHUFD $0x4e, X11, X8
+	VPXOR   X8, X11, X11
+	VMOVQ   X11, R8
+	XORQ    BX, R8
+
+	MOVQ    R8, (DI)
+	VMOVDQU X12, 8(DI)
+
+	ADDQ $24, SI
+	ADDQ $24, DI
+	DECQ CX
+	JNZ  loop
+
+	RET
+
+// func AesInt192BatchGenHashStates(data *[3]uint64, states *[3]uint64, length int)
+// Requires: AES
+TEXT ·AesInt192BatchGenHashStates(SB), NOSPLIT, $0-24
+	MOVQ data+0(FP), SI
+	MOVQ states+8(FP), DI
+	MOVQ length+16(FP), CX
+
+	VMOVDQU CryptedPi<>+0x00(SB), X0
+	VMOVDQU CryptedPi<>+0x10(SB), X1
+	VMOVDQU CryptedPi<>+0x20(SB), X2
+	VMOVDQU CryptedPi<>+0x30(SB), X3
+	VMOVDQU CryptedPi<>+0x40(SB), X4
+	VMOVDQU CryptedPi<>+0x50(SB), X5
+	VMOVDQU CryptedPi<>+0x60(SB), X6
+	VMOVDQU CryptedPi<>+0x70(SB), X7
+	VAESENC X2, X3, X3
+	VAESENC X7, X6, X6
+
+loop:
+	VAESENC 0x00(SI), X0, X8
+	VAESENC 0x00(SI), X4, X10
+	VAESENC 0x08(SI), X1, X9
+	VAESENC 0x08(SI), X5, X11
+	VAESENC X8, X9, X9
+	VAESENC X3, X9, X9
+	VAESENC X9, X9, X9
+	VAESENC X9, X9, X9
+	VPSHUFD $0x4e, X9, X8
+	VPXOR   X8, X9, X9
+	VAESENC X11, X10, X10
+	VAESENC X6, X10, X10
+	VMOVQ   X9, 0x00(DI)
+	VMOVDQU X10, 0x08(DI)
+
+	ADDQ $0x18, SI
+	ADDQ $0x18, DI
+	LOOP loop
 
 done:
 	RET
 
-// func crc32Int320BatchHashAsm(data *[5]uint64, hashes *uint64, length int)
-// Requires: SSE4.2
-TEXT ·crc32Int320BatchHashAsm(SB), NOSPLIT, $0-24
-	MOVQ data+0(FP), AX
-	MOVQ hashes+8(FP), DX
+// func AesInt256BatchGenHashStates(data *[4]uint64, states *[3]uint64, length int)
+// Requires: AES
+TEXT ·AesInt256BatchGenHashStates(SB), NOSPLIT, $0-24
+	MOVQ data+0(FP), SI
+	MOVQ states+8(FP), DI
 	MOVQ length+16(FP), CX
 
+	VMOVDQU CryptedPi<>+0x00(SB), X0
+	VMOVDQU CryptedPi<>+0x10(SB), X1
+	VMOVDQU CryptedPi<>+0x20(SB), X2
+	VMOVDQU CryptedPi<>+0x30(SB), X3
+	VMOVDQU CryptedPi<>+0x40(SB), X4
+	VMOVDQU CryptedPi<>+0x50(SB), X5
+	VMOVDQU CryptedPi<>+0x60(SB), X6
+	VMOVDQU CryptedPi<>+0x70(SB), X7
+	VAESENC X2, X3, X3
+	VAESENC X7, X6, X6
+
 loop:
-	SUBQ   $8, CX
-	JL     tail
-	MOVQ   $-1, R8
-	CRC32Q (AX), R8
-	CRC32Q 8(AX), R8
-	CRC32Q 16(AX), R8
-	CRC32Q 24(AX), R8
-	CRC32Q 32(AX), R8
-	MOVQ   R8, (DX)
-	MOVQ   $-1, R9
-	CRC32Q 40(AX), R9
-	CRC32Q 48(AX), R9
-	CRC32Q 56(AX), R9
-	CRC32Q 64(AX), R9
-	CRC32Q 72(AX), R9
-	MOVQ   R9, 8(DX)
-	MOVQ   $-1, R10
-	CRC32Q 80(AX), R10
-	CRC32Q 88(AX), R10
-	CRC32Q 96(AX), R10
-	CRC32Q 104(AX), R10
-	CRC32Q 112(AX), R10
-	MOVQ   R10, 16(DX)
-	MOVQ   $-1, R11
-	CRC32Q 120(AX), R11
-	CRC32Q 128(AX), R11
-	CRC32Q 136(AX), R11
-	CRC32Q 144(AX), R11
-	CRC32Q 152(AX), R11
-	MOVQ   R11, 24(DX)
-	MOVQ   $-1, R12
-	CRC32Q 160(AX), R12
-	CRC32Q 168(AX), R12
-	CRC32Q 176(AX), R12
-	CRC32Q 184(AX), R12
-	CRC32Q 192(AX), R12
-	MOVQ   R12, 32(DX)
-	MOVQ   $-1, R13
-	CRC32Q 200(AX), R13
-	CRC32Q 208(AX), R13
-	CRC32Q 216(AX), R13
-	CRC32Q 224(AX), R13
-	CRC32Q 232(AX), R13
-	MOVQ   R13, 40(DX)
-	MOVQ   $-1, R14
-	CRC32Q 240(AX), R14
-	CRC32Q 248(AX), R14
-	CRC32Q 256(AX), R14
-	CRC32Q 264(AX), R14
-	CRC32Q 272(AX), R14
-	MOVQ   R14, 48(DX)
-	MOVQ   $-1, R15
-	CRC32Q 280(AX), R15
-	CRC32Q 288(AX), R15
-	CRC32Q 296(AX), R15
-	CRC32Q 304(AX), R15
-	CRC32Q 312(AX), R15
-	MOVQ   R15, 56(DX)
-	ADDQ   $320, AX
-	ADDQ   $64, DX
-	JMP    loop
+	VAESENC 0x00(SI), X0, X8
+	VAESENC 0x00(SI), X4, X10
+	VAESENC 0x10(SI), X1, X9
+	VAESENC 0x10(SI), X5, X11
+	VAESENC X8, X9, X9
+	VAESENC X3, X9, X9
+	VAESENC X9, X9, X9
+	VAESENC X9, X9, X9
+	VPSHUFD $0x4e, X9, X8
+	VPXOR   X8, X9, X9
+	VAESENC X11, X10, X10
+	VAESENC X6, X10, X10
+	VMOVQ   X9, 0x00(DI)
+	VMOVDQU X10, 0x08(DI)
 
-tail:
-	ADDQ $8, CX
-	JE   done
-
-tailLoop:
-	MOVQ   $-1, R8
-	CRC32Q (AX), R8
-	CRC32Q 8(AX), R8
-	CRC32Q 16(AX), R8
-	CRC32Q 24(AX), R8
-	CRC32Q 32(AX), R8
-	MOVQ   R8, (DX)
-	ADDQ   $40, AX
-	ADDQ   $8, DX
-	LOOP   tailLoop
+	ADDQ $0x20, SI
+	ADDQ $0x18, DI
+	LOOP loop
 
 done:
+	RET
+
+// func AesInt320BatchGenHashStates(data *[5]uint64, states *[3]uint64, length int)
+// Requires: AES
+TEXT ·AesInt320BatchGenHashStates(SB), NOSPLIT, $0-24
+	MOVQ data+0(FP), SI
+	MOVQ states+8(FP), DI
+	MOVQ length+16(FP), CX
+
+	VMOVDQU CryptedPi<>+0x00(SB), X0
+	VMOVDQU CryptedPi<>+0x10(SB), X1
+	VMOVDQU CryptedPi<>+0x20(SB), X2
+	VMOVDQU CryptedPi<>+0x30(SB), X3
+	VMOVDQU CryptedPi<>+0x40(SB), X4
+	VMOVDQU CryptedPi<>+0x50(SB), X5
+	VMOVDQU CryptedPi<>+0x60(SB), X6
+	VMOVDQU CryptedPi<>+0x70(SB), X7
+
+loop:
+	VAESENC 0x00(SI), X0, X8
+	VAESENC 0x00(SI), X4, X11
+	VAESENC 0x10(SI), X1, X9
+	VAESENC 0x10(SI), X5, X12
+	VAESENC 0x18(SI), X3, X10
+	VAESENC 0x18(SI), X6, X13
+	VAESENC X10, X8, X8
+	VAESENC X2, X9, X9
+	VAESENC X9, X8, X8
+	VAESENC X8, X8, X8
+	VAESENC X8, X8, X8
+	VPSHUFD $0x4e, X8, X9
+	VPXOR   X9, X8, X8
+	VAESENC X12, X11, X11
+	VAESENC X7, X13, X13
+	VAESENC X13, X11, X11
+	VMOVQ   X8, 0x00(DI)
+	VMOVDQU X11, 0x08(DI)
+
+	ADDQ $0x28, SI
+	ADDQ $0x18, DI
+	LOOP loop
+
+done:
+	RET
+
+TEXT genCryptedPi(SB), NOSPLIT, $0-8
+	MOVQ dst+0(FP), DI
+
+	VMOVDQU Pi<>+0x00(SB), X0
+	VMOVDQU Pi<>+0x10(SB), X1
+	VMOVDQU Pi<>+0x20(SB), X2
+	VMOVDQU Pi<>+0x30(SB), X3
+	VMOVDQU Pi<>+0x40(SB), X4
+	VMOVDQU Pi<>+0x50(SB), X5
+	VMOVDQU Pi<>+0x60(SB), X6
+	VMOVDQU Pi<>+0x70(SB), X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENCLAST X0, X0, X0
+	VAESENCLAST X1, X1, X1
+	VAESENCLAST X2, X2, X2
+	VAESENCLAST X3, X3, X3
+	VAESENCLAST X4, X4, X4
+	VAESENCLAST X5, X5, X5
+	VAESENCLAST X6, X6, X6
+	VAESENCLAST X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENC X0, X0, X0
+	VAESENC X1, X1, X1
+	VAESENC X2, X2, X2
+	VAESENC X3, X3, X3
+	VAESENC X4, X4, X4
+	VAESENC X5, X5, X5
+	VAESENC X6, X6, X6
+	VAESENC X7, X7, X7
+
+	VAESENCLAST X0, X0, X0
+	VAESENCLAST X1, X1, X1
+	VAESENCLAST X2, X2, X2
+	VAESENCLAST X3, X3, X3
+	VAESENCLAST X4, X4, X4
+	VAESENCLAST X5, X5, X5
+	VAESENCLAST X6, X6, X6
+	VAESENCLAST X7, X7, X7
+
+	VMOVDQU X0, 0x00(DI)
+	VMOVDQU X1, 0x10(DI)
+	VMOVDQU X2, 0x20(DI)
+	VMOVDQU X3, 0x30(DI)
+	VMOVDQU X4, 0x40(DI)
+	VMOVDQU X5, 0x50(DI)
+	VMOVDQU X6, 0x60(DI)
+	VMOVDQU X7, 0x70(DI)
+
 	RET

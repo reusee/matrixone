@@ -15,287 +15,109 @@
 package types
 
 import (
-	"fmt"
-	"strings"
+	"github.com/matrixorigin/matrixone/pkg/pb/plan"
 )
 
 const (
 	// any family
-	T_any = 0
+	T_any uint8 = uint8(plan.Type_ANY)
+
+	// bool family
+	T_bool uint8 = uint8(plan.Type_BOOL)
 
 	// numeric/integer family
-	T_int8   = 1
-	T_int16  = 2
-	T_int32  = 3
-	T_int64  = 5
-	T_uint8  = 6
-	T_uint16 = 7
-	T_uint32 = 9
-	T_uint64 = 10
-
-	// numeric/decimal family - unsigned attribute is deprecated
-	T_decimal = 11
+	T_int8   uint8 = uint8(plan.Type_INT8)
+	T_int16  uint8 = uint8(plan.Type_INT16)
+	T_int32  uint8 = uint8(plan.Type_INT32)
+	T_int64  uint8 = uint8(plan.Type_INT64)
+	T_uint8  uint8 = uint8(plan.Type_UINT8)
+	T_uint16 uint8 = uint8(plan.Type_UINT16)
+	T_uint32 uint8 = uint8(plan.Type_UINT32)
+	T_uint64 uint8 = uint8(plan.Type_UINT64)
 
 	// numeric/float family - unsigned attribute is deprecated
-	T_float32 = 12
-	T_float64 = 13
+	T_float32 uint8 = uint8(plan.Type_FLOAT32)
+	T_float64 uint8 = uint8(plan.Type_FLOAT64)
 
 	// date family
-	T_date     = 15 // 3 byte
-	T_datetime = 18 // 8 byte
+	T_date     uint8 = uint8(plan.Type_DATE)
+	T_datetime uint8 = uint8(plan.Type_DATETIME)
 
 	// string family
-	T_char    = 20
-	T_varchar = 21
+	T_char    uint8 = uint8(plan.Type_CHAR)
+	T_varchar uint8 = uint8(plan.Type_VARCHAR)
 
 	// json family
-	T_json = 32
+	T_json uint8 = uint8(plan.Type_JSON)
+
+	// numeric/decimal family - unsigned attribute is deprecated
+	T_decimal64  = uint8(plan.Type_DECIMAL64)
+	T_decimal128 = uint8(plan.Type_DECIMAL128)
 
 	// system family
-	T_sel   = 200 //selection
-	T_tuple = 201 // immutable, size = 24
+	T_sel   uint8 = uint8(plan.Type_SEL)   //selection
+	T_tuple uint8 = uint8(plan.Type_TUPLE) // immutable, size = 24
 )
 
-type T uint8
+type Element[T any] interface {
+	Size() int
+}
 
 type Type struct {
-	Oid       T
-	Size      int32 // e.g. int8.Size = 1, int16.Size = 2, char.Size = 24(SliceHeader size)
-	Width     int32
-	Precision int32
+	Oid  uint8 `json:"oid,string"`
+	Size int32 `json:"size,string"` // e.g. int8.Size = 1, int16.Size = 2, char.Size = 24(SliceHeader size)
+
+	// Width means max Display width for float and double, char and varchar // todo: need to add new attribute DisplayWidth ?
+	Width int32 `json:"width,string"`
+
+	Scale int32 `json:"Scale,string"`
+
+	Precision int32 `json:"Precision,string"`
 }
 
-type Bytes struct {
-	Data    []byte
-	Offsets []uint32
-	Lengths []uint32
-}
+type Bool bool
+type Int8 int8
+type Int16 int16
+type Int32 int32
+type Int64 int64
+type UInt8 uint8
+type UInt16 uint16
+type UInt32 uint32
+type UInt64 uint64
+type Float32 float32
+type Float64 float64
+
+type Bytes []byte
 
 type Date int32
 
 type Datetime int64
 
-type Decimal struct {
+type Decimal64 int64
+
+type Decimal128 struct {
+	Lo int64
+	Hi int64
 }
 
-var Types map[string]T = map[string]T{
-	"tinyint":  T_int8,
-	"smallint": T_int16,
-	"int":      T_int32,
-	"integer":  T_int32,
-	"bigint":   T_int64,
-
-	"tinyint unsigned":  T_int8,
-	"smallint unsigned": T_int16,
-	"int unsigned":      T_int32,
-	"integer unsigned":  T_int32,
-	"bigint unsigned":   T_int64,
-
-	"decimal": T_decimal,
-
-	"float":  T_float32,
-	"double": T_float64,
-
-	"date":     T_date,
-	"datetime": T_datetime,
-
-	"char":    T_char,
-	"varchar": T_varchar,
-
-	"json": T_json,
+func New(oid uint8) Type {
+	return Type{Oid: oid, Size: int32(TypeSize(oid))}
 }
 
-func (t Type) String() string {
-	return t.Oid.String()
-}
-
-func (a Type) Eq(b Type) bool {
-	return a.Oid == b.Oid && a.Size == b.Size && a.Width == b.Width && a.Precision == b.Precision
-}
-
-func (t T) ToType() Type {
-	var typ Type
-
-	typ.Oid = t
-	switch t {
-	case T_int8:
-		typ.Size = 1
-	case T_int16:
-		typ.Size = 2
-	case T_int32:
-		typ.Size = 4
-	case T_int64:
-		typ.Size = 8
-	case T_uint8:
-		typ.Size = 1
-	case T_uint16:
-		typ.Size = 2
-	case T_uint32:
-		typ.Size = 4
-	case T_uint64:
-		typ.Size = 8
-	case T_float32:
-		typ.Size = 4
-	case T_float64:
-		typ.Size = 8
-	case T_char:
-		typ.Size = 24
-	case T_varchar:
-		typ.Size = 24
-	case T_sel:
-		typ.Size = 8
-	}
-	return typ
-}
-
-func (t T) String() string {
-	switch t {
-	case T_int8:
-		return "TINYINT"
-	case T_int16:
-		return "SMALLINT"
-	case T_int32:
-		return "INT"
-	case T_int64:
-		return "BIGINT"
-	case T_uint8:
-		return "TINYINT UNSIGNED"
-	case T_uint16:
-		return "SMALLINT UNSIGNED"
-	case T_uint32:
-		return "INT UNSIGNED"
-	case T_uint64:
-		return "BIGINT UNSIGNED"
-	case T_decimal:
-		return "DECIMAL"
-	case T_float32:
-		return "FLOAT"
-	case T_float64:
-		return "DOUBLE"
-	case T_date:
-		return "DATE"
-	case T_datetime:
-		return "DATETIME"
-	case T_char:
-		return "CHAR"
-	case T_varchar:
-		return "VARCHAR"
-	case T_json:
-		return "JSON"
-	case T_sel:
-		return "SEL"
-	case T_tuple:
-		return "TUPLE"
-	}
-	return fmt.Sprintf("unexpected type: %d", t)
-}
-
-// functions only used to generate pkg/sql/colexec/extend/overload
-
-// OidString returns T string
-func (t T) OidString() string {
-	switch t {
-	case T_int64:
-		return "T_int64"
-	case T_int32:
-		return "T_int32"
-	case T_int16:
-		return "T_int16"
-	case T_int8:
-		return "T_int8"
-	case T_float64:
-		return "T_float64"
-	case T_float32:
-		return "T_float32"
-	case T_uint8:
-		return "T_uint8"
-	case T_uint16:
-		return "T_uint16"
-	case T_uint32:
-		return "T_uint32"
-	case T_uint64:
-		return "T_uint64"
-	case T_sel:
-		return "T_sel"
-	case T_char:
-		return "T_char"
-	case T_varchar:
-		return "T_varchar"
-	}
-	return "unknown_type"
-}
-
-// GoType returns go type string for T
-func (t T) GoType() string {
-	switch t {
-	case T_int64:
-		return "int64"
-	case T_int32:
-		return "int32"
-	case T_int16:
-		return "int16"
-	case T_int8:
-		return "int8"
-	case T_float64:
-		return "float64"
-	case T_float32:
-		return "float32"
-	case T_uint8:
-		return "uint8"
-	case T_uint16:
-		return "uint16"
-	case T_uint32:
-		return "uint32"
-	case T_uint64:
-		return "uint64"
-	case T_sel:
-		return "int64"
-	case T_char:
-		return "string"
-	case T_varchar:
-		return "string"
-	}
-	return "unknown type"
-}
-
-// GoGoType returns special go type string for T
-func (t T) GoGoType() string {
-	if t == T_char || t == T_varchar {
-		return "Str"
-	}
-	k := t.GoType()
-	return strings.ToUpper(k[:1]) + k[1:]
-}
-
-// TypeLen returns type's length whose type oid is T
-func (t T) TypeLen() int {
-	switch t {
-	case T_int8:
+func TypeSize(oid uint8) int {
+	switch oid {
+	case T_bool, T_int8, T_uint8:
 		return 1
-	case T_int16:
+	case T_int16, T_uint16:
 		return 2
-	case T_int32:
+	case T_int32, T_uint32, T_float32, T_date:
 		return 4
-	case T_int64:
+	case T_int64, T_uint64, T_datetime, T_decimal64:
 		return 8
-	case T_uint8:
-		return 1
-	case T_uint16:
-		return 2
-	case T_uint32:
-		return 4
-	case T_uint64:
-		return 8
-	case T_float32:
-		return 4
-	case T_float64:
-		return 8
-	case T_char:
+	case T_decimal128:
+		return 16
+	case T_char, T_varchar:
 		return 24
-	case T_varchar:
-		return 24
-	case T_sel:
-		return 8
 	}
 	return -1
 }
