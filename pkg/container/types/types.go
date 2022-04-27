@@ -60,7 +60,7 @@ const (
 )
 
 type Element[T any] interface {
-	Size() int
+	Size() int // return the size of space  the Element need
 }
 
 type Type struct {

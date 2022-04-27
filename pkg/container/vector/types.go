@@ -28,9 +28,10 @@ type Vector[T types.Element[T]] struct {
 }
 
 type VectorLike interface {
-	SetLength(n int)
 	Reset()
 	Length() int
+	SetLength(n int)
+	Type() types.Type
 	Free(*mheap.Mheap)
 	Realloc(size int, m *mheap.Mheap) error
 }

@@ -49,6 +49,10 @@ func (v *Vector[T]) SetLength(n int) {
 	}
 }
 
+func (v *Vector[T]) Type() types.Type {
+	return v.Typ
+}
+
 func (v *Vector[T]) Free(m *mheap.Mheap) {
 	mheap.Free(m, v.Data)
 }
