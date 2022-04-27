@@ -6,16 +6,16 @@ import (
 	"golang.org/x/exp/constraints"
 )
 
-func VectorSort[T types.Element[T]](vec *vector.Vector[T]) {
-	switch vs := (interface{})(vec.Col).(type) {
-	case []types.Int8:
-		Sort(vs)
-	case []types.Int16:
-		Sort(vs)
-	case []types.Int32:
-		Sort(vs)
-	case []types.Int64:
-		Sort(vs)
+func VectorSort(vec vector.VectorLike) {
+	switch vs := (interface{})(vec).(type) {
+	case *vector.Vector[types.Int8]:
+		Sort(vs.Col)
+	case *vector.Vector[types.Int16]:
+		Sort(vs.Col)
+	case *vector.Vector[types.Int32]:
+		Sort(vs.Col)
+	case *vector.Vector[types.Int64]:
+		Sort(vs.Col)
 	}
 }
 

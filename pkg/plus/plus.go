@@ -6,18 +6,17 @@ import (
 	"golang.org/x/exp/constraints"
 )
 
-func VectorPlus[T types.Element[T]](vx, vy, vz *vector.Vector[T]) {
-	switch vs := (interface{})(vx.Col).(type) {
-	case []types.Int8:
-		Plus(vs, (interface{})(vy.Col).([]types.Int8), (interface{})(vz.Col).([]types.Int8))
-	case []types.Int16:
-		Plus(vs, (interface{})(vy.Col).([]types.Int16), (interface{})(vz.Col).([]types.Int16))
-	case []types.Int32:
-		Plus(vs, (interface{})(vy.Col).([]types.Int32), (interface{})(vz.Col).([]types.Int32))
-	case []types.Int64:
-		Plus(vs, (interface{})(vy.Col).([]types.Int64), (interface{})(vz.Col).([]types.Int64))
+func VectorPlus(vx, vy, vz vector.VectorLike) {
+	switch xs := (interface{})(vx).(type) {
+	case *vector.Vector[types.Int8]:
+		Plus(xs.Col, (interface{})(vy).(*vector.Vector[types.Int8]).Col, (interface{})(vz).(*vector.Vector[types.Int8]).Col)
+	case *vector.Vector[types.Int16]:
+		Plus(xs.Col, (interface{})(vy).(*vector.Vector[types.Int16]).Col, (interface{})(vz).(*vector.Vector[types.Int16]).Col)
+	case *vector.Vector[types.Int32]:
+		Plus(xs.Col, (interface{})(vy).(*vector.Vector[types.Int32]).Col, (interface{})(vz).(*vector.Vector[types.Int32]).Col)
+	case *vector.Vector[types.Int64]:
+		Plus(xs.Col, (interface{})(vy).(*vector.Vector[types.Int64]).Col, (interface{})(vz).(*vector.Vector[types.Int64]).Col)
 	}
-
 }
 
 func Plus[T constraints.Integer | constraints.Float](xs, ys, zs []T) []T {

@@ -28,7 +28,7 @@ func New[T types.Element[T]](typ types.Type) *Vector[T] {
 	}
 }
 
-func Reset[T types.Element[T]](v *Vector[T]) {
+func (v *Vector[T]) Reset() {
 	v.Col = v.Col[:0]
 	v.Data = v.Data[:0]
 	if len(v.Offsets) > 0 {
@@ -37,11 +37,11 @@ func Reset[T types.Element[T]](v *Vector[T]) {
 	}
 }
 
-func Length[T types.Element[T]](v *Vector[T]) int {
+func (v *Vector[T]) Length() int {
 	return len(v.Col)
 }
 
-func SetLength[T types.Element[T]](v *Vector[T], n int) {
+func (v *Vector[T]) SetLength(n int) {
 	v.Col = v.Col[:n]
 	if len(v.Offsets) > 0 {
 		v.Offsets = v.Offsets[:n]
@@ -49,11 +49,11 @@ func SetLength[T types.Element[T]](v *Vector[T], n int) {
 	}
 }
 
-func Free[T types.Element[T]](v *Vector[T], m *mheap.Mheap) {
+func (v *Vector[T]) Free(m *mheap.Mheap) {
 	mheap.Free(m, v.Data)
 }
 
-func Realloc[T types.Element[T]](v *Vector[T], size int, m *mheap.Mheap) error {
+func (v *Vector[T]) Realloc(size int, m *mheap.Mheap) error {
 	oldLen := len(v.Data)
 	data, err := mheap.Grow(m, v.Data, int64(oldLen+size))
 	if err != nil {
@@ -73,10 +73,10 @@ func Realloc[T types.Element[T]](v *Vector[T], size int, m *mheap.Mheap) error {
 	return nil
 }
 
-func Append[T types.Element[T]](v *Vector[T], w T, m *mheap.Mheap) error {
+func (v *Vector[T]) Append(w T, m *mheap.Mheap) error {
 	n := len(v.Col)
 	if n+1 >= cap(v.Col) {
-		if err := Realloc(v, w.Size(), m); err != nil {
+		if err := v.Realloc(w.Size(), m); err != nil {
 			return err
 		}
 	}

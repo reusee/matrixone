@@ -7,10 +7,10 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/container/vector"
 )
 
-func Group[T any](vecs []any, rows int) error {
+func Group(vecs []vector.VectorLike, rows int) error {
 	keys := make([]uint64, UnitLimit)
-	keyOffs := make([]uint32, UnitLimit)
 	zKeys := make([]uint64, UnitLimit)
+	keyOffs := make([]uint32, UnitLimit)
 	zKeyOffs := make([]uint32, UnitLimit)
 	count := rows
 	for i := 0; i < count; i += UnitLimit {
@@ -39,6 +39,7 @@ func Group[T any](vecs []any, rows int) error {
 		}
 	}
 	return nil
+
 }
 
 func fillGroup[T types.Element[T]](vec *vector.Vector[T], n int, sz uint32, keys []uint64, keyOffs []uint32) error {

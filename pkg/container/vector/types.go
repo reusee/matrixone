@@ -16,6 +16,7 @@ package vector
 
 import (
 	"github.com/matrixorigin/matrixone/pkg/container/types"
+	"github.com/matrixorigin/matrixone/pkg/vm/mheap"
 )
 
 type Vector[T types.Element[T]] struct {
@@ -24,4 +25,12 @@ type Vector[T types.Element[T]] struct {
 	Offsets []uint64 // optional
 	Lengths []uint64 // optional
 	Typ     types.Type
+}
+
+type VectorLike interface {
+	SetLength(n int)
+	Reset()
+	Length() int
+	Free(*mheap.Mheap)
+	Realloc(size int, m *mheap.Mheap) error
 }
