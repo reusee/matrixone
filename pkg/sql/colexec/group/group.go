@@ -7,7 +7,7 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/container/vector"
 )
 
-func Group(vecs []vector.VectorLike, rows int) error {
+func Group(vecs []vector.AnyVector, rows int) error {
 	keys := make([]uint64, UnitLimit)
 	zKeys := make([]uint64, UnitLimit)
 	keyOffs := make([]uint32, UnitLimit)
@@ -21,16 +21,17 @@ func Group(vecs []vector.VectorLike, rows int) error {
 		copy(keys, zKeys)
 		copy(keyOffs, zKeyOffs)
 		for _, vec := range vecs {
-			switch v := (any)(vec).(type) {
-			case *vector.Vector[types.Int8]:
-				fillGroup(v, n, uint32(types.TypeSize(v.Typ.Oid)), keys, keyOffs)
-			case *vector.Vector[types.Int16]:
-				fillGroup(v, n, uint32(types.TypeSize(v.Typ.Oid)), keys, keyOffs)
-			case *vector.Vector[types.Int32]:
-				fillGroup(v, n, uint32(types.TypeSize(v.Typ.Oid)), keys, keyOffs)
-			case *vector.Vector[types.Int64]:
-				fillGroup(v, n, uint32(types.TypeSize(v.Typ.Oid)), keys, keyOffs)
-			case *vector.Vector[types.Bytes]:
+			switch typ := vec.Type(); typ.Oid {
+			case types.T_int8:
+				fillGroup((any)(vec).(*vector.Vector[types.Int8]), n, uint32(types.TypeSize(typ.Oid)), keys, keyOffs)
+			case types.T_int16:
+				fillGroup((any)(vec).(*vector.Vector[types.Int16]), n, uint32(types.TypeSize(typ.Oid)), keys, keyOffs)
+			case types.T_int32:
+				fillGroup((any)(vec).(*vector.Vector[types.Int32]), n, uint32(types.TypeSize(typ.Oid)), keys, keyOffs)
+			case types.T_int64:
+				fillGroup((any)(vec).(*vector.Vector[types.Int64]), n, uint32(types.TypeSize(typ.Oid)), keys, keyOffs)
+			case types.T_char, types.T_varchar:
+				v := (any)(vec).(*vector.Vector[types.Bytes])
 				for i := 0; i < n; i++ {
 					copy(unsafe.Slice((*byte)(unsafe.Pointer(&keys[i])), 8)[keyOffs[i]:], v.Col[i])
 					keyOffs[i] += uint32(len(v.Col[i]))
@@ -39,7 +40,6 @@ func Group(vecs []vector.VectorLike, rows int) error {
 		}
 	}
 	return nil
-
 }
 
 func fillGroup[T types.Element[T]](vec *vector.Vector[T], n int, sz uint32, keys []uint64, keyOffs []uint32) error {

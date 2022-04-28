@@ -9,5 +9,5 @@ type Batch struct {
 	// Attrs column name list
 	Attrs []string
 	// Vecs col data
-	Vecs []vector.VectorLike
+	Vecs []vector.AnyVector
 }

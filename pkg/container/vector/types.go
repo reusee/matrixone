@@ -27,7 +27,7 @@ type Vector[T types.Element[T]] struct {
 	Typ     types.Type
 }
 
-type VectorLike interface {
+type AnyVector interface {
 	Reset()
 	Length() int
 	SetLength(n int)
