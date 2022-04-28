@@ -6,22 +6,14 @@ import (
 	"golang.org/x/exp/constraints"
 )
 
-func VectorPlus(vx, vy, vz vector.AnyVector) {
-	switch vx.Type().Oid {
-	case types.T_int8:
-		Plus((any)(vx).(*vector.Vector[types.Int8]).Col, (any)(vy).(*vector.Vector[types.Int8]).Col, (any)(vz).(*vector.Vector[types.Int8]).Col)
-	case types.T_int16:
-		Plus((any)(vx).(*vector.Vector[types.Int16]).Col, (any)(vy).(*vector.Vector[types.Int16]).Col, (any)(vz).(*vector.Vector[types.Int16]).Col)
-	case types.T_int32:
-		Plus((any)(vx).(*vector.Vector[types.Int32]).Col, (any)(vy).(*vector.Vector[types.Int32]).Col, (any)(vz).(*vector.Vector[types.Int32]).Col)
-	case types.T_int64:
-		Plus((any)(vx).(*vector.Vector[types.Int64]).Col, (any)(vy).(*vector.Vector[types.Int64]).Col, (any)(vz).(*vector.Vector[types.Int64]).Col)
-	}
+type NumberElement[T any] interface {
+	types.Element[T]
+	constraints.Integer | constraints.Float
 }
 
-func Plus[T constraints.Integer | constraints.Float](xs, ys, zs []T) []T {
-	for i, x := range xs {
-		zs[i] = x + ys[i]
+func VectorPlus[T NumberElement[T]](xv, yv, zv *vector.Vector[T]) []T {
+	for i, x := range xv.Col {
+		zv.Col[i] = x + yv.Col[i]
 	}
-	return zs
+	return zv.Col
 }
