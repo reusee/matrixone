@@ -14,37 +14,39 @@
 
 package main
 
-func main() {
-	NewScope().Call(func(
-		main Main,
-	) {
-		main()
+import (
+	"testing"
+)
+
+func TestEvent(t *testing.T) {
+	var res int
+
+	scope := NewScope(func() int {
+		return 1
 	})
-}
 
-type Main func()
+	scope.Call(func(
+		on On,
+	) {
+		on("foo", func(
+			i int,
+		) {
+			res = i
+		})
+	})
 
-func (_ Def) Main(
-	handleArgs HandleArguments,
-	emit Emit,
-	start StartServer,
-	scope Scope,
-) Main {
-	return func() {
+	scope = scope.Fork(func() int {
+		return 2
+	})
 
-		defer func() {
-			// run exit functions
-			emit(scope, evExit)
-		}()
+	scope.Call(func(
+		emit Emit,
+	) {
+		emit(scope, "foo")
+	})
 
-		// parse and handle command line arguments
-		handleArgs()
-
-		// run init functions
-		emit(scope, evInit)
-
-		// start server
-		start()
-
+	if res != 2 {
+		t.Fatal()
 	}
+
 }

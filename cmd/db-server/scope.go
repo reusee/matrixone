@@ -14,37 +14,13 @@
 
 package main
 
-func main() {
-	NewScope().Call(func(
-		main Main,
-	) {
-		main()
-	})
-}
+import "github.com/reusee/dscope"
 
-type Main func()
+type Scope = dscope.Scope
 
-func (_ Def) Main(
-	handleArgs HandleArguments,
-	emit Emit,
-	start StartServer,
-	scope Scope,
-) Main {
-	return func() {
+type Def struct{}
 
-		defer func() {
-			// run exit functions
-			emit(scope, evExit)
-		}()
-
-		// parse and handle command line arguments
-		handleArgs()
-
-		// run init functions
-		emit(scope, evInit)
-
-		// start server
-		start()
-
-	}
+func NewScope(defs ...any) Scope {
+	defs = append(defs, dscope.Methods(new(Def))...)
+	return dscope.New(defs...)
 }

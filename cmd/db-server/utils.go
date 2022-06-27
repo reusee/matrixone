@@ -14,37 +14,8 @@
 
 package main
 
-func main() {
-	NewScope().Call(func(
-		main Main,
-	) {
-		main()
-	})
-}
+import "fmt"
 
-type Main func()
-
-func (_ Def) Main(
-	handleArgs HandleArguments,
-	emit Emit,
-	start StartServer,
-	scope Scope,
-) Main {
-	return func() {
-
-		defer func() {
-			// run exit functions
-			emit(scope, evExit)
-		}()
-
-		// parse and handle command line arguments
-		handleArgs()
-
-		// run init functions
-		emit(scope, evInit)
-
-		// start server
-		start()
-
-	}
-}
+var (
+	pt = fmt.Printf
+)

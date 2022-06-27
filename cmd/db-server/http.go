@@ -14,37 +14,34 @@
 
 package main
 
-func main() {
-	NewScope().Call(func(
-		main Main,
-	) {
-		main()
-	})
+import (
+	"net/http"
+	_ "net/http/pprof"
+)
+
+func (_ Def) HTTP(
+	on On,
+) (
+	parsers ArgumentParsers,
+	usages Usages,
+) {
+
+	var p Parser
+	var addr string
+	parsers = append(parsers, p.MatchStr("-http")(
+		p.String(&addr)(
+			p.End(func() {
+				on(evInit, func() {
+					go startHTTPServer(addr)
+				})
+			}))))
+	usages = append(usages, [2]string{`-http address`, `start http server at specified address`})
+
+	return
 }
 
-type Main func()
-
-func (_ Def) Main(
-	handleArgs HandleArguments,
-	emit Emit,
-	start StartServer,
-	scope Scope,
-) Main {
-	return func() {
-
-		defer func() {
-			// run exit functions
-			emit(scope, evExit)
-		}()
-
-		// parse and handle command line arguments
-		handleArgs()
-
-		// run init functions
-		emit(scope, evInit)
-
-		// start server
-		start()
-
+func startHTTPServer(addr string) {
+	if err := http.ListenAndServe(addr, nil); err != nil {
+		panic(err)
 	}
 }

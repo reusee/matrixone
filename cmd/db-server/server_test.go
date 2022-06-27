@@ -4,12 +4,19 @@
 package main
 
 import (
-	"os"
 	"testing"
 )
 
 func TestMOServer(t *testing.T) {
-	os.Args = make([]string, 2)
-	os.Args[1] = "./system_vars_config.toml"
-	main()
+	NewScope().Fork(
+		func() Arguments {
+			return Arguments{
+				"./system_vars_config.toml",
+			}
+		},
+	).Call(func(
+		main Main,
+	) {
+		main()
+	})
 }

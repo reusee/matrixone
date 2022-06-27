@@ -14,37 +14,41 @@
 
 package main
 
-func main() {
-	NewScope().Call(func(
-		main Main,
-	) {
-		main()
-	})
-}
+import (
+	"sync"
+)
 
-type Main func()
+const (
+	evInit = "init"
+	evExit = "exit"
+)
 
-func (_ Def) Main(
-	handleArgs HandleArguments,
+type On func(ev string, fn any)
+
+type Emit func(scope Scope, ev string)
+
+func (_ Def) Event() (
+	on On,
 	emit Emit,
-	start StartServer,
-	scope Scope,
-) Main {
-	return func() {
+) {
 
-		defer func() {
-			// run exit functions
-			emit(scope, evExit)
-		}()
+	var l sync.Mutex
+	events := make(map[string][]any)
 
-		// parse and handle command line arguments
-		handleArgs()
-
-		// run init functions
-		emit(scope, evInit)
-
-		// start server
-		start()
-
+	on = func(ev string, fn any) {
+		l.Lock()
+		defer l.Unlock()
+		events[ev] = append(events[ev], fn)
 	}
+
+	emit = func(scope Scope, ev string) {
+		l.Lock()
+		evs := events[ev]
+		l.Unlock()
+		for _, fn := range evs {
+			scope.Call(fn)
+		}
+	}
+
+	return
 }
