@@ -15,34 +15,27 @@
 package main
 
 import (
+	"fmt"
 	"os"
 )
 
-type ArgumentParsers []Parser
-
-func (_ ArgumentParsers) IsReducer() {}
-
-func (_ Def) ArgumentParsers() ArgumentParsers {
-	return nil
-}
-
-type Arguments []string
-
-func (_ Def) Arguments() Arguments {
-	return Arguments(os.Args[1:])
-}
-
-type ParseArguments func()
-
-func (_ Def) ParseArguments(
+func (_ Def) Version() (
 	parsers ArgumentParsers,
-	arguments Arguments,
-) ParseArguments {
-	return func() {
-		var p Parser
-		p = p.First(parsers...)
-		if err := p.Run(arguments); err != nil {
-			panic(err)
-		}
+) {
+
+	var p Parser
+	parsers = ArgumentParsers{
+		p.MatchStr("--version", p.End(func() {
+			// if the argument passed in is "--version", return version info and exit
+			fmt.Println("MatrixOne build info:")
+			fmt.Printf("  The golang version used to build this binary: %s\n", GoVersion)
+			fmt.Printf("  Git branch name: %s\n", BranchName)
+			fmt.Printf("  Last git commit ID: %s\n", LastCommitId)
+			fmt.Printf("  Buildtime: %s\n", BuildTime)
+			fmt.Printf("  Current Matrixone version: %s\n", MoVersion)
+			os.Exit(0)
+		})),
 	}
+
+	return
 }

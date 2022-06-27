@@ -131,7 +131,8 @@ func recreateDir(dir string) (err error) {
 	return err
 }
 
-/**
+/*
+*
 call the catalog service to remove the epoch
 */
 func removeEpoch(epoch uint64) {
@@ -279,16 +280,13 @@ func closeTae(tae *taeHandler) {
 }
 
 func main() {
-	// if the argument passed in is "--version", return version info and exit
-	if len(os.Args) == 2 && os.Args[1] == "--version" {
-		fmt.Println("MatrixOne build info:")
-		fmt.Printf("  The golang version used to build this binary: %s\n", GoVersion)
-		fmt.Printf("  Git branch name: %s\n", BranchName)
-		fmt.Printf("  Last git commit ID: %s\n", LastCommitId)
-		fmt.Printf("  Buildtime: %s\n", BuildTime)
-		fmt.Printf("  Current Matrixone version: %s\n", MoVersion)
-		os.Exit(0)
-	}
+
+	scope := NewScope()
+	scope.Call(func(
+		parseArgs ParseArguments,
+	) {
+		parseArgs()
+	})
 
 	flag.Parse()
 	args := flag.Args()
