@@ -41,7 +41,7 @@ func (_ Def) HandleArguments(
 	return func() {
 		var p Parser
 		p = p.Repeat(
-			p.First(parsers...),
+			p.Alt(parsers...),
 			-1,
 			nil,
 		)

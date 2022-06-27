@@ -51,12 +51,12 @@ func (p Parser) Fallback(parser Parser, fallback Parser, fallbackArgs []string) 
 	}
 }
 
-func (p Parser) First(parsers ...Parser) Parser {
+func (p Parser) Alt(parsers ...Parser) Parser {
 	if len(parsers) == 0 {
 		return nil
 	}
 	return func(args []string) ([]string, Parser, error) {
-		return args, p.Fallback(parsers[0], p.First(parsers[1:]...), args), nil
+		return args, p.Fallback(parsers[0], p.Alt(parsers[1:]...), args), nil
 	}
 }
 
