@@ -41,8 +41,9 @@ func (_ Def) Event() (
 
 	emit = func(ev string) {
 		l.Lock()
-		defer l.Unlock()
-		for _, fn := range events[ev] {
+		evs := events[ev]
+		l.Unlock()
+		for _, fn := range evs {
 			fn()
 		}
 	}
