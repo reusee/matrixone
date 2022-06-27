@@ -13,7 +13,6 @@ import (
 )
 
 var (
-	cpuProfilePathFlag       = flag.String("cpu-profile", "", "write cpu profile to the specified file")
 	allocsProfilePathFlag    = flag.String("allocs-profile", "", "write allocs profile to the specified file")
 	heapProfilePathFlag      = flag.String("heap-profile", "", "write heap profile to the specified file")
 	heapProfileThresholdFlag = flag.Uint64("heap-profile-threshold", 8*1024*1024*1024,
@@ -21,26 +20,6 @@ var (
 	logMetricsIntervalFlag = flag.Uint64("log-metrics-interval", 23,
 		"log metrics every specified seconds. 0 means disable logging")
 )
-
-func startCPUProfile() func() {
-	cpuProfilePath := *cpuProfilePathFlag
-	if cpuProfilePath == "" {
-		cpuProfilePath = "cpu-profile"
-	}
-	f, err := os.Create(cpuProfilePath)
-	if err != nil {
-		panic(err)
-	}
-	err = pprof.StartCPUProfile(f)
-	if err != nil {
-		panic(err)
-	}
-	logutil.Infof("CPU profiling enabled, writing to %s", cpuProfilePath)
-	return func() {
-		pprof.StopCPUProfile()
-		f.Close()
-	}
-}
 
 func writeAllocsProfile() {
 	profile := pprof.Lookup("allocs")

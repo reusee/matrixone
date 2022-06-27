@@ -284,7 +284,9 @@ func main() {
 	scope := NewScope()
 	scope.Call(func(
 		handleArgs HandleArguments,
+		cleanup Cleanup,
 	) {
+		defer cleanup()
 		handleArgs()
 	})
 
@@ -327,10 +329,6 @@ func main() {
 		os.Exit(0)
 	}
 
-	if *cpuProfilePathFlag != "" {
-		stop := startCPUProfile()
-		defer stop()
-	}
 	if *allocsProfilePathFlag != "" {
 		defer writeAllocsProfile()
 	}
