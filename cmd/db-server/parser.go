@@ -60,6 +60,26 @@ func (p Parser) First(parsers ...Parser) Parser {
 	}
 }
 
+func (p Parser) Repeat(repeating Parser, n int, cont Parser) Parser {
+	if n == 0 {
+		return cont
+	}
+	parser := repeating
+	var ret Parser
+	ret = func(args []string) ([]string, Parser, error) {
+		var err error
+		args, parser, err = parser(args)
+		if err != nil {
+			return nil, nil, err
+		}
+		if parser == nil {
+			return args, p.Repeat(repeating, n-1, cont), nil
+		}
+		return args, ret, nil
+	}
+	return ret
+}
+
 func (p Parser) End(fn func()) Parser {
 	return func(args []string) ([]string, Parser, error) {
 		fn()
@@ -68,12 +88,14 @@ func (p Parser) End(fn func()) Parser {
 }
 
 func (p Parser) Run(args []string) error {
-	args, next, err := p(args)
-	if err != nil {
-		return err
+	for {
+		var err error
+		args, p, err = p(args)
+		if err != nil {
+			return err
+		}
+		if p == nil {
+			return nil
+		}
 	}
-	if next == nil {
-		return nil
-	}
-	return next.Run(args)
 }

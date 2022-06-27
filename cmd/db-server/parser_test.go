@@ -86,4 +86,17 @@ func TestParser(t *testing.T) {
 		}
 	})
 
+	t.Run("Repeat", func(t *testing.T) {
+		var n int
+		var p Parser
+		if err := p.Repeat(p.End(func() {
+			n++
+		}), 3, nil).Run([]string{"foo"}); err != nil {
+			t.Fatal(err)
+		}
+		if n != 3 {
+			t.Fatalf("got %d", n)
+		}
+	})
+
 }
