@@ -16,33 +16,35 @@ package main
 
 import "sync"
 
-type OnCleanup func(fn func())
+const (
+	evStart = "start"
+	evStop  = "stop"
+)
 
-type Cleanup func()
+type On func(ev string, fn func())
 
-func (_ Def) Cleanup() (
-	onCleanup OnCleanup,
-	cleanup Cleanup,
+type Emit func(ev string)
+
+func (_ Def) Event() (
+	on On,
+	emit Emit,
 ) {
 
 	var l sync.Mutex
-	var fns []func()
+	events := make(map[string][]func())
 
-	onCleanup = func(fn func()) {
+	on = func(ev string, fn func()) {
 		l.Lock()
 		defer l.Unlock()
-		fns = append(fns, fn)
+		events[ev] = append(events[ev], fn)
 	}
 
-	var once sync.Once
-	cleanup = func() {
-		once.Do(func() {
-			l.Lock()
-			defer l.Unlock()
-			for _, fn := range fns {
-				fn()
-			}
-		})
+	emit = func(ev string) {
+		l.Lock()
+		defer l.Unlock()
+		for _, fn := range events[ev] {
+			fn()
+		}
 	}
 
 	return

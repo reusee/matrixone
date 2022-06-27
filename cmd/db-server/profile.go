@@ -16,19 +16,22 @@ package main
 
 import (
 	"os"
+	"runtime/metrics"
 	"runtime/pprof"
+	"time"
 
 	"github.com/matrixorigin/matrixone/pkg/logutil"
 )
 
 func (_ Def) Profiles(
-	onCleanup OnCleanup,
+	on On,
 ) (
 	parsers ArgumentParsers,
 ) {
 
 	var p Parser
 
+	// cpu
 	var cpuProfilePath string
 	parsers = append(parsers, p.MatchStr(
 		"-cpu-profile",
@@ -39,10 +42,49 @@ func (_ Def) Profiles(
 					return
 				}
 				stop := startCPUProfile(cpuProfilePath)
-				onCleanup(func() {
+				on(evStop, func() {
 					stop()
 				})
 			}),
+		),
+	))
+
+	// allocs
+	var allocsProfilePath string
+	parsers = append(parsers, p.MatchStr(
+		"-allocs-profile",
+		p.String(
+			&allocsProfilePath,
+			p.End(func() {
+				if allocsProfilePath != "" {
+					on(evStop, func() {
+						writeAllocsProfile(allocsProfilePath)
+					})
+				}
+			}),
+		),
+	))
+
+	// heap
+	var heapProfilePath string
+	heapProfileThreshold := uint64(8 * 1024 * 1024 * 1024)
+	parsers = append(parsers, p.MatchStr(
+		"-heap-profile",
+		p.String(
+			&heapProfilePath,
+			p.End(func() {
+				if heapProfilePath == "" {
+					return
+				}
+				go startHeapProfiler(heapProfilePath, heapProfileThreshold)
+			}),
+		),
+	))
+	parsers = append(parsers, p.MatchStr(
+		"-heap-profile-threshold",
+		p.Uint64(
+			&heapProfileThreshold,
+			nil,
 		),
 	))
 
@@ -63,4 +105,57 @@ func startCPUProfile(filePath string) func() {
 		pprof.StopCPUProfile()
 		f.Close()
 	}
+}
+
+func writeAllocsProfile(filePath string) {
+	profile := pprof.Lookup("allocs")
+	if profile == nil {
+		return
+	}
+	f, err := os.Create(filePath)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+	if err := profile.WriteTo(f, 0); err != nil {
+		panic(err)
+	}
+	logutil.Infof("Allocs profile written to %s", filePath)
+}
+
+func startHeapProfiler(filePath string, threshold uint64) {
+	samples := []metrics.Sample{
+		{
+			Name: "/memory/classes/total:bytes",
+		},
+	}
+	var lastUsing uint64
+	for range time.NewTicker(time.Second).C {
+
+		writeHeapProfile := func() {
+			metrics.Read(samples)
+			using := samples[0].Value.Uint64()
+			if using-lastUsing > threshold {
+				profile := pprof.Lookup("heap")
+				if profile == nil {
+					return
+				}
+				profilePath := filePath
+				profilePath += "." + time.Now().Format("15:04:05.000000")
+				f, err := os.Create(profilePath)
+				if err != nil {
+					panic(err)
+				}
+				defer f.Close()
+				if err := profile.WriteTo(f, 0); err != nil {
+					panic(err)
+				}
+				logutil.Infof("Heap profile written to %s", profilePath)
+			}
+			lastUsing = using
+		}
+
+		writeHeapProfile()
+	}
+
 }

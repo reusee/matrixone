@@ -284,16 +284,20 @@ func main() {
 	scope := NewScope()
 	scope.Call(func(
 		handleArgs HandleArguments,
-		cleanup Cleanup,
+		emit Emit,
 	) {
-		defer cleanup()
+
+		defer func() {
+			emit(evStop)
+		}()
+
 		handleArgs()
+
+		emit(evStart)
 	})
 
 	flag.Parse()
 	args := flag.Args()
-
-	handleDebugFlags()
 
 	if len(args) < 1 {
 		fmt.Printf("Usage: %s configFile\n", os.Args[0])
@@ -327,10 +331,6 @@ func main() {
 		fmt.Println("Initialize the TAE engine Done")
 		closeTae(taeWrapper)
 		os.Exit(0)
-	}
-
-	if *allocsProfilePathFlag != "" {
-		defer writeAllocsProfile()
 	}
 
 	logutil.Infof("Shutdown The Server With Ctrl+C | Ctrl+\\.")
