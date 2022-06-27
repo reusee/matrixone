@@ -40,7 +40,11 @@ func (_ Def) HandleArguments(
 ) HandleArguments {
 	return func() {
 		var p Parser
-		p = p.First(parsers...)
+		p = p.Repeat(
+			p.First(parsers...),
+			-1,
+			nil,
+		)
 		if err := p.Run(arguments); err != nil {
 			panic(err)
 		}
