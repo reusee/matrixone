@@ -32,12 +32,12 @@ func (_ Def) Arguments() Arguments {
 	return Arguments(os.Args[1:])
 }
 
-type ParseArguments func()
+type HandleArguments func()
 
-func (_ Def) ParseArguments(
+func (_ Def) HandleArguments(
 	parsers ArgumentParsers,
 	arguments Arguments,
-) ParseArguments {
+) HandleArguments {
 	return func() {
 		var p Parser
 		p = p.First(parsers...)

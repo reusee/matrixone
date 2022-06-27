@@ -283,9 +283,9 @@ func main() {
 
 	scope := NewScope()
 	scope.Call(func(
-		parseArgs ParseArguments,
+		handleArgs HandleArguments,
 	) {
-		parseArgs()
+		handleArgs()
 	})
 
 	flag.Parse()
