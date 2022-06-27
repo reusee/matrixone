@@ -41,9 +41,11 @@ func (_ Def) Profiles(
 				if cpuProfilePath == "" {
 					return
 				}
-				stop := startCPUProfile(cpuProfilePath)
-				on(evStop, func() {
-					stop()
+				on(evStart, func() {
+					stop := startCPUProfile(cpuProfilePath)
+					on(evStop, func() {
+						stop()
+					})
 				})
 			}),
 		),
@@ -76,7 +78,9 @@ func (_ Def) Profiles(
 				if heapProfilePath == "" {
 					return
 				}
-				go startHeapProfiler(heapProfilePath, heapProfileThreshold)
+				on(evStart, func() {
+					go startHeapProfiler(heapProfilePath, heapProfileThreshold)
+				})
 			}),
 		),
 	))

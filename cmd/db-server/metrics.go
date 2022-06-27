@@ -23,7 +23,9 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-func (_ Def) Metrics() (
+func (_ Def) Metrics(
+	on On,
+) (
 	parsers ArgumentParsers,
 ) {
 
@@ -38,7 +40,9 @@ func (_ Def) Metrics() (
 				if logIntervalSeconds == 0 {
 					return
 				}
-				go startMetricsLogging(logIntervalSeconds)
+				on(evStart, func() {
+					go startMetricsLogging(logIntervalSeconds)
+				})
 			}),
 		),
 	))

@@ -19,27 +19,31 @@ import (
 	_ "net/http/pprof"
 )
 
-func (_ Def) HTTP() (
+func (_ Def) HTTP(
+	on On,
+) (
 	parsers ArgumentParsers,
 ) {
 
 	var p Parser
 	var addr string
-	parsers = ArgumentParsers{
-		p.MatchStr(
-			"-http",
-			p.String(
-				&addr,
-				p.End(func() {
-					go func() {
-						if err := http.ListenAndServe(addr, nil); err != nil {
-							panic(err)
-						}
-					}()
-				}),
-			),
+	parsers = append(parsers, p.MatchStr(
+		"-http",
+		p.String(
+			&addr,
+			p.End(func() {
+				on(evStart, func() {
+					go startHTTPServer(addr)
+				})
+			}),
 		),
-	}
+	))
 
 	return
+}
+
+func startHTTPServer(addr string) {
+	if err := http.ListenAndServe(addr, nil); err != nil {
+		panic(err)
+	}
 }
