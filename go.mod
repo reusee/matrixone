@@ -31,6 +31,7 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.14
 	github.com/plar/go-adaptive-radix-tree v1.0.4
 	github.com/prashantv/gostub v1.1.0
+	github.com/reusee/dscope v0.0.0-20220624035026-6891f1cab879
 	github.com/sirupsen/logrus v1.8.1
 	github.com/smartystreets/goconvey v1.7.2
 	github.com/stretchr/testify v1.7.5
@@ -72,6 +73,9 @@ require (
 	github.com/minio/md5-simd v1.1.0 // indirect
 	github.com/minio/sha256-simd v0.1.1 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
+	github.com/pierrec/lz4/v4 v4.1.14 // indirect
+	github.com/reusee/e4 v0.0.0-20220624024633-9eab321f05d6 // indirect
+	github.com/reusee/pr v0.0.0-20220624024755-23e64bd7728c // indirect
 	github.com/rs/xid v1.2.1 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
 	github.com/smartystreets/assertions v1.2.0 // indirect
