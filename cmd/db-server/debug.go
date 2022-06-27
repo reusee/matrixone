@@ -2,8 +2,6 @@ package main
 
 import (
 	"flag"
-	"net/http"
-	_ "net/http/pprof"
 	"os"
 	"runtime/metrics"
 	"runtime/pprof"
@@ -22,8 +20,6 @@ var (
 		"take a heap profile if mapped memory changes exceed the specified threshold bytes")
 	logMetricsIntervalFlag = flag.Uint64("log-metrics-interval", 23,
 		"log metrics every specified seconds. 0 means disable logging")
-	httpFlag = flag.String("http", "",
-		"start http server at specified address")
 )
 
 func startCPUProfile() func() {
@@ -164,14 +160,6 @@ func handleDebugFlags() {
 
 			}
 
-		}()
-	}
-
-	if *httpFlag != "" {
-		go func() {
-			if err := http.ListenAndServe(*httpFlag, nil); err != nil {
-				panic(err)
-			}
 		}()
 	}
 

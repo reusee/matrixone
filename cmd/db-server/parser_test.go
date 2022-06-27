@@ -68,10 +68,10 @@ func TestParser(t *testing.T) {
 		}
 	})
 
-	t.Run("First", func(t *testing.T) {
+	t.Run("Alt", func(t *testing.T) {
 		var ok bool
 		var p Parser
-		if err := p.First(
+		if err := p.Alt(
 			p.MatchStr("1", p.End(func() {
 				ok = true
 			})),

@@ -15,7 +15,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"strconv"
 )
 
 type Parser func(
@@ -47,6 +49,9 @@ func (p Parser) Fallback(parser Parser, fallback Parser, fallbackArgs []string) 
 		if err != nil {
 			return fallbackArgs, fallback, nil
 		}
+		if nextParser == nil {
+			return nil, nil, nil
+		}
 		return nextArgs, p.Fallback(nextParser, fallback, fallbackArgs), nil
 	}
 }
@@ -61,7 +66,7 @@ func (p Parser) Alt(parsers ...Parser) Parser {
 }
 
 func (p Parser) Repeat(repeating Parser, n int, cont Parser) Parser {
-	if n == 0 {
+	if n == 0 || repeating == nil {
 		return cont
 	}
 	parser := repeating
@@ -70,6 +75,9 @@ func (p Parser) Repeat(repeating Parser, n int, cont Parser) Parser {
 		var err error
 		args, parser, err = parser(args)
 		if err != nil {
+			if errors.Is(err, Break) {
+				return args, cont, nil
+			}
 			return nil, nil, err
 		}
 		if parser == nil {
@@ -80,11 +88,43 @@ func (p Parser) Repeat(repeating Parser, n int, cont Parser) Parser {
 	return ret
 }
 
+var Break = errors.New("break")
+
 func (p Parser) End(fn func()) Parser {
 	return func(args []string) ([]string, Parser, error) {
 		fn()
 		return args, nil, nil
 	}
+}
+
+func (p Parser) Tap(fn func(string) error, cont Parser) Parser {
+	return func(args []string) ([]string, Parser, error) {
+		if len(args) == 0 {
+			return nil, nil, fmt.Errorf("expecting string, got nothing")
+		}
+		if err := fn(args[0]); err != nil {
+			return nil, nil, err
+		}
+		return args[1:], cont, nil
+	}
+}
+
+func (p Parser) String(ptr *string, cont Parser) Parser {
+	return p.Tap(func(str string) error {
+		*ptr = str
+		return nil
+	}, cont)
+}
+
+func (p Parser) Uint64(ptr *uint64, cont Parser) Parser {
+	return p.Tap(func(str string) error {
+		num, err := strconv.ParseUint(str, 10, 64)
+		if err != nil {
+			return err
+		}
+		*ptr = num
+		return nil
+	}, cont)
 }
 
 func (p Parser) Run(args []string) error {

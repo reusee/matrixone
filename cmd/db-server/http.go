@@ -15,43 +15,31 @@
 package main
 
 import (
-	"os"
+	"net/http"
+	_ "net/http/pprof"
 )
 
-type ArgumentParsers []Parser
-
-func (_ ArgumentParsers) IsReducer() {}
-
-func (_ Def) ArgumentParsers() ArgumentParsers {
-	return nil
-}
-
-type Arguments []string
-
-func (_ Def) Arguments() Arguments {
-	return Arguments(os.Args[1:])
-}
-
-type HandleArguments func()
-
-func (_ Def) HandleArguments(
+func (_ Def) HTTP() (
 	parsers ArgumentParsers,
-	arguments Arguments,
-) HandleArguments {
-	return func() {
-		var p Parser
-		p = p.Repeat(
-			func(args []string) ([]string, Parser, error) {
-				if len(args) == 0 {
-					return nil, nil, Break
-				}
-				return args, p.Alt(parsers...), nil
-			},
-			-1,
-			nil,
-		)
-		if err := p.Run(arguments); err != nil {
-			panic(err)
-		}
+) {
+
+	var p Parser
+	var addr string
+	parsers = ArgumentParsers{
+		p.MatchStr(
+			"-http",
+			p.String(
+				&addr,
+				p.End(func() {
+					go func() {
+						if err := http.ListenAndServe(addr, nil); err != nil {
+							panic(err)
+						}
+					}()
+				}),
+			),
+		),
 	}
+
+	return
 }
