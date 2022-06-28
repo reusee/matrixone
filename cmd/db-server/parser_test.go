@@ -50,24 +50,6 @@ func TestParser(t *testing.T) {
 		}
 	})
 
-	t.Run("Fallback", func(t *testing.T) {
-		var ok bool
-		var p Parser
-		args := []string{"bar"}
-		if err := p.Fallback(
-			p.MatchStr("foo", nil),
-			p.MatchStr("bar", p.End(func() {
-				ok = true
-			})),
-			args,
-		).Run(args); err != nil {
-			t.Fatal(err)
-		}
-		if !ok {
-			t.Fatal()
-		}
-	})
-
 	t.Run("Alt", func(t *testing.T) {
 		var ok bool
 		var p Parser
@@ -91,7 +73,7 @@ func TestParser(t *testing.T) {
 		var p Parser
 		if err := p.Repeat(p.End(func() {
 			n++
-		}), 3, nil).Run([]string{"foo"}); err != nil {
+		}), 3, nil).Run([]string{"foo", "bar", "baz", "qux"}); err != nil {
 			t.Fatal(err)
 		}
 		if n != 3 {

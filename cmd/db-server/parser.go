@@ -20,38 +20,21 @@ import (
 )
 
 type Parser func(
-	args []string,
+	input *string,
 ) (
-	nextArgs []string,
 	cont Parser,
 	err error,
 )
 
 func (p Parser) MatchStr(str string, cont Parser) Parser {
-	return func(args []string) ([]string, Parser, error) {
-		if len(args) == 0 {
-			return nil, nil, fmt.Errorf("expecting %s, got nothing", str)
+	return func(i *string) (Parser, error) {
+		if i == nil {
+			return nil, fmt.Errorf("expecting %s, got nothing", str)
 		}
-		if args[0] != str {
-			return nil, nil, fmt.Errorf("expecting %s, got %s", str, args[0])
+		if *i != str {
+			return nil, fmt.Errorf("expecting %s, got %s", str, *i)
 		}
-		return args[1:], cont, nil
-	}
-}
-
-func (p Parser) Fallback(parser Parser, fallback Parser, fallbackArgs []string) Parser {
-	return func(args []string) ([]string, Parser, error) {
-		if parser == nil {
-			return fallbackArgs, fallback, nil
-		}
-		nextArgs, nextParser, err := parser(args)
-		if err != nil {
-			return fallbackArgs, fallback, nil
-		}
-		if nextParser == nil {
-			return nil, nil, nil
-		}
-		return nextArgs, p.Fallback(nextParser, fallback, fallbackArgs), nil
+		return cont, nil
 	}
 }
 
@@ -59,8 +42,27 @@ func (p Parser) Alt(parsers ...Parser) Parser {
 	if len(parsers) == 0 {
 		return nil
 	}
-	return func(args []string) ([]string, Parser, error) {
-		return args, p.Fallback(parsers[0], p.Alt(parsers[1:]...), args), nil
+	return func(i *string) (Parser, error) {
+		if i == nil && len(parsers) == 0 {
+			return nil, nil
+		}
+		if len(parsers) == 0 {
+			return nil, fmt.Errorf("no match")
+		}
+		if len(parsers) == 1 {
+			return parsers[0], nil
+		}
+		for n := 0; n < len(parsers); {
+			parser, err := parsers[n](i)
+			if err != nil || parser == nil {
+				parsers[n] = parsers[len(parsers)-1]
+				parsers = parsers[:len(parsers)-1]
+				continue
+			}
+			parsers[n] = parser
+			n++
+		}
+		return p.Alt(parsers...), nil
 	}
 }
 
@@ -70,39 +72,39 @@ func (p Parser) Repeat(repeating Parser, n int, cont Parser) Parser {
 	}
 	parser := repeating
 	var ret Parser
-	ret = func(args []string) ([]string, Parser, error) {
+	ret = func(i *string) (Parser, error) {
+		if i == nil {
+			return cont, nil
+		}
 		var err error
-		args, parser, err = parser(args)
+		parser, err = parser(i)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		if parser == nil {
-			if len(args) > 0 {
-				return args, p.Repeat(repeating, n-1, cont), nil
-			}
-			return nil, cont, nil
+			return p.Repeat(repeating, n-1, cont), nil
 		}
-		return args, ret, nil
+		return ret, nil
 	}
 	return ret
 }
 
 func (p Parser) End(fn func()) Parser {
-	return func(args []string) ([]string, Parser, error) {
+	return func(i *string) (Parser, error) {
 		fn()
-		return args, nil, nil
+		return nil, nil
 	}
 }
 
 func (p Parser) Tap(fn func(string) error, cont Parser) Parser {
-	return func(args []string) ([]string, Parser, error) {
-		if len(args) == 0 {
-			return nil, nil, fmt.Errorf("expecting string, got nothing")
+	return func(i *string) (Parser, error) {
+		if i == nil {
+			return nil, fmt.Errorf("expecting input")
 		}
-		if err := fn(args[0]); err != nil {
-			return nil, nil, err
+		if err := fn(*i); err != nil {
+			return nil, err
 		}
-		return args[1:], cont, nil
+		return cont, nil
 	}
 }
 
@@ -125,14 +127,22 @@ func (p Parser) Uint64(ptr *uint64, cont Parser) Parser {
 }
 
 func (p Parser) Run(args []string) error {
-	for {
+	for _, input := range args {
+		if p == nil {
+			break
+		}
 		var err error
-		args, p, err = p(args)
+		p, err = p(&input)
 		if err != nil {
 			return err
 		}
-		if p == nil {
-			return nil
+	}
+	for p != nil {
+		var err error
+		p, err = p(nil)
+		if err != nil {
+			return err
 		}
 	}
+	return nil
 }
