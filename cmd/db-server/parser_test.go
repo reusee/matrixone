@@ -99,4 +99,18 @@ func TestParser(t *testing.T) {
 		}
 	})
 
+	t.Run("Repeat2", func(t *testing.T) {
+		var p Parser
+		var strs []string
+		if err := p.Repeat(p.Tap(func(s string) error {
+			strs = append(strs, s)
+			return nil
+		}, nil), -1, nil).Run([]string{"foo", "bar"}); err != nil {
+			t.Fatal(err)
+		}
+		if len(strs) != 2 {
+			t.Fatal()
+		}
+	})
+
 }

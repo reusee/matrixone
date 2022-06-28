@@ -15,7 +15,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 )
@@ -75,20 +74,18 @@ func (p Parser) Repeat(repeating Parser, n int, cont Parser) Parser {
 		var err error
 		args, parser, err = parser(args)
 		if err != nil {
-			if errors.Is(err, Break) {
-				return args, cont, nil
-			}
 			return nil, nil, err
 		}
 		if parser == nil {
-			return args, p.Repeat(repeating, n-1, cont), nil
+			if len(args) > 0 {
+				return args, p.Repeat(repeating, n-1, cont), nil
+			}
+			return nil, cont, nil
 		}
 		return args, ret, nil
 	}
 	return ret
 }
-
-var Break = errors.New("break")
 
 func (p Parser) End(fn func()) Parser {
 	return func(args []string) ([]string, Parser, error) {
