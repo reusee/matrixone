@@ -21,6 +21,7 @@ import (
 
 func (_ Def) Version() (
 	parsers ArgumentParsers,
+	usages Usages,
 ) {
 
 	var p Parser
@@ -37,6 +38,8 @@ func (_ Def) Version() (
 			os.Exit(0)
 		}),
 	))
+
+	usages = append(usages, `--version: show version info`)
 
 	return
 }

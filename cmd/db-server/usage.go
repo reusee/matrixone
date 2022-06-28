@@ -14,4 +14,54 @@
 
 package main
 
-//TODO
+import (
+	"fmt"
+	"os"
+	"sort"
+)
+
+type Usages []string
+
+func (_ Def) HelpUsage() Usages {
+	return Usages{
+		`-h: this message`,
+		`-help: this message`,
+		`--help: this message`,
+	}
+}
+
+func (_ Usages) IsReducer() {}
+
+func (_ Def) Usages(
+	usages Usages,
+) (
+	parsers ArgumentParsers,
+) {
+
+	sort.Strings(usages)
+
+	var p Parser
+
+	showUsages := p.End(func() {
+		fmt.Printf("Usage of %s:\n", os.Args[0])
+		for _, line := range usages {
+			fmt.Print(line)
+			fmt.Print("\n")
+		}
+	})
+
+	parsers = append(parsers, p.Seq(
+		p.MatchStr("-h", nil),
+		showUsages,
+	))
+	parsers = append(parsers, p.Seq(
+		p.MatchStr("-help", nil),
+		showUsages,
+	))
+	parsers = append(parsers, p.Seq(
+		p.MatchStr("--help", nil),
+		showUsages,
+	))
+
+	return
+}
