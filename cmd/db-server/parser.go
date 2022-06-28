@@ -89,6 +89,31 @@ func (p Parser) Repeat(repeating Parser, n int, cont Parser) Parser {
 	return ret
 }
 
+func (p Parser) Seq(parsers ...Parser) Parser {
+	if len(parsers) == 0 {
+		return nil
+	}
+	parser := parsers[0]
+	parsers = parsers[1:]
+	var ret Parser
+	ret = func(i *string) (Parser, error) {
+		if parser == nil {
+			next := p.Seq(parsers...)
+			if next != nil {
+				return next(i)
+			}
+			return nil, nil
+		}
+		var err error
+		parser, err = parser(i)
+		if err != nil {
+			return nil, err
+		}
+		return ret, nil
+	}
+	return ret
+}
+
 func (p Parser) End(fn func()) Parser {
 	return func(i *string) (Parser, error) {
 		fn()

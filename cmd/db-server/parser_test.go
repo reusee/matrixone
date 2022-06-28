@@ -95,4 +95,25 @@ func TestParser(t *testing.T) {
 		}
 	})
 
+	t.Run("Seq", func(t *testing.T) {
+		var p Parser
+		var a, b, c string
+		if err := p.Seq(
+			p.String(&a, nil),
+			p.String(&b, nil),
+			p.String(&c, nil),
+		).Run([]string{"a", "b", "c"}); err != nil {
+			t.Fatal(err)
+		}
+		if a != "a" {
+			t.Fatal()
+		}
+		if b != "b" {
+			t.Fatal()
+		}
+		if c != "c" {
+			t.Fatal()
+		}
+	})
+
 }
