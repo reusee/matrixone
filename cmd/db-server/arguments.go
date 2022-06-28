@@ -37,6 +37,7 @@ type HandleArguments func()
 func (_ Def) HandleArguments(
 	parsers ArgumentParsers,
 	arguments Arguments,
+	printUsages PrintUsages,
 ) HandleArguments {
 	return func() {
 
@@ -44,7 +45,9 @@ func (_ Def) HandleArguments(
 		var p Parser
 		loop = func(i *string) (Parser, error) {
 			if p == nil {
-				p = p.Alt(parsers...)
+				p = p.AltElse(parsers, p.End(func() {
+					printUsages()
+				}))
 			}
 			var err error
 			p, err = p(i)

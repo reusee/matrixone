@@ -53,12 +53,18 @@ func (p Parser) MatchAnyStr(strs []string, cont Parser) Parser {
 }
 
 func (p Parser) Alt(ps ...Parser) Parser {
+	return p.AltElse(ps, func(_ *string) (Parser, error) {
+		return nil, fmt.Errorf("no match")
+	})
+}
+
+func (p Parser) AltElse(ps []Parser, elseParser Parser) Parser {
 	parsers := make([]Parser, len(ps))
 	copy(parsers, ps)
 	var ret Parser
 	ret = func(i *string) (Parser, error) {
 		if len(parsers) == 0 {
-			return nil, fmt.Errorf("no match")
+			return elseParser, nil
 		}
 		if len(parsers) == 1 {
 			next := parsers[0]
