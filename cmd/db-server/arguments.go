@@ -39,19 +39,18 @@ func (_ Def) HandleArguments(
 	arguments Arguments,
 ) HandleArguments {
 	return func() {
+
 		var p Parser
+
 		p = p.Repeat(
-			func(args []string) ([]string, Parser, error) {
-				if len(args) == 0 {
-					return nil, nil, Break
-				}
-				return args, p.Alt(parsers...), nil
-			},
+			p.Alt(parsers...),
 			-1,
 			nil,
 		)
+
 		if err := p.Run(arguments); err != nil {
 			panic(err)
 		}
+
 	}
 }
