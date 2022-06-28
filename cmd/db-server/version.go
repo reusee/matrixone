@@ -39,7 +39,7 @@ func (_ Def) Version() (
 		}),
 	))
 
-	usages = append(usages, `--version: show version info`)
+	usages = append(usages, [2]string{`--version`, `show version info`})
 
 	return
 }

@@ -20,13 +20,13 @@ import (
 	"sort"
 )
 
-type Usages []string
+type Usages [][2]string
 
 func (_ Def) HelpUsage() Usages {
 	return Usages{
-		`-h: this message`,
-		`-help: this message`,
-		`--help: this message`,
+		{"-h", "this message"},
+		{"-help", "this message"},
+		{"--help", "this message"},
 	}
 }
 
@@ -38,15 +38,23 @@ func (_ Def) Usages(
 	parsers ArgumentParsers,
 ) {
 
-	sort.Strings(usages)
+	sort.Slice(usages, func(i, j int) bool {
+		return usages[i][0] < usages[j][0]
+	})
 
 	var p Parser
 
 	showUsages := p.End(func() {
 		fmt.Printf("Usage of %s:\n", os.Args[0])
-		for _, line := range usages {
-			fmt.Print(line)
-			fmt.Print("\n")
+		maxLen := 0
+		for _, pair := range usages {
+			if l := len(pair[0]); l > maxLen {
+				maxLen = l
+			}
+		}
+		format := fmt.Sprintf("%%%ds: %%s\n", maxLen)
+		for _, pair := range usages {
+			fmt.Printf(format, pair[0], pair[1])
 		}
 	})
 

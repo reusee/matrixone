@@ -23,6 +23,7 @@ func (_ Def) HTTP(
 	on On,
 ) (
 	parsers ArgumentParsers,
+	usages Usages,
 ) {
 
 	var p Parser
@@ -36,6 +37,7 @@ func (_ Def) HTTP(
 			})
 		}),
 	))
+	usages = append(usages, [2]string{`-http`, `start http server at specified address`})
 
 	return
 }

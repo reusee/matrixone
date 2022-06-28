@@ -27,6 +27,7 @@ func (_ Def) Metrics(
 	on On,
 ) (
 	parsers ArgumentParsers,
+	usages Usages,
 ) {
 
 	var p Parser
@@ -46,6 +47,7 @@ func (_ Def) Metrics(
 			}),
 		),
 	))
+	usages = append(usages, [2]string{`-log-metrics-interval`, `log metrics every specified seconds. 0 means disable logging`})
 
 	return
 }
