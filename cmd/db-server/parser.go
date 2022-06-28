@@ -26,7 +26,7 @@ type Parser func(
 	err error,
 )
 
-func (p Parser) MatchStr(str string, cont Parser) Parser {
+func (p Parser) MatchStr(str string) Parser {
 	return func(i *string) (Parser, error) {
 		if i == nil {
 			return nil, fmt.Errorf("expecting %s, got nothing", str)
@@ -34,18 +34,18 @@ func (p Parser) MatchStr(str string, cont Parser) Parser {
 		if *i != str {
 			return nil, fmt.Errorf("expecting %s, got %s", str, *i)
 		}
-		return cont, nil
+		return nil, nil
 	}
 }
 
-func (p Parser) MatchAnyStr(strs []string, cont Parser) Parser {
+func (p Parser) MatchAnyStr(strs []string) Parser {
 	return func(i *string) (Parser, error) {
 		if i == nil {
 			return nil, fmt.Errorf("expecting any of %+v, got nothing", strs)
 		}
 		for _, str := range strs {
 			if *i == str {
-				return cont, nil
+				return nil, nil
 			}
 		}
 		return nil, fmt.Errorf("expecting any of %+v, got %s", strs, *i)
@@ -120,7 +120,7 @@ func (p Parser) End(fn func()) Parser {
 	}
 }
 
-func (p Parser) Tap(fn func(string) error, cont Parser) Parser {
+func (p Parser) Tap(fn func(string) error) Parser {
 	return func(i *string) (Parser, error) {
 		if i == nil {
 			return nil, fmt.Errorf("expecting input")
@@ -128,18 +128,18 @@ func (p Parser) Tap(fn func(string) error, cont Parser) Parser {
 		if err := fn(*i); err != nil {
 			return nil, err
 		}
-		return cont, nil
+		return nil, nil
 	}
 }
 
-func (p Parser) String(ptr *string, cont Parser) Parser {
+func (p Parser) String(ptr *string) Parser {
 	return p.Tap(func(str string) error {
 		*ptr = str
 		return nil
-	}, cont)
+	})
 }
 
-func (p Parser) Uint64(ptr *uint64, cont Parser) Parser {
+func (p Parser) Uint64(ptr *uint64) Parser {
 	return p.Tap(func(str string) error {
 		num, err := strconv.ParseUint(str, 10, 64)
 		if err != nil {
@@ -147,7 +147,7 @@ func (p Parser) Uint64(ptr *uint64, cont Parser) Parser {
 		}
 		*ptr = num
 		return nil
-	}, cont)
+	})
 }
 
 func (p Parser) Run(args []string) error {

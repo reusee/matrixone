@@ -29,8 +29,8 @@ func (_ Def) HTTP(
 	var p Parser
 	var addr string
 	parsers = append(parsers, p.Seq(
-		p.MatchStr("-http", nil),
-		p.String(&addr, nil),
+		p.MatchStr("-http"),
+		p.String(&addr),
 		p.End(func() {
 			on(evStart, func() {
 				go startHTTPServer(addr)

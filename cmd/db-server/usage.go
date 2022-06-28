@@ -66,7 +66,7 @@ func (_ Def) Usages(
 			"-h",
 			"-help",
 			"--help",
-		}, nil),
+		}),
 		p.End(func() {
 			printUsages()
 		}),

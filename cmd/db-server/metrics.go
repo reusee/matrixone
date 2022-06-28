@@ -34,18 +34,16 @@ func (_ Def) Metrics(
 
 	var logIntervalSeconds uint64
 	parsers = append(parsers, p.Seq(
-		p.MatchStr("-log-metrics-interval", nil),
-		p.Uint64(
-			&logIntervalSeconds,
-			p.End(func() {
-				if logIntervalSeconds == 0 {
-					return
-				}
-				on(evStart, func() {
-					go startMetricsLogging(logIntervalSeconds)
-				})
-			}),
-		),
+		p.MatchStr("-log-metrics-interval"),
+		p.Uint64(&logIntervalSeconds),
+		p.End(func() {
+			if logIntervalSeconds == 0 {
+				return
+			}
+			on(evStart, func() {
+				go startMetricsLogging(logIntervalSeconds)
+			})
+		}),
 	))
 	usages = append(usages, [2]string{`-log-metrics-interval`, `log metrics every specified seconds. 0 means disable logging`})
 

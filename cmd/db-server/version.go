@@ -26,7 +26,7 @@ func (_ Def) Version() (
 
 	var p Parser
 	parsers = append(parsers, p.Seq(
-		p.MatchStr("--version", nil),
+		p.MatchStr("--version"),
 		p.End(func() {
 			// if the argument passed in is "--version", return version info and exit
 			fmt.Println("MatrixOne build info:")
