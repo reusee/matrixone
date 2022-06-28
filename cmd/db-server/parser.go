@@ -38,19 +38,20 @@ func (p Parser) MatchStr(str string, cont Parser) Parser {
 	}
 }
 
-func (p Parser) Alt(parsers ...Parser) Parser {
-	if len(parsers) == 0 {
-		return nil
-	}
-	return func(i *string) (Parser, error) {
-		if i == nil && len(parsers) == 0 {
-			return nil, nil
-		}
+func (p Parser) Alt(ps ...Parser) Parser {
+	parsers := make([]Parser, len(ps))
+	copy(parsers, ps)
+	var ret Parser
+	ret = func(i *string) (Parser, error) {
 		if len(parsers) == 0 {
 			return nil, fmt.Errorf("no match")
 		}
 		if len(parsers) == 1 {
-			return parsers[0], nil
+			next := parsers[0]
+			if next != nil {
+				return next(i)
+			}
+			return nil, nil
 		}
 		for n := 0; n < len(parsers); {
 			parser, err := parsers[n](i)
@@ -62,8 +63,9 @@ func (p Parser) Alt(parsers ...Parser) Parser {
 			parsers[n] = parser
 			n++
 		}
-		return p.Alt(parsers...), nil
+		return ret, nil
 	}
+	return ret
 }
 
 func (p Parser) Repeat(repeating Parser, n int, cont Parser) Parser {

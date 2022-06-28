@@ -33,63 +33,54 @@ func (_ Def) Profiles(
 
 	// cpu
 	var cpuProfilePath string
-	parsers = append(parsers, p.MatchStr(
-		"-cpu-profile",
-		p.String(
-			&cpuProfilePath,
-			p.End(func() {
-				if cpuProfilePath == "" {
-					return
-				}
-				on(evStart, func() {
-					stop := startCPUProfile(cpuProfilePath)
-					on(evStop, func() {
-						stop()
-					})
+	parsers = append(parsers, p.Seq(
+		p.MatchStr("-cpu-profile", nil),
+		p.String(&cpuProfilePath, nil),
+		p.End(func() {
+			if cpuProfilePath == "" {
+				return
+			}
+			on(evStart, func() {
+				stop := startCPUProfile(cpuProfilePath)
+				on(evStop, func() {
+					stop()
 				})
-			}),
-		),
+			})
+		}),
 	))
 
 	// allocs
 	var allocsProfilePath string
-	parsers = append(parsers, p.MatchStr(
-		"-allocs-profile",
-		p.String(
-			&allocsProfilePath,
-			p.End(func() {
-				if allocsProfilePath != "" {
-					on(evStop, func() {
-						writeAllocsProfile(allocsProfilePath)
-					})
-				}
-			}),
-		),
+	parsers = append(parsers, p.Seq(
+		p.MatchStr("-allocs-profile", nil),
+		p.String(&allocsProfilePath, nil),
+		p.End(func() {
+			if allocsProfilePath != "" {
+				on(evStop, func() {
+					writeAllocsProfile(allocsProfilePath)
+				})
+			}
+		}),
 	))
 
 	// heap
 	var heapProfilePath string
 	heapProfileThreshold := uint64(8 * 1024 * 1024 * 1024)
-	parsers = append(parsers, p.MatchStr(
-		"-heap-profile",
-		p.String(
-			&heapProfilePath,
-			p.End(func() {
-				if heapProfilePath == "" {
-					return
-				}
-				on(evStart, func() {
-					go startHeapProfiler(heapProfilePath, heapProfileThreshold)
-				})
-			}),
-		),
+	parsers = append(parsers, p.Seq(
+		p.MatchStr("-heap-profile", nil),
+		p.String(&heapProfilePath, nil),
+		p.End(func() {
+			if heapProfilePath == "" {
+				return
+			}
+			on(evStart, func() {
+				go startHeapProfiler(heapProfilePath, heapProfileThreshold)
+			})
+		}),
 	))
-	parsers = append(parsers, p.MatchStr(
-		"-heap-profile-threshold",
-		p.Uint64(
-			&heapProfileThreshold,
-			nil,
-		),
+	parsers = append(parsers, p.Seq(
+		p.MatchStr("-heap-profile-threshold", nil),
+		p.Uint64(&heapProfileThreshold, nil),
 	))
 
 	return

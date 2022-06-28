@@ -24,16 +24,19 @@ func (_ Def) Version() (
 ) {
 
 	var p Parser
-	parsers = append(parsers, p.MatchStr("--version", p.End(func() {
-		// if the argument passed in is "--version", return version info and exit
-		fmt.Println("MatrixOne build info:")
-		fmt.Printf("  The golang version used to build this binary: %s\n", GoVersion)
-		fmt.Printf("  Git branch name: %s\n", BranchName)
-		fmt.Printf("  Last git commit ID: %s\n", LastCommitId)
-		fmt.Printf("  Buildtime: %s\n", BuildTime)
-		fmt.Printf("  Current Matrixone version: %s\n", MoVersion)
-		os.Exit(0)
-	})))
+	parsers = append(parsers, p.Seq(
+		p.MatchStr("--version", nil),
+		p.End(func() {
+			// if the argument passed in is "--version", return version info and exit
+			fmt.Println("MatrixOne build info:")
+			fmt.Printf("  The golang version used to build this binary: %s\n", GoVersion)
+			fmt.Printf("  Git branch name: %s\n", BranchName)
+			fmt.Printf("  Last git commit ID: %s\n", LastCommitId)
+			fmt.Printf("  Buildtime: %s\n", BuildTime)
+			fmt.Printf("  Current Matrixone version: %s\n", MoVersion)
+			os.Exit(0)
+		}),
+	))
 
 	return
 }

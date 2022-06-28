@@ -32,8 +32,8 @@ func (_ Def) Metrics(
 	var p Parser
 
 	var logIntervalSeconds uint64
-	parsers = append(parsers, p.MatchStr(
-		"-log-metrics-interval",
+	parsers = append(parsers, p.Seq(
+		p.MatchStr("-log-metrics-interval", nil),
 		p.Uint64(
 			&logIntervalSeconds,
 			p.End(func() {

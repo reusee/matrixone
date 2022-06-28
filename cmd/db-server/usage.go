@@ -14,34 +14,4 @@
 
 package main
 
-import (
-	"net/http"
-	_ "net/http/pprof"
-)
-
-func (_ Def) HTTP(
-	on On,
-) (
-	parsers ArgumentParsers,
-) {
-
-	var p Parser
-	var addr string
-	parsers = append(parsers, p.Seq(
-		p.MatchStr("-http", nil),
-		p.String(&addr, nil),
-		p.End(func() {
-			on(evStart, func() {
-				go startHTTPServer(addr)
-			})
-		}),
-	))
-
-	return
-}
-
-func startHTTPServer(addr string) {
-	if err := http.ListenAndServe(addr, nil); err != nil {
-		panic(err)
-	}
-}
+//TODO
