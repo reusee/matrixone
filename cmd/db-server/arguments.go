@@ -40,15 +40,24 @@ func (_ Def) HandleArguments(
 ) HandleArguments {
 	return func() {
 
+		var loop Parser
 		var p Parser
+		loop = func(i *string) (Parser, error) {
+			if p == nil {
+				p = p.Alt(parsers...)
+			}
+			var err error
+			p, err = p(i)
+			if err != nil {
+				return nil, err
+			}
+			if i == nil {
+				return p, nil
+			}
+			return loop, nil
+		}
 
-		p = p.Repeat(
-			p.Alt(parsers...),
-			-1,
-			nil,
-		)
-
-		if err := p.Run(arguments); err != nil {
+		if err := loop.Run(arguments); err != nil {
 			panic(err)
 		}
 

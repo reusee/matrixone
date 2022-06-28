@@ -68,29 +68,6 @@ func (p Parser) Alt(ps ...Parser) Parser {
 	return ret
 }
 
-func (p Parser) Repeat(repeating Parser, n int, cont Parser) Parser {
-	if n == 0 || repeating == nil {
-		return cont
-	}
-	parser := repeating
-	var ret Parser
-	ret = func(i *string) (Parser, error) {
-		if i == nil {
-			return cont, nil
-		}
-		var err error
-		parser, err = parser(i)
-		if err != nil {
-			return nil, err
-		}
-		if parser == nil {
-			return p.Repeat(repeating, n-1, cont), nil
-		}
-		return ret, nil
-	}
-	return ret
-}
-
 func (p Parser) Seq(parsers ...Parser) Parser {
 	if len(parsers) == 0 {
 		return nil
