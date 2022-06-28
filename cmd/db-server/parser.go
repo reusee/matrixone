@@ -38,6 +38,20 @@ func (p Parser) MatchStr(str string, cont Parser) Parser {
 	}
 }
 
+func (p Parser) MatchAnyStr(strs []string, cont Parser) Parser {
+	return func(i *string) (Parser, error) {
+		if i == nil {
+			return nil, fmt.Errorf("expecting any of %+v, got nothing", strs)
+		}
+		for _, str := range strs {
+			if *i == str {
+				return cont, nil
+			}
+		}
+		return nil, fmt.Errorf("expecting any of %+v, got %s", strs, *i)
+	}
+}
+
 func (p Parser) Alt(ps ...Parser) Parser {
 	parsers := make([]Parser, len(ps))
 	copy(parsers, ps)

@@ -32,19 +32,20 @@ func (_ Def) HelpUsage() Usages {
 
 func (_ Usages) IsReducer() {}
 
+type PrintUsages func()
+
 func (_ Def) Usages(
 	usages Usages,
 ) (
 	parsers ArgumentParsers,
+	printUsages PrintUsages,
 ) {
 
 	sort.Slice(usages, func(i, j int) bool {
 		return usages[i][0] < usages[j][0]
 	})
 
-	var p Parser
-
-	showUsages := p.End(func() {
+	printUsages = func() {
 		fmt.Printf("Usage of %s:\n", os.Args[0])
 		maxLen := 0
 		for _, pair := range usages {
@@ -56,19 +57,19 @@ func (_ Def) Usages(
 		for _, pair := range usages {
 			fmt.Printf(format, pair[0], pair[1])
 		}
-	})
+	}
+
+	var p Parser
 
 	parsers = append(parsers, p.Seq(
-		p.MatchStr("-h", nil),
-		showUsages,
-	))
-	parsers = append(parsers, p.Seq(
-		p.MatchStr("-help", nil),
-		showUsages,
-	))
-	parsers = append(parsers, p.Seq(
-		p.MatchStr("--help", nil),
-		showUsages,
+		p.MatchAnyStr([]string{
+			"-h",
+			"-help",
+			"--help",
+		}, nil),
+		p.End(func() {
+			printUsages()
+		}),
 	))
 
 	return
