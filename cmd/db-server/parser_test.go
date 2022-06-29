@@ -14,7 +14,9 @@
 
 package main
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestParser(t *testing.T) {
 
@@ -71,6 +73,37 @@ func TestParser(t *testing.T) {
 			t.Fatal(err)
 		}
 		if s != "foo" {
+			t.Fatal()
+		}
+	})
+
+	t.Run("AltElse", func(t *testing.T) {
+		var s string
+		var p Parser
+		parsers := []Parser{
+			p.Seq(
+				p.MatchStr("foo"),
+				p.String(&s),
+			),
+			p.Seq(
+				p.MatchStr("bar"),
+				p.String(&s),
+			),
+		}
+		if err := p.AltElse(parsers, nil).Run([]string{
+			"foo", "foo",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if s != "foo" {
+			t.Fatal()
+		}
+		if err := p.AltElse(parsers, nil).Run([]string{
+			"bar", "bar",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if s != "bar" {
 			t.Fatal()
 		}
 	})
