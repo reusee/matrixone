@@ -296,8 +296,10 @@ func main() {
 		emit(evStart)
 	})
 
-	flag.Parse()
-	args := flag.Args()
+	var positionalArguments PositionalArguments
+	scope.Assign(&positionalArguments)
+
+	args := *positionalArguments
 
 	if len(args) < 1 {
 		fmt.Printf("Usage: %s configFile\n", os.Args[0])

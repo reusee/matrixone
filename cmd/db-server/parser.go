@@ -61,9 +61,20 @@ func (p Parser) Alt(ps ...Parser) Parser {
 func (p Parser) AltElse(ps []Parser, elseParser Parser) Parser {
 	parsers := make([]Parser, len(ps))
 	copy(parsers, ps)
+	var inputs []string
 	var ret Parser
 	ret = func(i *string) (Parser, error) {
+		if i != nil {
+			inputs = append(inputs, *i)
+		}
 		if len(parsers) == 0 {
+			var err error
+			for _, input := range inputs {
+				elseParser, err = elseParser(&input)
+				if err != nil {
+					return nil, err
+				}
+			}
 			return elseParser, nil
 		}
 		if len(parsers) == 1 {

@@ -15,7 +15,9 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"strings"
 )
 
 type ArgumentParsers []Parser
@@ -32,22 +34,43 @@ func (_ Def) Arguments() Arguments {
 	return Arguments(os.Args[1:])
 }
 
+type PositionalArguments *[]string
+
+func (_ Def) PositionalArguments() PositionalArguments {
+	return &[]string{}
+}
+
 type HandleArguments func()
 
 func (_ Def) HandleArguments(
 	parsers ArgumentParsers,
 	arguments Arguments,
 	printUsages PrintUsages,
-) HandleArguments {
-	return func() {
+	posArgs PositionalArguments,
+) (
+	handle HandleArguments,
+) {
+
+	handle = func() {
 
 		var loop Parser
 		var p Parser
 		loop = func(i *string) (Parser, error) {
 			if p == nil {
-				p = p.AltElse(parsers, p.End(func() {
-					printUsages()
-				}))
+				p = p.AltElse(parsers, func(i *string) (Parser, error) {
+					if i != nil {
+						arg := *i
+						if strings.HasPrefix(arg, "-") {
+							// dash argument
+							fmt.Printf("unknown argument: %s\n", arg)
+							printUsages()
+						} else {
+							// positional argument
+							*posArgs = append(*posArgs, arg)
+						}
+					}
+					return nil, nil
+				})
 			}
 			var err error
 			p, err = p(i)
@@ -65,4 +88,6 @@ func (_ Def) HandleArguments(
 		}
 
 	}
+
+	return
 }
