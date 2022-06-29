@@ -83,7 +83,6 @@ func (_ Def) HandleArguments(
 				resetParser()
 			}
 			var err error
-			pt("input: %v\n", *input)
 			p, err = p(input)
 			if err != nil {
 				panic(err)
