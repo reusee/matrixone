@@ -53,49 +53,49 @@ func (_ Def) HandleArguments(
 
 	handle = func() {
 
-		var loop Parser
-		var argParser Parser
-		loop = func(i *string) (Parser, error) {
-
-			if argParser == nil {
-				// reset parser
-				fmt.Printf("reset parser\n")
-				argParser = argParser.AltElse(parsers, func(i *string) (Parser, error) {
-					if i == nil {
-						return nil, nil
-					}
-					fmt.Printf("got %v\n", *i)
-					arg := *i
-					if strings.HasPrefix(arg, "-") {
-						// dash argument
-						fmt.Printf("unknown argument: %s\n", arg)
-						printUsages()
-					} else {
-						// positional argument
-						fmt.Printf("pos arg %s\n", arg)
-						*posArgs = append(*posArgs, arg)
-					}
+		var p Parser
+		resetParser := func() {
+			p = p.AltElse(parsers, func(i *string) (Parser, error) {
+				if i == nil {
 					return nil, nil
-				})
-			}
+				}
+				arg := *i
+				if strings.HasPrefix(arg, "-") {
+					// dash argument
+					fmt.Printf("unknown argument: %s\n", arg)
+					printUsages()
+				} else {
+					// positional argument
+					*posArgs = append(*posArgs, arg)
+				}
+				return nil, nil
+			})
+		}
+		resetParser()
 
+		for {
+			if len(arguments) == 0 {
+				break
+			}
+			input := &arguments[0]
+			arguments = arguments[1:]
+			if p == nil {
+				resetParser()
+			}
 			var err error
-			argParser, err = argParser(i)
+			pt("input: %v\n", *input)
+			p, err = p(input)
 			if err != nil {
-				return nil, err
+				panic(err)
 			}
-
-			if i == nil {
-				fmt.Printf("arg parse end\n")
-				// no more args
-				return argParser, nil
-			}
-
-			return loop, nil
 		}
 
-		if err := loop.Run(arguments); err != nil {
-			panic(err)
+		for p != nil {
+			var err error
+			p, err = p(nil)
+			if err != nil {
+				panic(err)
+			}
 		}
 
 	}

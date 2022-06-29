@@ -78,11 +78,11 @@ func (p Parser) AltElse(ps []Parser, elseParser Parser) Parser {
 			n++
 		}
 		if len(parsers) == 0 {
-			var err error
 			for _, input := range inputs {
 				if elseParser == nil {
-					return nil, nil
+					break
 				}
+				var err error
 				elseParser, err = elseParser(&input)
 				if err != nil {
 					return nil, err

@@ -68,7 +68,6 @@ func (_ Def) Usages(
 			"--help",
 		}),
 		p.End(func() {
-			pt("print usages\n")
 			printUsages()
 		}),
 	))
