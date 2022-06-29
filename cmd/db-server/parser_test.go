@@ -23,8 +23,7 @@ func TestParser(t *testing.T) {
 	t.Run("MatchStr", func(t *testing.T) {
 		var ok bool
 		var p Parser
-		if err := p.Seq(
-			p.MatchStr("foo"),
+		if err := p.MatchStr("foo")(
 			p.End(func() {
 				ok = true
 			}),
@@ -39,13 +38,12 @@ func TestParser(t *testing.T) {
 	t.Run("MatchStr2", func(t *testing.T) {
 		var ok bool
 		var p Parser
-		if err := p.Seq(
-			p.MatchStr("foo"),
-			p.MatchStr("bar"),
-			p.End(func() {
-				ok = true
-			}),
-		).Run([]string{"foo", "bar"}); err != nil {
+		if err := p.MatchStr("foo")(
+			p.MatchStr("bar")(
+				p.End(func() {
+					ok = true
+				}),
+			)).Run([]string{"foo", "bar"}); err != nil {
 			t.Fatal(err)
 		}
 		if !ok {
@@ -57,14 +55,12 @@ func TestParser(t *testing.T) {
 		var s string
 		var p Parser
 		if err := p.Alt(
-			p.Seq(
-				p.MatchStr("1"),
+			p.MatchStr("1")(
 				p.End(func() {
 					s = "1"
 				}),
 			),
-			p.Seq(
-				p.MatchStr("foo"),
+			p.MatchStr("foo")(
 				p.End(func() {
 					s = "foo"
 				}),
@@ -81,13 +77,11 @@ func TestParser(t *testing.T) {
 		var s string
 		var p Parser
 		parsers := []Parser{
-			p.Seq(
-				p.MatchStr("foo"),
-				p.String(&s),
+			p.MatchStr("foo")(
+				p.String(&s)(nil),
 			),
-			p.Seq(
-				p.MatchStr("bar"),
-				p.String(&s),
+			p.MatchStr("bar")(
+				p.String(&s)(nil),
 			),
 		}
 		if err := p.AltElse(parsers, nil).Run([]string{
@@ -112,18 +106,16 @@ func TestParser(t *testing.T) {
 		var s string
 		var p Parser
 		parsers := []Parser{
-			p.Seq(
-				p.MatchStr("foo"),
-				p.String(&s),
+			p.MatchStr("foo")(
+				p.String(&s)(nil),
 			),
-			p.Seq(
-				p.MatchStr("bar"),
-				p.String(&s),
+			p.MatchStr("bar")(
+				p.String(&s)(nil),
 			),
 		}
-		if err := p.AltElse(parsers, func(i *string) (Parser, error) {
+		if err := p.AltElse(parsers, func(inputs []string) error {
 			s = "ok"
-			return nil, nil
+			return nil
 		}).Run([]string{
 			"baz", "baz",
 		}); err != nil {
@@ -132,9 +124,9 @@ func TestParser(t *testing.T) {
 		if s != "ok" {
 			t.Fatal()
 		}
-		if err := p.AltElse(parsers, func(i *string) (Parser, error) {
+		if err := p.AltElse(parsers, func(inputs []string) error {
 			s = "yes"
-			return nil, nil
+			return nil
 		}).Run([]string{
 			"baz", "baz",
 		}); err != nil {
@@ -148,11 +140,10 @@ func TestParser(t *testing.T) {
 	t.Run("Seq", func(t *testing.T) {
 		var p Parser
 		var a, b, c string
-		if err := p.Seq(
-			p.String(&a),
-			p.String(&b),
-			p.String(&c),
-		).Run([]string{"a", "b", "c"}); err != nil {
+		if err := p.String(&a)(
+			p.String(&b)(
+				p.String(&c)(nil),
+			)).Run([]string{"a", "b", "c"}); err != nil {
 			t.Fatal(err)
 		}
 		if a != "a" {

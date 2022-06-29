@@ -22,49 +22,53 @@ import (
 type Parser func(
 	input *string,
 ) (
-	cont Parser,
+	next Parser,
 	err error,
 )
 
-func (p Parser) MatchStr(str string) Parser {
-	return func(i *string) (Parser, error) {
-		if i == nil {
-			return nil, fmt.Errorf("expecting %s, got nothing", str)
+func (p Parser) MatchStr(str string) func(Parser) Parser {
+	return func(cont Parser) Parser {
+		return func(i *string) (Parser, error) {
+			if i == nil {
+				return nil, fmt.Errorf("expecting %s, got nothing", str)
+			}
+			if *i != str {
+				return nil, fmt.Errorf("expecting %s, got %s", str, *i)
+			}
+			return cont, nil
 		}
-		if *i != str {
-			return nil, fmt.Errorf("expecting %s, got %s", str, *i)
-		}
-		return nil, nil
 	}
 }
 
-func (p Parser) MatchAnyStr(strs []string) Parser {
-	return func(i *string) (Parser, error) {
-		if i == nil {
-			return nil, fmt.Errorf("expecting any of %+v, got nothing", strs)
-		}
-		for _, str := range strs {
-			if *i == str {
-				return nil, nil
+func (p Parser) MatchAnyStr(strs []string) func(Parser) Parser {
+	return func(cont Parser) Parser {
+		return func(i *string) (Parser, error) {
+			if i == nil {
+				return nil, fmt.Errorf("expecting any of %+v, got nothing", strs)
 			}
+			for _, str := range strs {
+				if *i == str {
+					return cont, nil
+				}
+			}
+			return nil, fmt.Errorf("expecting any of %+v, got %s", strs, *i)
 		}
-		return nil, fmt.Errorf("expecting any of %+v, got %s", strs, *i)
 	}
 }
 
 func (p Parser) Alt(ps ...Parser) Parser {
-	return p.AltElse(ps, func(_ *string) (Parser, error) {
-		return nil, fmt.Errorf("no match")
+	return p.AltElse(ps, func(_ []string) error {
+		return fmt.Errorf("no match")
 	})
 }
 
-func (p Parser) AltElse(ps []Parser, elseParser Parser) Parser {
+func (p Parser) AltElse(ps []Parser, elseFunc func([]string) error) Parser {
 	parsers := make([]Parser, len(ps))
 	copy(parsers, ps)
 	var inputs []string
 	var ret Parser
 	ret = func(i *string) (Parser, error) {
-		if i != nil && elseParser != nil {
+		if i != nil && elseFunc != nil {
 			inputs = append(inputs, *i)
 		}
 		for n := 0; n < len(parsers); {
@@ -78,17 +82,13 @@ func (p Parser) AltElse(ps []Parser, elseParser Parser) Parser {
 			n++
 		}
 		if len(parsers) == 0 {
-			for _, input := range inputs {
-				if elseParser == nil {
-					break
-				}
-				var err error
-				elseParser, err = elseParser(&input)
-				if err != nil {
+			// no match
+			if elseFunc != nil {
+				if err := elseFunc(inputs); err != nil {
 					return nil, err
 				}
 			}
-			return elseParser, nil
+			return nil, nil
 		}
 		if len(parsers) == 1 {
 			next := parsers[0]
@@ -102,31 +102,6 @@ func (p Parser) AltElse(ps []Parser, elseParser Parser) Parser {
 	return ret
 }
 
-func (p Parser) Seq(parsers ...Parser) Parser {
-	if len(parsers) == 0 {
-		return nil
-	}
-	parser := parsers[0]
-	parsers = parsers[1:]
-	var ret Parser
-	ret = func(i *string) (Parser, error) {
-		if parser == nil {
-			next := p.Seq(parsers...)
-			if next != nil {
-				return next(i)
-			}
-			return nil, nil
-		}
-		var err error
-		parser, err = parser(i)
-		if err != nil {
-			return nil, err
-		}
-		return ret, nil
-	}
-	return ret
-}
-
 func (p Parser) End(fn func()) Parser {
 	return func(i *string) (Parser, error) {
 		fn()
@@ -134,34 +109,40 @@ func (p Parser) End(fn func()) Parser {
 	}
 }
 
-func (p Parser) Tap(fn func(string) error) Parser {
-	return func(i *string) (Parser, error) {
-		if i == nil {
-			return nil, fmt.Errorf("expecting input")
+func (p Parser) Tap(fn func(string) error) func(Parser) Parser {
+	return func(cont Parser) Parser {
+		return func(i *string) (Parser, error) {
+			if i == nil {
+				return nil, fmt.Errorf("expecting input")
+			}
+			if err := fn(*i); err != nil {
+				return nil, err
+			}
+			return cont, nil
 		}
-		if err := fn(*i); err != nil {
-			return nil, err
-		}
-		return nil, nil
 	}
 }
 
-func (p Parser) String(ptr *string) Parser {
-	return p.Tap(func(str string) error {
-		*ptr = str
-		return nil
-	})
+func (p Parser) String(ptr *string) func(Parser) Parser {
+	return func(cont Parser) Parser {
+		return p.Tap(func(str string) error {
+			*ptr = str
+			return nil
+		})(cont)
+	}
 }
 
-func (p Parser) Uint64(ptr *uint64) Parser {
-	return p.Tap(func(str string) error {
-		num, err := strconv.ParseUint(str, 10, 64)
-		if err != nil {
-			return err
-		}
-		*ptr = num
-		return nil
-	})
+func (p Parser) Uint64(ptr *uint64) func(Parser) Parser {
+	return func(cont Parser) Parser {
+		return p.Tap(func(str string) error {
+			num, err := strconv.ParseUint(str, 10, 64)
+			if err != nil {
+				return err
+			}
+			*ptr = num
+			return nil
+		})(cont)
+	}
 }
 
 func (p Parser) Run(args []string) error {

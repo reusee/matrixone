@@ -34,58 +34,50 @@ func (_ Def) Profiles(
 
 	// cpu
 	var cpuProfilePath string
-	parsers = append(parsers, p.Seq(
-		p.MatchStr("-cpu-profile"),
-		p.String(&cpuProfilePath),
-		p.End(func() {
-			if cpuProfilePath == "" {
-				return
-			}
-			on(evInit, func() {
-				stop := startCPUProfile(cpuProfilePath)
-				on(evExit, func() {
-					stop()
+	parsers = append(parsers, p.MatchStr("-cpu-profile")(
+		p.String(&cpuProfilePath)(
+			p.End(func() {
+				if cpuProfilePath == "" {
+					return
+				}
+				on(evInit, func() {
+					stop := startCPUProfile(cpuProfilePath)
+					on(evExit, func() {
+						stop()
+					})
 				})
-			})
-		}),
-	))
+			}))))
 	usages = append(usages, [2]string{`-cpu-profile`, `write cpu profile to the specified file`})
 
 	// allocs
 	var allocsProfilePath string
-	parsers = append(parsers, p.Seq(
-		p.MatchStr("-allocs-profile"),
-		p.String(&allocsProfilePath),
-		p.End(func() {
-			if allocsProfilePath != "" {
-				on(evExit, func() {
-					writeAllocsProfile(allocsProfilePath)
-				})
-			}
-		}),
-	))
+	parsers = append(parsers, p.MatchStr("-allocs-profile")(
+		p.String(&allocsProfilePath)(
+			p.End(func() {
+				if allocsProfilePath != "" {
+					on(evExit, func() {
+						writeAllocsProfile(allocsProfilePath)
+					})
+				}
+			}))))
 	usages = append(usages, [2]string{`-allocs-profile`, `write allocs profile to the specified file`})
 
 	// heap
 	var heapProfilePath string
 	heapProfileThreshold := uint64(8 * 1024 * 1024 * 1024)
-	parsers = append(parsers, p.Seq(
-		p.MatchStr("-heap-profile"),
-		p.String(&heapProfilePath),
-		p.End(func() {
-			if heapProfilePath == "" {
-				return
-			}
-			on(evInit, func() {
-				go startHeapProfiler(heapProfilePath, heapProfileThreshold)
-			})
-		}),
-	))
+	parsers = append(parsers, p.MatchStr("-heap-profile")(
+		p.String(&heapProfilePath)(
+			p.End(func() {
+				if heapProfilePath == "" {
+					return
+				}
+				on(evInit, func() {
+					go startHeapProfiler(heapProfilePath, heapProfileThreshold)
+				})
+			}))))
 	usages = append(usages, [2]string{`-heap-profile`, `write heap profile to the specified file`})
-	parsers = append(parsers, p.Seq(
-		p.MatchStr("-heap-profile-threshold"),
-		p.Uint64(&heapProfileThreshold),
-	))
+	parsers = append(parsers, p.MatchStr("-heap-profile-threshold")(
+		p.Uint64(&heapProfileThreshold)(nil)))
 	usages = append(usages, [2]string{`-heap-profile-threshold`, `take a heap profile if mapped memory changes exceed the specified threshold bytes`})
 
 	return

@@ -55,11 +55,11 @@ func (_ Def) HandleArguments(
 
 		var p Parser
 		resetParser := func() {
-			p = p.AltElse(parsers, func(i *string) (Parser, error) {
-				if i == nil {
-					return nil, nil
+			p = p.AltElse(parsers, func(args []string) error {
+				if len(args) > 1 {
+					fmt.Printf("unknown arguments: %+v\n", args)
 				}
-				arg := *i
+				arg := args[0]
 				if strings.HasPrefix(arg, "-") {
 					// dash argument
 					fmt.Printf("unknown argument: %s\n", arg)
@@ -68,7 +68,7 @@ func (_ Def) HandleArguments(
 					// positional argument
 					*posArgs = append(*posArgs, arg)
 				}
-				return nil, nil
+				return nil
 			})
 		}
 		resetParser()

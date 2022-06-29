@@ -23,18 +23,14 @@ func TestHandleArguments(t *testing.T) {
 		func() ArgumentParsers {
 			var p Parser
 			return ArgumentParsers{
-				p.Seq(
-					p.MatchStr("foo"),
+				p.MatchStr("foo")(
 					p.End(func() {
 						res = append(res, "foo")
-					}),
-				),
-				p.Seq(
-					p.MatchStr("bar"),
+					})),
+				p.MatchStr("bar")(
 					p.End(func() {
 						res = append(res, "bar")
-					}),
-				),
+					})),
 			}
 		},
 

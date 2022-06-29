@@ -28,15 +28,13 @@ func (_ Def) HTTP(
 
 	var p Parser
 	var addr string
-	parsers = append(parsers, p.Seq(
-		p.MatchStr("-http"),
-		p.String(&addr),
-		p.End(func() {
-			on(evInit, func() {
-				go startHTTPServer(addr)
-			})
-		}),
-	))
+	parsers = append(parsers, p.MatchStr("-http")(
+		p.String(&addr)(
+			p.End(func() {
+				on(evInit, func() {
+					go startHTTPServer(addr)
+				})
+			}))))
 	usages = append(usages, [2]string{`-http`, `start http server at specified address`})
 
 	return
