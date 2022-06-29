@@ -40,7 +40,7 @@ func (_ Def) Metrics(
 			if logIntervalSeconds == 0 {
 				return
 			}
-			on(evStart, func() {
+			on(evInit, func() {
 				go startMetricsLogging(logIntervalSeconds)
 			})
 		}),

@@ -282,23 +282,20 @@ func closeTae(tae *taeHandler) {
 func main() {
 
 	scope := NewScope()
-	scope.Call(func(
-		handleArgs HandleArguments,
-		emit Emit,
-	) {
+	var handleArgs HandleArguments
+	var emit Emit
+	scope.Assign(&handleArgs, &emit)
 
-		defer func() {
-			emit(evStop)
-		}()
+	defer func() {
+		emit(evExit)
+	}()
 
-		handleArgs()
+	handleArgs()
 
-		emit(evStart)
-	})
+	emit(evInit)
 
 	var positionalArguments PositionalArguments
 	scope.Assign(&positionalArguments)
-
 	args := *positionalArguments
 
 	if len(args) < 1 {

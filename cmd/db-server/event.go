@@ -17,8 +17,8 @@ package main
 import "sync"
 
 const (
-	evStart = "start"
-	evStop  = "stop"
+	evInit = "init"
+	evExit = "exit"
 )
 
 type On func(ev string, fn func())

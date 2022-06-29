@@ -32,7 +32,7 @@ func (_ Def) HTTP(
 		p.MatchStr("-http"),
 		p.String(&addr),
 		p.End(func() {
-			on(evStart, func() {
+			on(evInit, func() {
 				go startHTTPServer(addr)
 			})
 		}),

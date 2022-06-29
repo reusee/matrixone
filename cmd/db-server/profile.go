@@ -41,9 +41,9 @@ func (_ Def) Profiles(
 			if cpuProfilePath == "" {
 				return
 			}
-			on(evStart, func() {
+			on(evInit, func() {
 				stop := startCPUProfile(cpuProfilePath)
-				on(evStop, func() {
+				on(evExit, func() {
 					stop()
 				})
 			})
@@ -58,7 +58,7 @@ func (_ Def) Profiles(
 		p.String(&allocsProfilePath),
 		p.End(func() {
 			if allocsProfilePath != "" {
-				on(evStop, func() {
+				on(evExit, func() {
 					writeAllocsProfile(allocsProfilePath)
 				})
 			}
@@ -76,7 +76,7 @@ func (_ Def) Profiles(
 			if heapProfilePath == "" {
 				return
 			}
-			on(evStart, func() {
+			on(evInit, func() {
 				go startHeapProfiler(heapProfilePath, heapProfileThreshold)
 			})
 		}),
