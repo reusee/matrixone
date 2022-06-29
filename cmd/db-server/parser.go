@@ -67,6 +67,16 @@ func (p Parser) AltElse(ps []Parser, elseParser Parser) Parser {
 		if i != nil && elseParser != nil {
 			inputs = append(inputs, *i)
 		}
+		for n := 0; n < len(parsers); {
+			parser, err := parsers[n](i)
+			if err != nil || parser == nil {
+				parsers[n] = parsers[len(parsers)-1]
+				parsers = parsers[:len(parsers)-1]
+				continue
+			}
+			parsers[n] = parser
+			n++
+		}
 		if len(parsers) == 0 {
 			var err error
 			for _, input := range inputs {
@@ -86,16 +96,6 @@ func (p Parser) AltElse(ps []Parser, elseParser Parser) Parser {
 				return next(i)
 			}
 			return nil, nil
-		}
-		for n := 0; n < len(parsers); {
-			parser, err := parsers[n](i)
-			if err != nil || parser == nil {
-				parsers[n] = parsers[len(parsers)-1]
-				parsers = parsers[:len(parsers)-1]
-				continue
-			}
-			parsers[n] = parser
-			n++
 		}
 		return ret, nil
 	}
@@ -165,19 +165,17 @@ func (p Parser) Uint64(ptr *uint64) Parser {
 }
 
 func (p Parser) Run(args []string) error {
-	for _, input := range args {
+	for {
+		var input *string
+		if len(args) > 0 {
+			input = &args[0]
+			args = args[1:]
+		}
 		if p == nil {
 			break
 		}
 		var err error
-		p, err = p(&input)
-		if err != nil {
-			return err
-		}
-	}
-	for p != nil {
-		var err error
-		p, err = p(nil)
+		p, err = p(input)
 		if err != nil {
 			return err
 		}

@@ -54,32 +54,43 @@ func (_ Def) HandleArguments(
 	handle = func() {
 
 		var loop Parser
-		var p Parser
+		var argParser Parser
 		loop = func(i *string) (Parser, error) {
-			if p == nil {
-				p = p.AltElse(parsers, func(i *string) (Parser, error) {
-					if i != nil {
-						arg := *i
-						if strings.HasPrefix(arg, "-") {
-							// dash argument
-							fmt.Printf("unknown argument: %s\n", arg)
-							printUsages()
-						} else {
-							// positional argument
-							*posArgs = append(*posArgs, arg)
-						}
+
+			if argParser == nil {
+				// reset parser
+				fmt.Printf("reset parser\n")
+				argParser = argParser.AltElse(parsers, func(i *string) (Parser, error) {
+					if i == nil {
+						return nil, nil
+					}
+					fmt.Printf("got %v\n", *i)
+					arg := *i
+					if strings.HasPrefix(arg, "-") {
+						// dash argument
+						fmt.Printf("unknown argument: %s\n", arg)
+						printUsages()
+					} else {
+						// positional argument
+						fmt.Printf("pos arg %s\n", arg)
+						*posArgs = append(*posArgs, arg)
 					}
 					return nil, nil
 				})
 			}
+
 			var err error
-			p, err = p(i)
+			argParser, err = argParser(i)
 			if err != nil {
 				return nil, err
 			}
+
 			if i == nil {
-				return p, nil
+				fmt.Printf("arg parse end\n")
+				// no more args
+				return argParser, nil
 			}
+
 			return loop, nil
 		}
 
