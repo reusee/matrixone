@@ -64,12 +64,15 @@ func (p Parser) AltElse(ps []Parser, elseParser Parser) Parser {
 	var inputs []string
 	var ret Parser
 	ret = func(i *string) (Parser, error) {
-		if i != nil {
+		if i != nil && elseParser != nil {
 			inputs = append(inputs, *i)
 		}
 		if len(parsers) == 0 {
 			var err error
 			for _, input := range inputs {
+				if elseParser == nil {
+					return nil, nil
+				}
 				elseParser, err = elseParser(&input)
 				if err != nil {
 					return nil, err
