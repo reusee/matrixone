@@ -19,14 +19,6 @@ import (
 	"os"
 )
 
-var (
-	GoVersion    = ""
-	BranchName   = ""
-	LastCommitId = ""
-	BuildTime    = ""
-	MoVersion    = ""
-)
-
 func (_ Def) Version(
 	on On,
 ) (

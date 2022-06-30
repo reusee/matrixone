@@ -14,32 +14,26 @@
 
 package main
 
-import (
-	"sync"
-
-	"github.com/reusee/dscope"
-)
+import "sync"
 
 const (
 	evInit = "init"
 	evExit = "exit"
 )
 
-type On func(ev string, fn any)
+type On func(ev string, fn func())
 
 type Emit func(ev string)
 
-func (_ Def) Event(
-	scope dscope.Scope,
-) (
+func (_ Def) Event() (
 	on On,
 	emit Emit,
 ) {
 
 	var l sync.Mutex
-	events := make(map[string][]any)
+	events := make(map[string][]func())
 
-	on = func(ev string, fn any) {
+	on = func(ev string, fn func()) {
 		l.Lock()
 		defer l.Unlock()
 		events[ev] = append(events[ev], fn)
@@ -50,7 +44,7 @@ func (_ Def) Event(
 		evs := events[ev]
 		l.Unlock()
 		for _, fn := range evs {
-			scope.Call(fn)
+			fn()
 		}
 	}
 
