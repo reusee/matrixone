@@ -24,9 +24,7 @@ type Usages [][2]string
 
 func (_ Def) HelpUsage() Usages {
 	return Usages{
-		{"-h", "this message"},
-		{"-help", "this message"},
-		{"--help", "this message"},
+		{"-h / -help / --help", "this message"},
 	}
 }
 
@@ -53,7 +51,7 @@ func (_ Def) Usages(
 				maxLen = l
 			}
 		}
-		format := fmt.Sprintf("%%%ds: %%s\n", maxLen)
+		format := fmt.Sprintf("  %%%ds: %%s\n", maxLen)
 		for _, pair := range usages {
 			fmt.Printf(format, pair[0], pair[1])
 		}
@@ -61,11 +59,7 @@ func (_ Def) Usages(
 
 	var p Parser
 
-	parsers = append(parsers, p.MatchAnyStr([]string{
-		"-h",
-		"-help",
-		"--help",
-	})(
+	parsers = append(parsers, p.MatchAnyStr([]string{"-h", "-help", "--help"})(
 		p.End(func() {
 			printUsages()
 		})))

@@ -27,7 +27,7 @@ func (_ Def) Version(
 ) {
 
 	var p Parser
-	parsers = append(parsers, p.MatchStr("--version")(
+	parsers = append(parsers, p.MatchAnyStr([]string{"--version", "-v"})(
 		p.End(func() {
 			on(evInit, func() {
 				// if the argument passed in is "--version", return version info and exit
@@ -41,7 +41,7 @@ func (_ Def) Version(
 			})
 		})))
 
-	usages = append(usages, [2]string{`--version`, `show version info`})
+	usages = append(usages, [2]string{`-v / --version`, `show version info`})
 
 	return
 }

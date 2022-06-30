@@ -64,6 +64,7 @@ func (_ Def) HandleArguments(
 					// dash argument
 					fmt.Printf("unknown argument: %s\n", arg)
 					printUsages()
+					os.Exit(-1)
 				} else {
 					// positional argument
 					*posArgs = append(*posArgs, arg)
