@@ -15,12 +15,21 @@
 package main
 
 func main() {
-
 	NewScope().Call(func(
-		handleArgs HandleArguments,
-		emit Emit,
-		start StartServer,
+		main Main,
 	) {
+		main()
+	})
+}
+
+type Main func()
+
+func (_ Def) Main(
+	handleArgs HandleArguments,
+	emit Emit,
+	start StartServer,
+) Main {
+	return func() {
 
 		defer func() {
 			// run exit functions
@@ -36,5 +45,5 @@ func main() {
 		// start server
 		start()
 
-	})
+	}
 }
