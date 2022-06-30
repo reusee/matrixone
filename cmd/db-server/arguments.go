@@ -58,6 +58,9 @@ func (_ Def) HandleArguments(
 			p = p.AltElse(parsers, func(args []string) error {
 				if len(args) > 1 {
 					fmt.Printf("unknown arguments: %+v\n", args)
+				} else if len(args) == 0 {
+					printUsages()
+					os.Exit(-1)
 				}
 				arg := args[0]
 				if strings.HasPrefix(arg, "-") {
