@@ -14,45 +14,22 @@
 
 package main
 
-import (
-	"sync"
-
-	"github.com/reusee/dscope"
-)
-
 const (
-	evInit = "init"
-	evExit = "exit"
+	InitialValuesExit       = 1
+	LoadConfigExit          = 2
+	RecreateDirExit         = 3
+	DecodeAoeConfigExit     = 4
+	CreateAoeExit           = 5
+	DecodeCubeConfigExit    = 6
+	DecodeClusterConfigExit = 7
+	CreateCubeExit          = 8
+	StartCubeExit           = 9
+	CreateRPCExit           = 10
+	WaitCubeStartExit       = 11
+	StartMOExit             = 12
+	CreateTpeExit           = 13
+	RunRPCExit              = 14
+	ShutdownExit            = 15
+	CreateTaeExit           = 16
+	InitCatalogExit         = 17
 )
-
-type On func(ev string, fn any)
-
-type Emit func(ev string)
-
-func (_ Def) Event(
-	scope dscope.Scope,
-) (
-	on On,
-	emit Emit,
-) {
-
-	var l sync.Mutex
-	events := make(map[string][]any)
-
-	on = func(ev string, fn any) {
-		l.Lock()
-		defer l.Unlock()
-		events[ev] = append(events[ev], fn)
-	}
-
-	emit = func(ev string) {
-		l.Lock()
-		evs := events[ev]
-		l.Unlock()
-		for _, fn := range evs {
-			scope.Call(fn)
-		}
-	}
-
-	return
-}

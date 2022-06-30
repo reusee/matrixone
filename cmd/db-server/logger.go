@@ -14,45 +14,18 @@
 
 package main
 
-import (
-	"sync"
+import "github.com/matrixorigin/matrixone/pkg/logutil"
 
-	"github.com/reusee/dscope"
-)
+type LoggerOK bool
 
-const (
-	evInit = "init"
-	evExit = "exit"
-)
-
-type On func(ev string, fn any)
-
-type Emit func(ev string)
-
-func (_ Def) Event(
-	scope dscope.Scope,
+func (_ Def) Logger(
+	configFilePath ConfigFilePath,
 ) (
-	on On,
-	emit Emit,
+	ok LoggerOK,
 ) {
 
-	var l sync.Mutex
-	events := make(map[string][]any)
+	logutil.SetupMOLogger(string(configFilePath))
 
-	on = func(ev string, fn any) {
-		l.Lock()
-		defer l.Unlock()
-		events[ev] = append(events[ev], fn)
-	}
-
-	emit = func(ev string) {
-		l.Lock()
-		evs := events[ev]
-		l.Unlock()
-		for _, fn := range evs {
-			scope.Call(fn)
-		}
-	}
-
+	ok = true
 	return
 }

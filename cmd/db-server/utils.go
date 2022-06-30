@@ -14,8 +14,19 @@
 
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+	"syscall"
+)
 
 var (
 	pt = fmt.Printf
 )
+
+func recreateDir(dir string) (err error) {
+	mask := syscall.Umask(0)
+	defer syscall.Umask(mask)
+	err = os.MkdirAll(dir, os.FileMode(0755))
+	return err
+}
