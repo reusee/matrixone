@@ -17,8 +17,10 @@ package main
 import (
 	"fmt"
 	"math"
+	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	ie "github.com/matrixorigin/matrixone/pkg/util/internalExecutor"
@@ -91,7 +93,10 @@ func (_ Def) StartServer(
 			os.Exit(InitialValuesExit)
 		}
 
-		if err := config.LoadvarsConfigFromFile(configFilePath, &config.GlobalSystemVariables); err != nil {
+		if err := config.LoadvarsConfigFromFile(
+			configFilePath,
+			&config.GlobalSystemVariables,
+		); err != nil {
 			logutil.Infof("Load config error:%v\n", err)
 			os.Exit(LoadConfigExit)
 		}
@@ -112,12 +117,21 @@ func (_ Def) StartServer(
 
 		logutil.Infof("Shutdown The Server With Ctrl+C | Ctrl+\\.")
 
-		config.HostMmu = host.New(config.GlobalSystemVariables.GetHostMmuLimitation())
+		config.HostMmu = host.New(
+			config.GlobalSystemVariables.GetHostMmuLimitation(),
+		)
 
 		Host := config.GlobalSystemVariables.GetHost()
 		NodeId := config.GlobalSystemVariables.GetNodeID()
 
-		ppu := frontend.NewPDCallbackParameterUnit(int(config.GlobalSystemVariables.GetPeriodOfEpochTimer()), int(config.GlobalSystemVariables.GetPeriodOfPersistence()), int(config.GlobalSystemVariables.GetPeriodOfDDLDeleteTimer()), int(config.GlobalSystemVariables.GetTimeoutOfHeartbeat()), config.GlobalSystemVariables.GetEnableEpochLogging(), math.MaxInt64)
+		ppu := frontend.NewPDCallbackParameterUnit(
+			int(config.GlobalSystemVariables.GetPeriodOfEpochTimer()),
+			int(config.GlobalSystemVariables.GetPeriodOfPersistence()),
+			int(config.GlobalSystemVariables.GetPeriodOfDDLDeleteTimer()),
+			int(config.GlobalSystemVariables.GetTimeoutOfHeartbeat()),
+			config.GlobalSystemVariables.GetEnableEpochLogging(),
+			math.MaxInt64,
+		)
 
 		pci = frontend.NewPDCallbackImpl(ppu)
 		pci.Id = int(NodeId)
@@ -143,7 +157,11 @@ func (_ Def) StartServer(
 			os.Exit(LoadConfigExit)
 		}
 
-		srv, err := rpcserver.New(fmt.Sprintf("%s:%d", Host, port+100), 1<<30, logutil.GetGlobalLogger())
+		srv, err := rpcserver.New(
+			net.JoinHostPort(Host, strconv.FormatInt(port+100, 10)),
+			1<<30,
+			logutil.GetGlobalLogger(),
+		)
 		if err != nil {
 			logutil.Infof("Create rpcserver failed, %v", err)
 			os.Exit(CreateRPCExit)
@@ -183,14 +201,24 @@ func (_ Def) StartServer(
 		if engineName == "tae" {
 			closeTae(tae)
 		}
-	}
 
+	}
 	return
 }
 
 func createMOServer(callback *frontend.PDCallbackImpl) {
-	address := fmt.Sprintf("%s:%d", config.GlobalSystemVariables.GetHost(), config.GlobalSystemVariables.GetPort())
-	pu := config.NewParameterUnit(&config.GlobalSystemVariables, config.HostMmu, config.Mempool, config.StorageEngine, config.ClusterNodes, config.ClusterCatalog)
+	address := net.JoinHostPort(
+		config.GlobalSystemVariables.GetHost(),
+		strconv.FormatInt(config.GlobalSystemVariables.GetPort(), 10),
+	)
+	pu := config.NewParameterUnit(
+		&config.GlobalSystemVariables,
+		config.HostMmu,
+		config.Mempool,
+		config.StorageEngine,
+		config.ClusterNodes,
+		config.ClusterCatalog,
+	)
 	mo = frontend.NewMOServer(address, pu, callback)
 	ieFactory := func() ie.InternalExecutor {
 		return frontend.NewIternalExecutor(pu, callback)
