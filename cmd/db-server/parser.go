@@ -40,7 +40,7 @@ func (p Parser) MatchStr(str string) func(Parser) Parser {
 	}
 }
 
-func (p Parser) MatchAnyStr(strs []string) func(Parser) Parser {
+func (p Parser) MatchAnyStr(strs ...string) func(Parser) Parser {
 	return func(cont Parser) Parser {
 		return func(i *string) (Parser, error) {
 			if i == nil {

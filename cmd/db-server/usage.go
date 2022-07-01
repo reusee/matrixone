@@ -59,7 +59,7 @@ func (_ Def) Usages(
 
 	var p Parser
 
-	parsers = append(parsers, p.MatchAnyStr([]string{"-h", "-help", "--help"})(
+	parsers = append(parsers, p.MatchAnyStr("-h", "-help", "--help")(
 		p.End(func() {
 			printUsages()
 		})))
