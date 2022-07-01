@@ -47,7 +47,7 @@ func (_ Def) Profiles(
 					})
 				})
 			}))))
-	usages = append(usages, [2]string{`-cpu-profile`, `write cpu profile to the specified file`})
+	usages = append(usages, [2]string{`-cpu-profile file_path`, `write cpu profile to the specified file`})
 
 	// allocs
 	var allocsProfilePath string
@@ -60,7 +60,7 @@ func (_ Def) Profiles(
 					})
 				}
 			}))))
-	usages = append(usages, [2]string{`-allocs-profile`, `write allocs profile to the specified file`})
+	usages = append(usages, [2]string{`-allocs-profile file_path`, `write allocs profile to the specified file`})
 
 	// heap
 	var heapProfilePath string
@@ -75,10 +75,10 @@ func (_ Def) Profiles(
 					go startHeapProfiler(heapProfilePath, heapProfileThreshold)
 				})
 			}))))
-	usages = append(usages, [2]string{`-heap-profile`, `write heap profile to the specified file`})
+	usages = append(usages, [2]string{`-heap-profile file_path`, `write heap profile to the specified file`})
 	parsers = append(parsers, p.MatchStr("-heap-profile-threshold")(
 		p.Uint64(&heapProfileThreshold)(nil)))
-	usages = append(usages, [2]string{`-heap-profile-threshold`, `take a heap profile if mapped memory changes exceed the specified threshold bytes`})
+	usages = append(usages, [2]string{`-heap-profile-threshold bytes`, `take a heap profile if mapped memory changes exceed the specified threshold bytes`})
 
 	return
 }

@@ -57,7 +57,7 @@ func (_ Def) Usages(
 	})
 
 	printUsages = func() {
-		fmt.Printf("Usage of %s:\n", os.Args[0])
+		fmt.Printf("usage: %s config_file_path\n", os.Args[0])
 		maxLen := 0
 		for _, pair := range usages {
 			if l := len(pair[0]); l > maxLen {

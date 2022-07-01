@@ -43,7 +43,7 @@ func (_ Def) Metrics(
 					go startMetricsLogging(logIntervalSeconds)
 				})
 			}))))
-	usages = append(usages, [2]string{`-log-metrics-interval`, `log metrics every specified seconds. 0 means disable logging`})
+	usages = append(usages, [2]string{`-log-metrics-interval seconds`, `log metrics every specified seconds. 0 means disable logging`})
 
 	return
 }

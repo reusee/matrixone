@@ -35,7 +35,7 @@ func (_ Def) HTTP(
 					go startHTTPServer(addr)
 				})
 			}))))
-	usages = append(usages, [2]string{`-http`, `start http server at specified address`})
+	usages = append(usages, [2]string{`-http address`, `start http server at specified address`})
 
 	return
 }
