@@ -121,7 +121,6 @@ func (_ Def) StartServer(
 
 		pci = frontend.NewPDCallbackImpl(ppu)
 		pci.Id = int(NodeId)
-		pci.SetRemoveEpoch(removeEpoch)
 
 		engineName := config.GlobalSystemVariables.GetStorageEngine()
 		var port int64
@@ -164,20 +163,22 @@ func (_ Def) StartServer(
 
 		createMOServer(pci)
 
-		err = runMOServer()
+		err = mo.Start()
 		if err != nil {
 			logutil.Infof("Start MOServer failed, %v", err)
 			os.Exit(StartMOExit)
 		}
 
-		waitSignal()
-		//srv.Stop()
-		if err := serverShutdown(true); err != nil {
+		sigchan := make(chan os.Signal, 1)
+		signal.Notify(sigchan, syscall.SIGTERM, syscall.SIGINT)
+		<-sigchan
+
+		if err := mo.Stop(); err != nil {
 			logutil.Infof("Server shutdown failed, %v", err)
 			os.Exit(ShutdownExit)
 		}
 
-		cleanup()
+		fmt.Println("\rBye!")
 
 		if engineName == "tae" {
 			closeTae(tae)
@@ -198,39 +199,11 @@ func createMOServer(callback *frontend.PDCallbackImpl) {
 	frontend.InitServerVersion(MoVersion)
 }
 
-func runMOServer() error {
-	return mo.Start()
-}
-
-func serverShutdown(isgraceful bool) error {
-	return mo.Stop()
-}
-
-func waitSignal() {
-	sigchan := make(chan os.Signal, 1)
-	signal.Notify(sigchan, syscall.SIGTERM, syscall.SIGINT)
-	<-sigchan
-}
-
-func cleanup() {
-	fmt.Println("\rBye!")
-}
-
 func recreateDir(dir string) (err error) {
 	mask := syscall.Umask(0)
 	defer syscall.Umask(mask)
 	err = os.MkdirAll(dir, os.FileMode(0755))
 	return err
-}
-
-func removeEpoch(epoch uint64) {
-	var err error
-	if c != nil {
-		_, err = c.RemoveDeletedTable(epoch)
-		if err != nil {
-			fmt.Printf("catalog remove ddl failed. error :%v \n", err)
-		}
-	}
 }
 
 type taeHandler struct {
