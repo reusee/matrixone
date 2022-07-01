@@ -49,7 +49,7 @@ func (_ Def) Version(
 			})
 		})))
 
-	usages = append(usages, [2]string{`version / -v / --version`, `show version info`})
+	usages = append(usages, [2]string{`version | -v | --version`, `show version info`})
 
 	return
 }

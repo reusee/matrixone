@@ -18,13 +18,14 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 )
 
 type Usages [][2]string
 
 func (_ Def) HelpUsage() Usages {
 	return Usages{
-		{"help / -h / -help / --help", "this message"},
+		{"help | -h | -help | --help", "this message"},
 	}
 }
 
@@ -40,7 +41,19 @@ func (_ Def) Usages(
 ) {
 
 	sort.Slice(usages, func(i, j int) bool {
-		return usages[i][0] < usages[j][0]
+		keyA := usages[i][0]
+		keyB := usages[j][0]
+		var categoryA, categoryB int
+		if strings.HasPrefix(keyA, "-") {
+			categoryA = 1
+		}
+		if strings.HasPrefix(keyB, "-") {
+			categoryB = 1
+		}
+		if categoryA != categoryB {
+			return categoryA < categoryB
+		}
+		return keyA < keyB
 	})
 
 	printUsages = func() {
