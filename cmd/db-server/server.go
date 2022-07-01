@@ -32,13 +32,8 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/config"
 	"github.com/matrixorigin/matrixone/pkg/frontend"
 	"github.com/matrixorigin/matrixone/pkg/logutil"
-	"github.com/matrixorigin/matrixone/pkg/rpcserver"
-	"github.com/matrixorigin/matrixone/pkg/sql/handler"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine"
-	"github.com/matrixorigin/matrixone/pkg/vm/mheap"
-	"github.com/matrixorigin/matrixone/pkg/vm/mmu/guest"
 	"github.com/matrixorigin/matrixone/pkg/vm/mmu/host"
-	"github.com/matrixorigin/matrixone/pkg/vm/process"
 )
 
 const (
@@ -113,7 +108,6 @@ func (_ Def) StartServer(
 			config.GlobalSystemVariables.GetHostMmuLimitation(),
 		)
 
-		Host := config.GlobalSystemVariables.GetHost()
 		NodeId := config.GlobalSystemVariables.GetNodeID()
 
 		ppu := frontend.NewPDCallbackParameterUnit(
@@ -129,8 +123,6 @@ func (_ Def) StartServer(
 		pci.Id = int(NodeId)
 
 		engineName := config.GlobalSystemVariables.GetStorageEngine()
-		var port int64
-		port = config.GlobalSystemVariables.GetPortOfRpcServerInComputationEngine()
 
 		var tae *taeHandler
 		if engineName == "tae" {
@@ -149,31 +141,9 @@ func (_ Def) StartServer(
 			os.Exit(LoadConfigExit)
 		}
 
-		srv, err := rpcserver.New(
-			net.JoinHostPort(Host, strconv.FormatInt(port+100, 10)),
-			1<<30,
-			logutil.GetGlobalLogger(),
-		)
-		if err != nil {
-			logutil.Infof("Create rpcserver failed, %v", err)
-			os.Exit(CreateRPCExit)
-		}
-		hm := host.New(1 << 40)
-		gm := guest.New(1<<40, hm)
-		proc := process.New(mheap.New(gm))
-		hp := handler.New(config.StorageEngine, proc)
-		srv.Register(hp.Process)
-
-		go func() {
-			if err := srv.Run(); err != nil {
-				logutil.Infof("Start rpcserver failed, %v", err)
-				os.Exit(RunRPCExit)
-			}
-		}()
-
 		createMOServer(pci)
 
-		err = mo.Start()
+		err := mo.Start()
 		if err != nil {
 			logutil.Infof("Start MOServer failed, %v", err)
 			os.Exit(StartMOExit)
