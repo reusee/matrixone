@@ -65,14 +65,6 @@ var (
 	pci *frontend.PDCallbackImpl
 )
 
-var (
-	GoVersion    = ""
-	BranchName   = ""
-	LastCommitId = ""
-	BuildTime    = ""
-	MoVersion    = ""
-)
-
 type StartServer func()
 
 func (_ Def) StartServer(
