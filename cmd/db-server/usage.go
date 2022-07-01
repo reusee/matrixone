@@ -24,7 +24,7 @@ type Usages [][2]string
 
 func (_ Def) HelpUsage() Usages {
 	return Usages{
-		{"-h / -help / --help", "this message"},
+		{"help / -h / -help / --help", "this message"},
 	}
 }
 
@@ -59,9 +59,10 @@ func (_ Def) Usages(
 
 	var p Parser
 
-	parsers = append(parsers, p.MatchAnyStr("-h", "-help", "--help")(
+	parsers = append(parsers, p.MatchAnyStr("help", "-h", "-help", "--help")(
 		p.End(func() {
 			printUsages()
+			os.Exit(0)
 		})))
 
 	return
