@@ -28,19 +28,20 @@ func (_ Def) Main(
 	handleArgs HandleArguments,
 	emit Emit,
 	start StartServer,
+	scope Scope,
 ) Main {
 	return func() {
 
 		defer func() {
 			// run exit functions
-			emit(evExit)
+			emit(scope, evExit)
 		}()
 
 		// parse and handle command line arguments
 		handleArgs()
 
 		// run init functions
-		emit(evInit)
+		emit(scope, evInit)
 
 		// start server
 		start()

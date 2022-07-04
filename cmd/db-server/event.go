@@ -14,16 +14,18 @@
 
 package main
 
-import "sync"
+import (
+	"sync"
+)
 
 const (
 	evInit = "init"
 	evExit = "exit"
 )
 
-type On func(ev string, fn func())
+type On func(ev string, fn any)
 
-type Emit func(ev string)
+type Emit func(scope Scope, ev string)
 
 func (_ Def) Event() (
 	on On,
@@ -31,20 +33,20 @@ func (_ Def) Event() (
 ) {
 
 	var l sync.Mutex
-	events := make(map[string][]func())
+	events := make(map[string][]any)
 
-	on = func(ev string, fn func()) {
+	on = func(ev string, fn any) {
 		l.Lock()
 		defer l.Unlock()
 		events[ev] = append(events[ev], fn)
 	}
 
-	emit = func(ev string) {
+	emit = func(scope Scope, ev string) {
 		l.Lock()
 		evs := events[ev]
 		l.Unlock()
 		for _, fn := range evs {
-			fn()
+			scope.Call(fn)
 		}
 	}
 

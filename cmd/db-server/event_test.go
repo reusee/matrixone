@@ -14,13 +14,39 @@
 
 package main
 
-import "github.com/reusee/dscope"
+import (
+	"testing"
+)
 
-type Scope = dscope.Scope
+func TestEvent(t *testing.T) {
+	var res int
 
-type Def struct{}
+	scope := NewScope(func() int {
+		return 1
+	})
 
-func NewScope(defs ...any) Scope {
-	defs = append(defs, dscope.Methods(new(Def))...)
-	return dscope.New(defs...)
+	scope.Call(func(
+		on On,
+	) {
+		on("foo", func(
+			i int,
+		) {
+			res = i
+		})
+	})
+
+	scope = scope.Fork(func() int {
+		return 2
+	})
+
+	scope.Call(func(
+		emit Emit,
+	) {
+		emit(scope, "foo")
+	})
+
+	if res != 2 {
+		t.Fatal()
+	}
+
 }
