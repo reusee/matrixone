@@ -9,10 +9,8 @@ import (
 
 func TestMOServer(t *testing.T) {
 	NewScope().Fork(
-		func() Arguments {
-			return Arguments{
-				"./system_vars_config.toml",
-			}
+		&Arguments{
+			"./system_vars_config.toml",
 		},
 	).Call(func(
 		main Main,
