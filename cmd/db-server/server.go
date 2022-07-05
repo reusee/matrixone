@@ -128,12 +128,10 @@ func (_ Def) StartServer(
 		if engineName == "tae" {
 			fmt.Println("Initialize the TAE engine ...")
 			tae = initTae()
-			if config.GlobalSystemVariables.GetNeedInitdb() {
-				err := frontend.InitDB(tae.eng)
-				if err != nil {
-					logutil.Infof("Initialize catalog failed. error:%v", err)
-					os.Exit(InitCatalogExit)
-				}
+			err := frontend.InitDB(tae.eng)
+			if err != nil {
+				logutil.Infof("Initialize catalog failed. error:%v", err)
+				os.Exit(InitCatalogExit)
 			}
 			fmt.Println("Initialize the TAE engine Done")
 		} else {
@@ -182,10 +180,12 @@ func createMOServer(callback *frontend.PDCallbackImpl) {
 		config.ClusterCatalog,
 	)
 	mo = frontend.NewMOServer(address, pu, callback)
-	ieFactory := func() ie.InternalExecutor {
-		return frontend.NewIternalExecutor(pu, callback)
+	if config.GlobalSystemVariables.GetEnableMetric() {
+		ieFactory := func() ie.InternalExecutor {
+			return frontend.NewIternalExecutor(pu, callback)
+		}
+		metric.InitMetric(ieFactory, pu, callback.Id, metric.ALL_IN_ONE_MODE)
 	}
-	metric.InitMetric(ieFactory, pu, callback.Id, metric.ALL_IN_ONE_MODE)
 	frontend.InitServerVersion(MoVersion)
 }
 
