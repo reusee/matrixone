@@ -171,4 +171,24 @@ func TestParser(t *testing.T) {
 		}
 	})
 
+	t.Run("Seq", func(t *testing.T) {
+		var strs []string
+		var p Parser
+		if err := p.Seq(
+			p.MatchStr("foo")(p.End(func() {
+				strs = append(strs, "foo")
+			})),
+			p.MatchStr("bar")(p.End(func() {
+				strs = append(strs, "bar")
+			})),
+			p.MatchStr("baz")(p.End(func() {
+				strs = append(strs, "baz")
+			})),
+		)(nil).Run([]string{
+			"foo", "bar", "baz",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	})
+
 }

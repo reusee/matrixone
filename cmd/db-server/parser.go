@@ -15,6 +15,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 )
@@ -105,6 +106,9 @@ func (p Parser) AltElse(ps []Parser, elseFunc func([]string) error) Parser {
 func (p Parser) End(fn func()) Parser {
 	return func(i *string) (Parser, error) {
 		fn()
+		if i != nil {
+			return nil, InputAgain(*i)
+		}
 		return nil, nil
 	}
 }
@@ -145,6 +149,30 @@ func (p Parser) Uint64(ptr *uint64) func(Parser) Parser {
 	}
 }
 
+func (p Parser) Seq(parsers ...Parser) func(Parser) Parser {
+	return func(cont Parser) Parser {
+		var ret Parser
+		ret = func(i *string) (Parser, error) {
+			if len(parsers) == 0 {
+				return cont.Consume(i)
+			}
+			for parsers[0] == nil {
+				parsers = parsers[1:]
+				if len(parsers) == 0 {
+					return cont.Consume(i)
+				}
+			}
+			var err error
+			parsers[0], err = parsers[0](i)
+			if err != nil {
+				return nil, err
+			}
+			return ret, nil
+		}
+		return ret
+	}
+}
+
 func (p Parser) Run(args []string) error {
 	for {
 		var input *string
@@ -152,14 +180,34 @@ func (p Parser) Run(args []string) error {
 			input = &args[0]
 			args = args[1:]
 		}
+	l1:
 		if p == nil {
 			break
 		}
 		var err error
 		p, err = p(input)
 		if err != nil {
+			var again InputAgain
+			if errors.As(err, &again) {
+				str := string(again)
+				input = &str
+				goto l1
+			}
 			return err
 		}
 	}
 	return nil
+}
+
+func (p Parser) Consume(i *string) (Parser, error) {
+	if p == nil {
+		return nil, nil
+	}
+	return p(i)
+}
+
+type InputAgain string
+
+func (i InputAgain) Error() string {
+	return "input again: " + string(i)
 }
