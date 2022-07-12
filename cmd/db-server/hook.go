@@ -14,20 +14,22 @@
 
 package main
 
-import "os"
+const (
+	evInit = "init"
+	evExit = "exit"
+)
 
-func main() {
+func (m *Manager) on(ev string, fn func()) {
+	m.hooks.Lock()
+	defer m.hooks.Unlock()
+	m.hooks.Map[ev] = append(m.hooks.Map[ev], fn)
+}
 
-	manager := NewManager()
-	manager.handleArguments(os.Args[1:])
-
-	defer manager.emit(evExit)
-	manager.emit(evInit)
-
-	if len(manager.positionalArguments) == 0 {
-		manager.printUsage()
-		os.Exit(-1)
+func (m *Manager) emit(ev string) {
+	m.hooks.Lock()
+	evs := m.hooks.Map[ev]
+	m.hooks.Unlock()
+	for _, fn := range evs {
+		fn()
 	}
-	startMOServer(manager.positionalArguments)
-
 }

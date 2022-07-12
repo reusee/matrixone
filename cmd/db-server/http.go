@@ -14,20 +14,32 @@
 
 package main
 
-import "os"
+import (
+	"net/http"
+)
 
-func main() {
+func (m *Manager) HTTP() (
+	p Parser,
+	usage Usage,
+) {
 
-	manager := NewManager()
-	manager.handleArguments(os.Args[1:])
+	var addr string
+	p = p.MatchStr("-http")(
+		p.String(&addr)(
+			p.End(func() {
+				m.on(evInit, func() {
+					go startHTTPServer(addr)
+				})
+			})))
 
-	defer manager.emit(evExit)
-	manager.emit(evInit)
+	usage.Header = "-http address"
+	usage.Desc = "start http server at the specified address"
 
-	if len(manager.positionalArguments) == 0 {
-		manager.printUsage()
-		os.Exit(-1)
+	return
+}
+
+func startHTTPServer(addr string) {
+	if err := http.ListenAndServe(addr, nil); err != nil {
+		panic(err)
 	}
-	startMOServer(manager.positionalArguments)
-
 }

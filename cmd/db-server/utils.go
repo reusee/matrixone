@@ -14,20 +14,8 @@
 
 package main
 
-import "os"
+import "fmt"
 
-func main() {
-
-	manager := NewManager()
-	manager.handleArguments(os.Args[1:])
-
-	defer manager.emit(evExit)
-	manager.emit(evInit)
-
-	if len(manager.positionalArguments) == 0 {
-		manager.printUsage()
-		os.Exit(-1)
-	}
-	startMOServer(manager.positionalArguments)
-
-}
+var (
+	pt = fmt.Printf
+)
