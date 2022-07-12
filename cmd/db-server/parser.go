@@ -173,6 +173,98 @@ func (p Parser) Seq(parsers ...Parser) func(Parser) Parser {
 	}
 }
 
+func (p Parser) First(parsers ...Parser) func(Parser) Parser {
+	// strip nil parsers
+	for i := 0; i < len(parsers); {
+		if parsers[i] == nil {
+			parsers[i] = parsers[len(parsers)-1]
+			parsers = parsers[:len(parsers)-1]
+		} else {
+			i++
+		}
+	}
+	return func(cont Parser) Parser {
+		var ret Parser
+		ret = func(input *string) (Parser, error) {
+			for i := 0; i < len(parsers); {
+				parser := parsers[i]
+				var err error
+				parser, err = parser(input)
+				if err != nil {
+					// skip
+					parsers[i] = parsers[len(parsers)-1]
+					parsers = parsers[:len(parsers)-1]
+					continue
+				}
+				if parser == nil {
+					// end
+					return cont, nil
+				}
+				parsers[i] = parser
+				i++
+			}
+			if len(parsers) == 0 {
+				return nil, fmt.Errorf("no match")
+			}
+			return ret, nil
+		}
+		return ret
+	}
+}
+
+func (p Parser) Longest(parsers ...Parser) Parser {
+	// strip nil parsers
+	for i := 0; i < len(parsers); {
+		if parsers[i] == nil {
+			parsers[i] = parsers[len(parsers)-1]
+			parsers = parsers[:len(parsers)-1]
+		} else {
+			i++
+		}
+	}
+	var ret Parser
+	ret = func(input *string) (Parser, error) {
+		for i := 0; i < len(parsers); {
+			parser := parsers[i]
+			var err error
+			parser, err = parser(input)
+			if err != nil || parser == nil {
+				// skip
+				parsers[i] = parsers[len(parsers)-1]
+				parsers = parsers[:len(parsers)-1]
+				continue
+			}
+			parsers[i] = parser
+			i++
+		}
+		if len(parsers) == 0 {
+			if input == nil {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("no match")
+		}
+		if len(parsers) == 1 {
+			// the one
+			return parsers[0], nil
+		}
+		return ret, nil
+	}
+	return ret
+}
+
+func (p Parser) OneOrMore(parser Parser) func(Parser) Parser {
+	return func(cont Parser) Parser {
+		var split Parser
+		split = func(i *string) (Parser, error) {
+			return p.Longest(
+				p.Seq(parser)(cont),
+				p.Seq(parser)(split),
+			).Consume(i)
+		}
+		return split
+	}
+}
+
 func (p Parser) Run(args []string) error {
 	for {
 		var input *string

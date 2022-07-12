@@ -191,4 +191,27 @@ func TestParser(t *testing.T) {
 		}
 	})
 
+	t.Run("OneOrMore", func(t *testing.T) {
+		var p Parser
+		p = p.OneOrMore(
+			p.MatchStr("foo")(nil),
+		)(nil)
+		if err := p.Run([]string{"foo", "foo", "foo"}); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("OneOrMore2", func(t *testing.T) {
+		var p Parser
+		p = p.OneOrMore(
+			p.Seq(
+				p.MatchStr("foo")(nil),
+				p.MatchStr("bar")(nil),
+			)(nil),
+		)(nil)
+		if err := p.Run([]string{"foo", "bar", "foo", "bar"}); err != nil {
+			t.Fatal(err)
+		}
+	})
+
 }
