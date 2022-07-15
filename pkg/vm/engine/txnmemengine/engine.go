@@ -62,7 +62,7 @@ func New(
 
 var _ engine.Engine = new(Engine)
 
-func (e *Engine) Create(dbName string, txnOperator client.TxnOperator) error {
+func (e *Engine) Create(ctx context.Context, dbName string, txnOperator client.TxnOperator) error {
 
 	// for ddl operations, broadcast to all DNs
 	var requests []txn.TxnRequest
@@ -81,7 +81,6 @@ func (e *Engine) Create(dbName string, txnOperator client.TxnOperator) error {
 		})
 	}
 
-	ctx := context.TODO()
 	result, err := txnOperator.WriteAndCommit(ctx, requests)
 	if err != nil {
 		return err
@@ -93,9 +92,8 @@ func (e *Engine) Create(dbName string, txnOperator client.TxnOperator) error {
 	return nil
 }
 
-func (e *Engine) Database(dbName string, txnOperator client.TxnOperator) (engine.Database, error) {
+func (e *Engine) Database(ctx context.Context, dbName string, txnOperator client.TxnOperator) (engine.Database, error) {
 
-	ctx := context.TODO()
 	result, err := txnOperator.Read(ctx, []txn.TxnRequest{
 		{
 			Method: txn.TxnMethod_Read,
@@ -121,9 +119,8 @@ func (e *Engine) Database(dbName string, txnOperator client.TxnOperator) (engine
 	return nil, nil
 }
 
-func (e *Engine) Databases(txnOperator client.TxnOperator) ([]string, error) {
+func (e *Engine) Databases(ctx context.Context, txnOperator client.TxnOperator) ([]string, error) {
 
-	ctx := context.TODO()
 	result, err := txnOperator.Read(ctx, []txn.TxnRequest{
 		{
 			Method: txn.TxnMethod_Read,
@@ -155,12 +152,12 @@ func (e *Engine) Databases(txnOperator client.TxnOperator) ([]string, error) {
 	return dbNames, nil
 }
 
-func (*Engine) Delete(dbName string, txnOperator client.TxnOperator) error {
+func (*Engine) Delete(ctx context.Context, dbName string, txnOperator client.TxnOperator) error {
 	//TODO
 	return nil
 }
 
-func (*Engine) Nodes(txnOperator client.TxnOperator) engine.Nodes {
+func (*Engine) Nodes(ctx context.Context, txnOperator client.TxnOperator) engine.Nodes {
 	//TODO
 	return nil
 }

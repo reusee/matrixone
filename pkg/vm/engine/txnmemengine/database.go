@@ -14,29 +14,33 @@
 
 package engine
 
-import "github.com/matrixorigin/matrixone/pkg/vm/engine"
+import (
+	"context"
+
+	"github.com/matrixorigin/matrixone/pkg/vm/engine"
+)
 
 type Database struct {
 }
 
 var _ engine.Database = new(Database)
 
-func (*Database) Create(relName string, defs []engine.TableDef) error {
+func (*Database) Create(ctx context.Context, relName string, defs []engine.TableDef) error {
 	//TODO
 	return nil
 }
 
-func (*Database) Delete(relName string) error {
+func (*Database) Delete(ctx context.Context, relName string) error {
 	//TODO
 	return nil
 }
 
-func (*Database) Relation(relName string) (engine.Relation, error) {
+func (*Database) Relation(ctx context.Context, relName string) (engine.Relation, error) {
 	//TODO
 	return nil, nil
 }
 
-func (*Database) Relations() []string {
+func (*Database) Relations(ctx context.Context) ([]string, error) {
 	//TODO
-	return nil
+	return nil, nil
 }

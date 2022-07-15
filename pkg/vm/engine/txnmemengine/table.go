@@ -15,6 +15,8 @@
 package engine
 
 import (
+	"context"
+
 	"github.com/matrixorigin/matrixone/pkg/container/batch"
 	"github.com/matrixorigin/matrixone/pkg/container/vector"
 	"github.com/matrixorigin/matrixone/pkg/pb/plan"
@@ -36,17 +38,17 @@ func (*Table) Size(string) int64 {
 	return 0
 }
 
-func (*Table) AddTableDef(def engine.TableDef) error {
+func (*Table) AddTableDef(ctx context.Context, def engine.TableDef) error {
 	//TODO
 	return nil
 }
 
-func (*Table) DelTableDef(def engine.TableDef) error {
+func (*Table) DelTableDef(ctx context.Context, def engine.TableDef) error {
 	//TODO
 	return nil
 }
 
-func (*Table) Delete(vec *vector.Vector) error {
+func (*Table) Delete(ctx context.Context, vec *vector.Vector, _ string) error {
 	//TODO
 	return nil
 }
@@ -66,7 +68,7 @@ func (*Table) GetPrimaryKeys() []*engine.Attribute {
 	return nil
 }
 
-func (*Table) NewReader(parallel int, expr *plan.Expr, data []byte) []engine.Reader {
+func (*Table) NewReader(ctx context.Context, parallel int, expr *plan.Expr, data []byte) []engine.Reader {
 	//TODO
 	return nil
 }
@@ -81,17 +83,17 @@ func (*Table) TableDefs() []engine.TableDef {
 	return nil
 }
 
-func (*Table) Truncate() (uint64, error) {
+func (*Table) Truncate(ctx context.Context) (uint64, error) {
 	//TODO
 	return 0, nil
 }
 
-func (*Table) Update(data *batch.Batch) error {
+func (*Table) Update(ctx context.Context, data *batch.Batch) error {
 	//TODO
 	return nil
 }
 
-func (*Table) Write(data *batch.Batch) error {
+func (*Table) Write(ctx context.Context, data *batch.Batch) error {
 	//TODO
 	return nil
 }

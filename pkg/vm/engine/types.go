@@ -82,41 +82,41 @@ type Relation interface {
 	// true: primary key, false: hide key
 	GetPriKeyOrHideKey() ([]Attribute, bool)
 
-	Write(*batch.Batch) error
+	Write(context.Context, *batch.Batch) error
 
-	Update(*batch.Batch) error
+	Update(context.Context, *batch.Batch) error
 
-	Delete(*vector.Vector, string) error
+	Delete(context.Context, *vector.Vector, string) error
 
-	Truncate() (uint64, error)
+	Truncate(context.Context) (uint64, error)
 
-	AddTableDef(TableDef) error
-	DelTableDef(TableDef) error
+	AddTableDef(context.Context, TableDef) error
+	DelTableDef(context.Context, TableDef) error
 
 	// first argument is the number of reader, second argument is the filter extend,  third parameter is the payload required by the engine
-	NewReader(int, *plan.Expr, []byte) []Reader
+	NewReader(context.Context, int, *plan.Expr, []byte) []Reader
 }
 
 type Reader interface {
-	Read([]uint64, []string) (*batch.Batch, error)
+	Read([]string) (*batch.Batch, error)
 }
 
 type Database interface {
-	Relations() ([]string, error)
-	Relation(string) (Relation, error)
+	Relations(context.Context) ([]string, error)
+	Relation(context.Context, string) (Relation, error)
 
-	Delete(string) error
-	Create(string, []TableDef) error // Create Table - (name, table define)
+	Delete(context.Context, string) error
+	Create(context.Context, string, []TableDef) error // Create Table - (name, table define)
 }
 
 type Engine interface {
-	Delete(string, client.TxnOperator, context.Context) error
-	Create(string, client.TxnOperator, context.Context) error // Create Database - (name, engine type)
+	Delete(context.Context, string, client.TxnOperator) error
+	Create(context.Context, string, client.TxnOperator) error // Create Database - (name, engine type)
 
-	Databases(client.TxnOperator, context.Context) ([]string, error)
-	Database(string, client.TxnOperator, context.Context) (Database, error)
+	Databases(context.Context, client.TxnOperator) ([]string, error)
+	Database(context.Context, string, client.TxnOperator) (Database, error)
 
-	Nodes(client.TxnOperator, context.Context) Nodes
+	Nodes(context.Context, client.TxnOperator) Nodes
 }
 
 // MakeDefaultExpr returns a new DefaultExpr
