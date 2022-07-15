@@ -18,4 +18,5 @@ const (
 	opCreateDatabase = iota + 64
 	opOpenDatabase
 	opGetDatabases
+	opDeleteDatabase
 )

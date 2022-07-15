@@ -38,3 +38,7 @@ type openDatabasePayload struct {
 type getDatabasesPayload struct {
 	Names []string
 }
+
+type deleteDatabasePayload struct {
+	Name string
+}

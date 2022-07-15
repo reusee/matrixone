@@ -152,12 +152,46 @@ func (e *Engine) Databases(ctx context.Context, txnOperator client.TxnOperator) 
 	return dbNames, nil
 }
 
-func (*Engine) Delete(ctx context.Context, dbName string, txnOperator client.TxnOperator) error {
-	//TODO
+func (e *Engine) Delete(ctx context.Context, dbName string, txnOperator client.TxnOperator) error {
+
+	// for ddl operations, broadcast to all DNs
+	var requests []txn.TxnRequest
+	for _, node := range e.getDataNodes() {
+		requests = append(requests, txn.TxnRequest{
+			Method: txn.TxnMethod_Write,
+			CNRequest: &txn.CNOpRequest{
+				OpCode: opDeleteDatabase,
+				Payload: mustEncodePayload(deleteDatabasePayload{
+					Name: dbName,
+				}),
+				Target: metadata.DNShard{
+					Address: node.ServiceAddress,
+				},
+			},
+		})
+	}
+
+	result, err := txnOperator.WriteAndCommit(ctx, requests)
+	if err != nil {
+		return err
+	}
+	if err := errorFromTxnResponses(result.Responses); err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func (*Engine) Nodes(ctx context.Context, txnOperator client.TxnOperator) engine.Nodes {
-	//TODO
-	return nil
+func (e *Engine) Nodes(ctx context.Context, txnOperator client.TxnOperator) engine.Nodes {
+
+	var nodes engine.Nodes
+	for _, node := range e.getDataNodes() {
+		nodes = append(nodes, engine.Node{
+			Mcpu: 1,
+			Id:   node.UUID,
+			Addr: node.ServiceAddress,
+		})
+	}
+
+	return nodes
 }
