@@ -102,7 +102,7 @@ type Reader interface {
 }
 
 type Database interface {
-	Relations() []string
+	Relations() ([]string, error)
 	Relation(string) (Relation, error)
 
 	Delete(string) error
@@ -113,7 +113,7 @@ type Engine interface {
 	Delete(string, client.TxnOperator, context.Context) error
 	Create(string, client.TxnOperator, context.Context) error // Create Database - (name, engine type)
 
-	Databases(client.TxnOperator, context.Context) []string
+	Databases(client.TxnOperator, context.Context) ([]string, error)
 	Database(string, client.TxnOperator, context.Context) (Database, error)
 
 	Nodes(client.TxnOperator, context.Context) Nodes
