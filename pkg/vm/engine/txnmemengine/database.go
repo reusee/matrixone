@@ -43,7 +43,7 @@ func (d *Database) Create(ctx context.Context, relName string, defs []engine.Tab
 			Method: txn.TxnMethod_Write,
 			CNRequest: &txn.CNOpRequest{
 				OpCode: opCreateRelation,
-				Payload: mustEncodePayload(createRelationPayload{
+				Payload: mustEncodePayload(createRelationReq{
 					DatabaseID: d.id,
 					Name:       relName,
 					Defs:       defs,
@@ -75,7 +75,7 @@ func (d *Database) Delete(ctx context.Context, relName string) error {
 			Method: txn.TxnMethod_Write,
 			CNRequest: &txn.CNOpRequest{
 				OpCode: opDeleteRelation,
-				Payload: mustEncodePayload(deleteRelationPayload{
+				Payload: mustEncodePayload(deleteRelationReq{
 					DatabaseID: d.id,
 					Name:       relName,
 				}),
@@ -104,7 +104,7 @@ func (d *Database) Relation(ctx context.Context, relName string) (engine.Relatio
 			Method: txn.TxnMethod_Read,
 			CNRequest: &txn.CNOpRequest{
 				OpCode: opOpenRelation,
-				Payload: mustEncodePayload(openRelationPayload{
+				Payload: mustEncodePayload(openRelationReq{
 					DatabaseID: d.id,
 					Name:       relName,
 				}),
@@ -122,16 +122,16 @@ func (d *Database) Relation(ctx context.Context, relName string) (engine.Relatio
 		return nil, err
 	}
 
-	var payload openRelationPayload
-	if err := gob.NewDecoder(bytes.NewReader(result.Responses[0].CNOpResponse.Payload)).Decode(&payload); err != nil {
+	var resp openRelationResp
+	if err := gob.NewDecoder(bytes.NewReader(result.Responses[0].CNOpResponse.Payload)).Decode(&resp); err != nil {
 		return nil, err
 	}
 
-	switch payload.Type {
+	switch resp.Type {
 
 	case RelationTable:
 		table := &Table{
-			id: payload.ID,
+			id: resp.ID,
 		}
 		return table, nil
 
@@ -148,7 +148,7 @@ func (d *Database) Relations(ctx context.Context) ([]string, error) {
 			Method: txn.TxnMethod_Read,
 			CNRequest: &txn.CNOpRequest{
 				OpCode: opGetRelations,
-				Payload: mustEncodePayload(getRelationsPayload{
+				Payload: mustEncodePayload(getRelationsReq{
 					DatabaseID: d.id,
 				}),
 				Target: metadata.DNShard{
@@ -167,11 +167,11 @@ func (d *Database) Relations(ctx context.Context) ([]string, error) {
 
 	var relNames []string
 	for _, resp := range result.Responses {
-		var payload getRelationsPayload
-		if err := gob.NewDecoder(bytes.NewReader(resp.CNOpResponse.Payload)).Decode(&payload); err != nil {
+		var r getRelationsResp
+		if err := gob.NewDecoder(bytes.NewReader(resp.CNOpResponse.Payload)).Decode(&r); err != nil {
 			return nil, err
 		}
-		relNames = append(relNames, payload.Names...)
+		relNames = append(relNames, r.Names...)
 	}
 
 	return relNames, nil

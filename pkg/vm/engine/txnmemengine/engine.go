@@ -71,7 +71,7 @@ func (e *Engine) Create(ctx context.Context, dbName string, txnOperator client.T
 			Method: txn.TxnMethod_Write,
 			CNRequest: &txn.CNOpRequest{
 				OpCode: opCreateDatabase,
-				Payload: mustEncodePayload(createDatabasePayload{
+				Payload: mustEncodePayload(createDatabaseReq{
 					Name: dbName,
 				}),
 				Target: metadata.DNShard{
@@ -99,7 +99,7 @@ func (e *Engine) Database(ctx context.Context, dbName string, txnOperator client
 			Method: txn.TxnMethod_Read,
 			CNRequest: &txn.CNOpRequest{
 				OpCode: opOpenDatabase,
-				Payload: mustEncodePayload(openDatabasePayload{
+				Payload: mustEncodePayload(openDatabaseReq{
 					Name: dbName,
 				}),
 				Target: metadata.DNShard{
@@ -116,15 +116,17 @@ func (e *Engine) Database(ctx context.Context, dbName string, txnOperator client
 		return nil, err
 	}
 
-	var payload openDatabasePayload
-	if err := gob.NewDecoder(bytes.NewReader(result.Responses[0].CNOpResponse.Payload)).Decode(&payload); err != nil {
+	var resp openDatabaseResp
+	if err := gob.NewDecoder(
+		bytes.NewReader(result.Responses[0].CNOpResponse.Payload),
+	).Decode(&resp); err != nil {
 		return nil, err
 	}
 
 	db := &Database{
 		engine:      e,
 		txnOperator: txnOperator,
-		id:          payload.ID,
+		id:          resp.ID,
 	}
 
 	return db, nil
@@ -153,11 +155,11 @@ func (e *Engine) Databases(ctx context.Context, txnOperator client.TxnOperator) 
 
 	var dbNames []string
 	for _, resp := range result.Responses {
-		var payload getDatabasesPayload
-		if err := gob.NewDecoder(bytes.NewReader(resp.CNOpResponse.Payload)).Decode(&payload); err != nil {
+		var r getDatabasesResp
+		if err := gob.NewDecoder(bytes.NewReader(resp.CNOpResponse.Payload)).Decode(&r); err != nil {
 			return nil, err
 		}
-		dbNames = append(dbNames, payload.Names...)
+		dbNames = append(dbNames, r.Names...)
 	}
 
 	return dbNames, nil
@@ -172,7 +174,7 @@ func (e *Engine) Delete(ctx context.Context, dbName string, txnOperator client.T
 			Method: txn.TxnMethod_Write,
 			CNRequest: &txn.CNOpRequest{
 				OpCode: opDeleteDatabase,
-				Payload: mustEncodePayload(deleteDatabasePayload{
+				Payload: mustEncodePayload(deleteDatabaseReq{
 					Name: dbName,
 				}),
 				Target: metadata.DNShard{
