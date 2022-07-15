@@ -116,7 +116,18 @@ func (e *Engine) Database(ctx context.Context, dbName string, txnOperator client
 		return nil, err
 	}
 
-	return nil, nil
+	var payload openDatabasePayload
+	if err := gob.NewDecoder(bytes.NewReader(result.Responses[0].CNOpResponse.Payload)).Decode(&payload); err != nil {
+		return nil, err
+	}
+
+	db := &Database{
+		engine:      e,
+		txnOperator: txnOperator,
+		id:          payload.ID,
+	}
+
+	return db, nil
 }
 
 func (e *Engine) Databases(ctx context.Context, txnOperator client.TxnOperator) ([]string, error) {

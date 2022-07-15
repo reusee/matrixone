@@ -14,13 +14,8 @@
 
 package engine
 
+type RelationType uint8
+
 const (
-	opCreateDatabase = iota + 64
-	opOpenDatabase
-	opGetDatabases
-	opDeleteDatabase
-	opCreateRelation
-	opDeleteRelation
-	opOpenRelation
-	opGetRelations
+	RelationTable RelationType = iota + 1
 )

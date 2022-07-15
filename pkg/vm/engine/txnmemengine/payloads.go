@@ -17,6 +17,8 @@ package engine
 import (
 	"bytes"
 	"encoding/gob"
+
+	"github.com/matrixorigin/matrixone/pkg/vm/engine"
 )
 
 func mustEncodePayload(o any) []byte {
@@ -33,6 +35,8 @@ type createDatabasePayload struct {
 
 type openDatabasePayload struct {
 	Name string
+
+	ID int64
 }
 
 type getDatabasesPayload struct {
@@ -41,4 +45,29 @@ type getDatabasesPayload struct {
 
 type deleteDatabasePayload struct {
 	Name string
+}
+
+type createRelationPayload struct {
+	DatabaseID int64
+	Name       string
+	Defs       []engine.TableDef
+}
+
+type deleteRelationPayload struct {
+	DatabaseID int64
+	Name       string
+}
+
+type openRelationPayload struct {
+	DatabaseID int64
+	Name       string
+
+	ID   int64
+	Type RelationType
+}
+
+type getRelationsPayload struct {
+	DatabaseID int64
+
+	Names []string
 }

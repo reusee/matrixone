@@ -24,6 +24,7 @@ import (
 )
 
 type Table struct {
+	id int64
 }
 
 var _ engine.Relation = new(Table)
