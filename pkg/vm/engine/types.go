@@ -15,25 +15,27 @@
 package engine
 
 import (
-	roaring "github.com/RoaringBitmap/roaring/roaring64"
+	"context"
+
 	"github.com/matrixorigin/matrixone/pkg/compress"
 	"github.com/matrixorigin/matrixone/pkg/container/batch"
 	"github.com/matrixorigin/matrixone/pkg/container/types"
 	"github.com/matrixorigin/matrixone/pkg/container/vector"
 	"github.com/matrixorigin/matrixone/pkg/pb/plan"
+	"github.com/matrixorigin/matrixone/pkg/txn/client"
 )
-
-type Snapshot []byte
 
 type Nodes []Node
 
 type Node struct {
+	Mcpu int
 	Id   string `json:"id"`
 	Addr string `json:"address"`
 	Data []byte `json:"payload"`
 }
 
 type Attribute struct {
+	IsHide  bool
 	Name    string      // name of attribute
 	Alg     compress.T  // compression algorithm
 	Type    types.Type  // type of attribute
@@ -43,58 +45,14 @@ type Attribute struct {
 
 type DefaultExpr struct {
 	Exist  bool
-	Value  interface{} // int64, float32, float64, string, types.Date, types.Datetime
+	Expr   *plan.Expr
 	IsNull bool
-}
-
-type PrimaryIndexDef struct {
-	TableDef
-	Names []string
-}
-
-type PropertiesDef struct {
-	TableDef
-	Properties []Property
-}
-
-type Property struct {
-	Key   string
-	Value string
-}
-
-type NodeInfo struct {
-	Mcpu int
 }
 
 type Statistics interface {
 	Rows() int64
 	Size(string) int64
 }
-
-type IndexTableDef struct {
-	Typ      IndexT
-	ColNames []string
-	Name     string
-}
-
-type IndexT int
-
-func (node IndexT) ToString() string {
-	switch node {
-	case ZoneMap:
-		return "ZONEMAP"
-	case BsiIndex:
-		return "BSI"
-	default:
-		return "INVAILD"
-	}
-}
-
-const (
-	Invalid IndexT = iota
-	ZoneMap
-	BsiIndex
-)
 
 type AttributeDef struct {
 	Attr Attribute
@@ -108,98 +66,64 @@ type TableDef interface {
 	tableDef()
 }
 
-func (*CommentDef) tableDef()    {}
-func (*AttributeDef) tableDef()  {}
-func (*IndexTableDef) tableDef() {}
-func (*PropertiesDef) tableDef() {}
+func (*CommentDef) tableDef()   {}
+func (*AttributeDef) tableDef() {}
 
 type Relation interface {
 	Statistics
 
-	Close(Snapshot)
+	Nodes() Nodes
 
-	ID(Snapshot) string
+	TableDefs() []TableDef
 
-	Nodes(Snapshot) Nodes
+	GetPrimaryKeys() []*Attribute
 
-	TableDefs(Snapshot) []TableDef
-
-	GetPrimaryKeys(Snapshot) []*Attribute
-
-	GetHideKey(Snapshot) *Attribute
+	GetHideKey() *Attribute
 	// true: primary key, false: hide key
-	GetPriKeyOrHideKey(Snapshot) ([]Attribute, bool)
+	GetPriKeyOrHideKey() ([]Attribute, bool)
 
-	Write(uint64, *batch.Batch, Snapshot) error
+	Write(*batch.Batch) error
 
-	Update(uint64, *batch.Batch, Snapshot) error
+	Update(*batch.Batch) error
 
-	Delete(uint64, *vector.Vector, string, Snapshot) error
+	Delete(*vector.Vector, string) error
 
-	Truncate(Snapshot) (uint64, error)
+	Truncate() (uint64, error)
 
-	AddTableDef(uint64, TableDef, Snapshot) error
-	DelTableDef(uint64, TableDef, Snapshot) error
+	AddTableDef(TableDef) error
+	DelTableDef(TableDef) error
 
 	// first argument is the number of reader, second argument is the filter extend,  third parameter is the payload required by the engine
-	NewReader(int, *plan.Expr, []byte, Snapshot) []Reader
+	NewReader(int, *plan.Expr, []byte) []Reader
 }
 
 type Reader interface {
 	Read([]uint64, []string) (*batch.Batch, error)
 }
 
-type Filter interface {
-	Eq(string, interface{}) (*roaring.Bitmap, error)
-	Ne(string, interface{}) (*roaring.Bitmap, error)
-	Lt(string, interface{}) (*roaring.Bitmap, error)
-	Le(string, interface{}) (*roaring.Bitmap, error)
-	Gt(string, interface{}) (*roaring.Bitmap, error)
-	Ge(string, interface{}) (*roaring.Bitmap, error)
-	Btw(string, interface{}, interface{}) (*roaring.Bitmap, error)
-}
-
-type Summarizer interface {
-	Count(string, *roaring.Bitmap) (uint64, error)
-	NullCount(string, *roaring.Bitmap) (uint64, error)
-	Max(string, *roaring.Bitmap) (interface{}, error)
-	Min(string, *roaring.Bitmap) (interface{}, error)
-	Sum(string, *roaring.Bitmap) (int64, uint64, error)
-}
-
-type SparseFilter interface {
-	Eq(string, interface{}) (Reader, error)
-	Ne(string, interface{}) (Reader, error)
-	Lt(string, interface{}) (Reader, error)
-	Le(string, interface{}) (Reader, error)
-	Gt(string, interface{}) (Reader, error)
-	Ge(string, interface{}) (Reader, error)
-	Btw(string, interface{}, interface{}) (Reader, error)
-}
-
 type Database interface {
-	Relations(Snapshot) []string
-	Relation(string, Snapshot) (Relation, error)
+	Relations() []string
+	Relation(string) (Relation, error)
 
-	Delete(uint64, string, Snapshot) error
-	Create(uint64, string, []TableDef, Snapshot) error // Create Table - (name, table define)
+	Delete(string) error
+	Create(string, []TableDef) error // Create Table - (name, table define)
 }
 
 type Engine interface {
-	Delete(uint64, string, Snapshot) error
-	Create(uint64, string, int, Snapshot) error // Create Database - (name, engine type)
+	Delete(string, client.TxnOperator, context.Context) error
+	Create(string, client.TxnOperator, context.Context) error // Create Database - (name, engine type)
 
-	Databases(Snapshot) []string
-	Database(string, Snapshot) (Database, error)
+	Databases(client.TxnOperator, context.Context) []string
+	Database(string, client.TxnOperator, context.Context) (Database, error)
 
-	Node(string, Snapshot) *NodeInfo
+	Nodes(client.TxnOperator, context.Context) Nodes
 }
 
 // MakeDefaultExpr returns a new DefaultExpr
-func MakeDefaultExpr(exist bool, value interface{}, isNull bool) DefaultExpr {
+func MakeDefaultExpr(exist bool, expr *plan.Expr, isNull bool) DefaultExpr {
 	return DefaultExpr{
+		Expr:   expr,
 		Exist:  exist,
-		Value:  value,
 		IsNull: isNull,
 	}
 }
@@ -211,6 +135,6 @@ func (node Attribute) HasDefaultExpr() bool {
 	return node.Default.Exist
 }
 
-func (node Attribute) GetDefaultExpr() (interface{}, bool) {
-	return node.Default.Value, node.Default.IsNull
+func (node Attribute) GetDefaultExpr() (*plan.Expr, bool) {
+	return node.Default.Expr, node.Default.IsNull
 }
