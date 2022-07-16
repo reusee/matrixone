@@ -13,3 +13,54 @@
 // limitations under the License.
 
 package engine
+
+import (
+	"context"
+
+	logservicepb "github.com/matrixorigin/matrixone/pkg/pb/logservice"
+	"github.com/matrixorigin/matrixone/pkg/pb/metadata"
+	"github.com/matrixorigin/matrixone/pkg/pb/txn"
+	txnpb "github.com/matrixorigin/matrixone/pkg/pb/txn"
+	"github.com/matrixorigin/matrixone/pkg/txn/rpc"
+)
+
+func doTxnRequest(
+	ctx context.Context,
+	reqFunc func(context.Context, []txn.TxnRequest) (*rpc.SendResult, error),
+	nodes []logservicepb.DNNode,
+	method txnpb.TxnMethod,
+	op uint32,
+	reqPayload any,
+) (
+	respPayloads [][]byte,
+	err error,
+) {
+
+	var requests []txn.TxnRequest
+	for _, node := range nodes {
+		requests = append(requests, txn.TxnRequest{
+			Method: method,
+			CNRequest: &txn.CNOpRequest{
+				OpCode:  op,
+				Payload: mustEncodePayload(reqPayload),
+				Target: metadata.DNShard{
+					Address: node.ServiceAddress,
+				},
+			},
+		})
+	}
+
+	result, err := reqFunc(ctx, requests)
+	if err != nil {
+		return nil, err
+	}
+	if err := errorFromTxnResponses(result.Responses); err != nil {
+		return nil, err
+	}
+
+	for _, resp := range result.Responses {
+		respPayloads = append(respPayloads, resp.CNOpResponse.Payload)
+	}
+
+	return
+}

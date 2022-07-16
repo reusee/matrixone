@@ -57,3 +57,9 @@ func (e *Engine) getDataNodes() []logservicepb.DNNode {
 	defer e.clusterDetails.Unlock()
 	return e.clusterDetails.DNNodes
 }
+
+func (e *Engine) getComputeNodes() []logservicepb.CNNode {
+	e.clusterDetails.Lock()
+	defer e.clusterDetails.Unlock()
+	return e.clusterDetails.CNNodes
+}

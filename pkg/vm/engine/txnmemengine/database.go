@@ -19,7 +19,6 @@ import (
 	"context"
 	"encoding/gob"
 
-	"github.com/matrixorigin/matrixone/pkg/pb/metadata"
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
 	"github.com/matrixorigin/matrixone/pkg/txn/client"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine"
@@ -36,31 +35,20 @@ var _ engine.Database = new(Database)
 
 func (d *Database) Create(ctx context.Context, relName string, defs []engine.TableDef) error {
 
-	// for ddl operations, broadcast to all DNs
-	var requests []txn.TxnRequest
-	for _, node := range d.engine.getDataNodes() {
-		requests = append(requests, txn.TxnRequest{
-			Method: txn.TxnMethod_Write,
-			CNRequest: &txn.CNOpRequest{
-				OpCode: opCreateRelation,
-				Payload: mustEncodePayload(createRelationReq{
-					DatabaseID: d.id,
-					Name:       relName,
-					Defs:       defs,
-				}),
-				Target: metadata.DNShard{
-					Address: node.ServiceAddress,
-				},
-			},
-		})
-	}
-
-	result, err := d.txnOperator.WriteAndCommit(ctx, requests)
+	_, err := doTxnRequest(
+		ctx,
+		d.txnOperator.WriteAndCommit,
+		d.engine.getDataNodes(),
+		txn.TxnMethod_Write,
+		opCreateRelation,
+		createRelationReq{
+			DatabaseID: d.id,
+			Name:       relName,
+			Defs:       defs,
+		},
+	)
 	if err != nil {
-		return err
-	}
-	if err := errorFromTxnResponses(result.Responses); err != nil {
-		return err
+		return nil
 	}
 
 	return nil
@@ -68,29 +56,18 @@ func (d *Database) Create(ctx context.Context, relName string, defs []engine.Tab
 
 func (d *Database) Delete(ctx context.Context, relName string) error {
 
-	// for ddl operations, broadcast to all DNs
-	var requests []txn.TxnRequest
-	for _, node := range d.engine.getDataNodes() {
-		requests = append(requests, txn.TxnRequest{
-			Method: txn.TxnMethod_Write,
-			CNRequest: &txn.CNOpRequest{
-				OpCode: opDeleteRelation,
-				Payload: mustEncodePayload(deleteRelationReq{
-					DatabaseID: d.id,
-					Name:       relName,
-				}),
-				Target: metadata.DNShard{
-					Address: node.ServiceAddress,
-				},
-			},
-		})
-	}
-
-	result, err := d.txnOperator.WriteAndCommit(ctx, requests)
+	_, err := doTxnRequest(
+		ctx,
+		d.txnOperator.WriteAndCommit,
+		d.engine.getDataNodes(),
+		txn.TxnMethod_Write,
+		opDeleteRelation,
+		deleteRelationReq{
+			DatabaseID: d.id,
+			Name:       relName,
+		},
+	)
 	if err != nil {
-		return err
-	}
-	if err := errorFromTxnResponses(result.Responses); err != nil {
 		return err
 	}
 
@@ -99,31 +76,23 @@ func (d *Database) Delete(ctx context.Context, relName string) error {
 
 func (d *Database) Relation(ctx context.Context, relName string) (engine.Relation, error) {
 
-	result, err := d.txnOperator.Read(ctx, []txn.TxnRequest{
-		{
-			Method: txn.TxnMethod_Read,
-			CNRequest: &txn.CNOpRequest{
-				OpCode: opOpenRelation,
-				Payload: mustEncodePayload(openRelationReq{
-					DatabaseID: d.id,
-					Name:       relName,
-				}),
-				Target: metadata.DNShard{
-					// use first DN
-					Address: d.engine.getDataNodes()[0].ServiceAddress,
-				},
-			},
+	resps, err := doTxnRequest(
+		ctx,
+		d.txnOperator.Read,
+		d.engine.getDataNodes()[:1],
+		txn.TxnMethod_Read,
+		opOpenRelation,
+		openRelationReq{
+			DatabaseID: d.id,
+			Name:       relName,
 		},
-	})
+	)
 	if err != nil {
-		return nil, err
-	}
-	if err := errorFromTxnResponses(result.Responses); err != nil {
 		return nil, err
 	}
 
 	var resp openRelationResp
-	if err := gob.NewDecoder(bytes.NewReader(result.Responses[0].CNOpResponse.Payload)).Decode(&resp); err != nil {
+	if err := gob.NewDecoder(bytes.NewReader(resps[0])).Decode(&resp); err != nil {
 		return nil, err
 	}
 
@@ -143,32 +112,24 @@ func (d *Database) Relation(ctx context.Context, relName string) (engine.Relatio
 
 func (d *Database) Relations(ctx context.Context) ([]string, error) {
 
-	result, err := d.txnOperator.Read(ctx, []txn.TxnRequest{
-		{
-			Method: txn.TxnMethod_Read,
-			CNRequest: &txn.CNOpRequest{
-				OpCode: opGetRelations,
-				Payload: mustEncodePayload(getRelationsReq{
-					DatabaseID: d.id,
-				}),
-				Target: metadata.DNShard{
-					// use first DN
-					Address: d.engine.getDataNodes()[0].ServiceAddress,
-				},
-			},
+	resps, err := doTxnRequest(
+		ctx,
+		d.txnOperator.Read,
+		d.engine.getDataNodes()[:1],
+		txn.TxnMethod_Read,
+		opGetRelations,
+		getRelationsReq{
+			DatabaseID: d.id,
 		},
-	})
+	)
 	if err != nil {
-		return nil, err
-	}
-	if err := errorFromTxnResponses(result.Responses); err != nil {
 		return nil, err
 	}
 
 	var relNames []string
-	for _, resp := range result.Responses {
+	for _, resp := range resps {
 		var r getRelationsResp
-		if err := gob.NewDecoder(bytes.NewReader(resp.CNOpResponse.Payload)).Decode(&r); err != nil {
+		if err := gob.NewDecoder(bytes.NewReader(resp)).Decode(&r); err != nil {
 			return nil, err
 		}
 		relNames = append(relNames, r.Names...)

@@ -30,12 +30,10 @@ type Table struct {
 var _ engine.Relation = new(Table)
 
 func (*Table) Rows() int64 {
-	//TODO
-	return 0
+	return 1
 }
 
 func (*Table) Size(string) int64 {
-	//TODO
 	return 0
 }
 

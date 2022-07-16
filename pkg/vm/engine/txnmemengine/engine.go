@@ -22,7 +22,6 @@ import (
 
 	"github.com/matrixorigin/matrixone/pkg/logservice"
 	logservicepb "github.com/matrixorigin/matrixone/pkg/pb/logservice"
-	"github.com/matrixorigin/matrixone/pkg/pb/metadata"
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
 	"github.com/matrixorigin/matrixone/pkg/txn/client"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine"
@@ -64,28 +63,17 @@ var _ engine.Engine = new(Engine)
 
 func (e *Engine) Create(ctx context.Context, dbName string, txnOperator client.TxnOperator) error {
 
-	// for ddl operations, broadcast to all DNs
-	var requests []txn.TxnRequest
-	for _, node := range e.getDataNodes() {
-		requests = append(requests, txn.TxnRequest{
-			Method: txn.TxnMethod_Write,
-			CNRequest: &txn.CNOpRequest{
-				OpCode: opCreateDatabase,
-				Payload: mustEncodePayload(createDatabaseReq{
-					Name: dbName,
-				}),
-				Target: metadata.DNShard{
-					Address: node.ServiceAddress,
-				},
-			},
-		})
-	}
-
-	result, err := txnOperator.WriteAndCommit(ctx, requests)
+	_, err := doTxnRequest(
+		ctx,
+		txnOperator.WriteAndCommit,
+		e.getDataNodes(),
+		txn.TxnMethod_Write,
+		opCreateDatabase,
+		createDatabaseReq{
+			Name: dbName,
+		},
+	)
 	if err != nil {
-		return err
-	}
-	if err := errorFromTxnResponses(result.Responses); err != nil {
 		return err
 	}
 
@@ -94,32 +82,22 @@ func (e *Engine) Create(ctx context.Context, dbName string, txnOperator client.T
 
 func (e *Engine) Database(ctx context.Context, dbName string, txnOperator client.TxnOperator) (engine.Database, error) {
 
-	result, err := txnOperator.Read(ctx, []txn.TxnRequest{
-		{
-			Method: txn.TxnMethod_Read,
-			CNRequest: &txn.CNOpRequest{
-				OpCode: opOpenDatabase,
-				Payload: mustEncodePayload(openDatabaseReq{
-					Name: dbName,
-				}),
-				Target: metadata.DNShard{
-					// use first DN
-					Address: e.getDataNodes()[0].ServiceAddress,
-				},
-			},
+	resps, err := doTxnRequest(
+		ctx,
+		txnOperator.Read,
+		e.getDataNodes()[:1],
+		txn.TxnMethod_Read,
+		opOpenDatabase,
+		openDatabaseReq{
+			Name: dbName,
 		},
-	})
+	)
 	if err != nil {
-		return nil, err
-	}
-	if err := errorFromTxnResponses(result.Responses); err != nil {
 		return nil, err
 	}
 
 	var resp openDatabaseResp
-	if err := gob.NewDecoder(
-		bytes.NewReader(result.Responses[0].CNOpResponse.Payload),
-	).Decode(&resp); err != nil {
+	if err := gob.NewDecoder(bytes.NewReader(resps[0])).Decode(&resp); err != nil {
 		return nil, err
 	}
 
@@ -134,29 +112,22 @@ func (e *Engine) Database(ctx context.Context, dbName string, txnOperator client
 
 func (e *Engine) Databases(ctx context.Context, txnOperator client.TxnOperator) ([]string, error) {
 
-	result, err := txnOperator.Read(ctx, []txn.TxnRequest{
-		{
-			Method: txn.TxnMethod_Read,
-			CNRequest: &txn.CNOpRequest{
-				OpCode: opGetDatabases,
-				Target: metadata.DNShard{
-					// use first DN
-					Address: e.getDataNodes()[0].ServiceAddress,
-				},
-			},
-		},
-	})
+	resps, err := doTxnRequest(
+		ctx,
+		txnOperator.Read,
+		e.getDataNodes()[:1],
+		txn.TxnMethod_Read,
+		opGetDatabases,
+		nil,
+	)
 	if err != nil {
-		return nil, err
-	}
-	if err := errorFromTxnResponses(result.Responses); err != nil {
 		return nil, err
 	}
 
 	var dbNames []string
-	for _, resp := range result.Responses {
+	for _, resp := range resps {
 		var r getDatabasesResp
-		if err := gob.NewDecoder(bytes.NewReader(resp.CNOpResponse.Payload)).Decode(&r); err != nil {
+		if err := gob.NewDecoder(bytes.NewReader(resp)).Decode(&r); err != nil {
 			return nil, err
 		}
 		dbNames = append(dbNames, r.Names...)
@@ -167,28 +138,17 @@ func (e *Engine) Databases(ctx context.Context, txnOperator client.TxnOperator) 
 
 func (e *Engine) Delete(ctx context.Context, dbName string, txnOperator client.TxnOperator) error {
 
-	// for ddl operations, broadcast to all DNs
-	var requests []txn.TxnRequest
-	for _, node := range e.getDataNodes() {
-		requests = append(requests, txn.TxnRequest{
-			Method: txn.TxnMethod_Write,
-			CNRequest: &txn.CNOpRequest{
-				OpCode: opDeleteDatabase,
-				Payload: mustEncodePayload(deleteDatabaseReq{
-					Name: dbName,
-				}),
-				Target: metadata.DNShard{
-					Address: node.ServiceAddress,
-				},
-			},
-		})
-	}
-
-	result, err := txnOperator.WriteAndCommit(ctx, requests)
+	_, err := doTxnRequest(
+		ctx,
+		txnOperator.WriteAndCommit,
+		e.getDataNodes(),
+		txn.TxnMethod_Write,
+		opDeleteDatabase,
+		deleteDatabaseReq{
+			Name: dbName,
+		},
+	)
 	if err != nil {
-		return err
-	}
-	if err := errorFromTxnResponses(result.Responses); err != nil {
 		return err
 	}
 
@@ -198,7 +158,7 @@ func (e *Engine) Delete(ctx context.Context, dbName string, txnOperator client.T
 func (e *Engine) Nodes(ctx context.Context, txnOperator client.TxnOperator) engine.Nodes {
 
 	var nodes engine.Nodes
-	for _, node := range e.getDataNodes() {
+	for _, node := range e.getComputeNodes() {
 		nodes = append(nodes, engine.Node{
 			Mcpu: 1,
 			Id:   node.UUID,
