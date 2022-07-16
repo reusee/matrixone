@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"encoding/gob"
 
+	"github.com/matrixorigin/matrixone/pkg/container/batch"
+	"github.com/matrixorigin/matrixone/pkg/container/vector"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine"
 )
 
@@ -30,6 +32,14 @@ const (
 	opDeleteRelation
 	opOpenRelation
 	opGetRelations
+	opAddTableDef
+	opDelTableDef
+	opDelete
+	opGetPrimaryKeys
+	opGetTableDefs
+	opTruncate
+	opUpdate
+	opWrite
 )
 
 func mustEncodePayload(o any) []byte {
@@ -87,4 +97,53 @@ type getRelationsReq struct {
 
 type getRelationsResp struct {
 	Names []string
+}
+
+type addTableDefReq struct {
+	TableID int64
+	Def     engine.TableDef
+}
+
+type delTableDefReq struct {
+	TableID int64
+	Def     engine.TableDef
+}
+
+type deleteReq struct {
+	TableID int64
+	Vector  *vector.Vector
+}
+
+type getPrimaryKeysReq struct {
+	TableID int64
+}
+
+type getPrimaryKeysResp struct {
+	Attrs []*engine.Attribute
+}
+
+type getTableDefsReq struct {
+	TableID int64
+}
+
+type getTableDefsResp struct {
+	Defs []engine.TableDef
+}
+
+type truncateReq struct {
+	TableID int64
+}
+
+type truncateResp struct {
+	AffectedRows int64
+}
+
+type updateReq struct {
+	TableID int64
+	Batch   *batch.Batch
+}
+
+type writeReq struct {
+	TableID int64
+	Batch   *batch.Batch
 }

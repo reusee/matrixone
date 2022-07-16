@@ -74,9 +74,9 @@ type Relation interface {
 
 	Nodes() Nodes
 
-	TableDefs() []TableDef
+	TableDefs(context.Context) ([]TableDef, error)
 
-	GetPrimaryKeys() []*Attribute
+	GetPrimaryKeys(context.Context) ([]*Attribute, error)
 
 	GetHideKey() *Attribute
 	// true: primary key, false: hide key
@@ -116,7 +116,7 @@ type Engine interface {
 	Databases(context.Context, client.TxnOperator) ([]string, error)
 	Database(context.Context, string, client.TxnOperator) (Database, error)
 
-	Nodes(context.Context, client.TxnOperator) Nodes
+	Nodes() Nodes
 }
 
 // MakeDefaultExpr returns a new DefaultExpr

@@ -37,7 +37,7 @@ func (d *Database) Create(ctx context.Context, relName string, defs []engine.Tab
 
 	_, err := doTxnRequest(
 		ctx,
-		d.txnOperator.WriteAndCommit,
+		d.txnOperator.Write,
 		d.engine.getDataNodes(),
 		txn.TxnMethod_Write,
 		opCreateRelation,
@@ -58,7 +58,7 @@ func (d *Database) Delete(ctx context.Context, relName string) error {
 
 	_, err := doTxnRequest(
 		ctx,
-		d.txnOperator.WriteAndCommit,
+		d.txnOperator.Write,
 		d.engine.getDataNodes(),
 		txn.TxnMethod_Write,
 		opDeleteRelation,
@@ -100,7 +100,9 @@ func (d *Database) Relation(ctx context.Context, relName string) (engine.Relatio
 
 	case RelationTable:
 		table := &Table{
-			id: resp.ID,
+			engine:      d.engine,
+			txnOperator: d.txnOperator,
+			id:          resp.ID,
 		}
 		return table, nil
 

@@ -37,12 +37,16 @@ type Engine struct {
 		logservicepb.ClusterDetails
 	}
 
+	// shard
+	shardPolicy ShardPolicy
+
 	fatal func()
 }
 
 func New(
 	ctx context.Context,
 	hakeeperClient logservice.CNHAKeeperClient,
+	shardPolicy ShardPolicy,
 ) *Engine {
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -52,6 +56,7 @@ func New(
 
 	engine := &Engine{
 		hakeeperClient: hakeeperClient,
+		shardPolicy:    shardPolicy,
 		fatal:          fatal,
 	}
 	go engine.startHAKeeperLoop(ctx)
@@ -65,7 +70,7 @@ func (e *Engine) Create(ctx context.Context, dbName string, txnOperator client.T
 
 	_, err := doTxnRequest(
 		ctx,
-		txnOperator.WriteAndCommit,
+		txnOperator.Write,
 		e.getDataNodes(),
 		txn.TxnMethod_Write,
 		opCreateDatabase,
@@ -140,7 +145,7 @@ func (e *Engine) Delete(ctx context.Context, dbName string, txnOperator client.T
 
 	_, err := doTxnRequest(
 		ctx,
-		txnOperator.WriteAndCommit,
+		txnOperator.Write,
 		e.getDataNodes(),
 		txn.TxnMethod_Write,
 		opDeleteDatabase,
@@ -155,7 +160,7 @@ func (e *Engine) Delete(ctx context.Context, dbName string, txnOperator client.T
 	return nil
 }
 
-func (e *Engine) Nodes(ctx context.Context, txnOperator client.TxnOperator) engine.Nodes {
+func (e *Engine) Nodes() engine.Nodes {
 
 	var nodes engine.Nodes
 	for _, node := range e.getComputeNodes() {

@@ -13,3 +13,24 @@
 // limitations under the License.
 
 package engine
+
+import (
+	"github.com/matrixorigin/matrixone/pkg/container/batch"
+	"github.com/matrixorigin/matrixone/pkg/container/vector"
+	logservicepb "github.com/matrixorigin/matrixone/pkg/pb/logservice"
+)
+
+type ShardPolicy interface {
+	Vector(vec *vector.Vector, nodes []logservicepb.DNNode) ([]*ShardedVector, error)
+	Batch(batch *batch.Batch, nodes []logservicepb.DNNode) ([]*ShardedBatch, error)
+}
+
+type ShardedVector struct {
+	Vector *vector.Vector
+	Nodes  []logservicepb.DNNode
+}
+
+type ShardedBatch struct {
+	Batch *batch.Batch
+	Nodes []logservicepb.DNNode
+}
