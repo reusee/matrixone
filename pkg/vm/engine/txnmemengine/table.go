@@ -142,9 +142,60 @@ func (t *Table) GetPrimaryKeys(ctx context.Context) ([]*engine.Attribute, error)
 	return resp.Attrs, nil
 }
 
-func (*Table) NewReader(ctx context.Context, parallel int, expr *plan.Expr, data []byte) []engine.Reader {
-	//TODO
-	return nil
+func (t *Table) NewReader(ctx context.Context, parallel int, expr *plan.Expr, data []byte) (readers []engine.Reader, err error) {
+
+	readers = make([]engine.Reader, parallel)
+	nodes := t.engine.getDataNodes()
+
+	resps, err := doTxnRequest(
+		ctx,
+		t.txnOperator.Read,
+		nodes,
+		txn.TxnMethod_Read,
+		opNewTableIter,
+		newTableIterReq{
+			TableID: t.id,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	iterIDSets := make([][]int64, parallel)
+	i := 0
+	for _, payload := range resps {
+		var r newTableIterResp
+		if err := gob.NewDecoder(bytes.NewReader(payload)).Decode(&r); err != nil {
+			return nil, err
+		}
+		if r.IterID > 0 {
+			iterIDSets[i] = append(iterIDSets[i], r.IterID)
+			i++
+			if i >= parallel {
+				// round
+				i = 0
+			}
+		}
+	}
+
+	for i, idSet := range iterIDSets {
+		if len(idSet) == 0 {
+			continue
+		}
+		reader := &TableReader{
+			txnOperator: t.txnOperator,
+			ctx:         ctx,
+		}
+		for _, iterID := range idSet {
+			reader.iterInfos = append(reader.iterInfos, IterInfo{
+				Node:   nodes[i],
+				IterID: iterID,
+			})
+		}
+		readers[i] = reader
+	}
+
+	return
 }
 
 func (t *Table) Nodes() engine.Nodes {

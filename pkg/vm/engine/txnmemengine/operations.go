@@ -20,6 +20,7 @@ import (
 
 	"github.com/matrixorigin/matrixone/pkg/container/batch"
 	"github.com/matrixorigin/matrixone/pkg/container/vector"
+	"github.com/matrixorigin/matrixone/pkg/pb/plan"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine"
 )
 
@@ -40,6 +41,9 @@ const (
 	opTruncate
 	opUpdate
 	opWrite
+	opNewTableIter
+	opRead
+	opCloseTableIter
 )
 
 func mustEncodePayload(o any) []byte {
@@ -146,4 +150,27 @@ type updateReq struct {
 type writeReq struct {
 	TableID int64
 	Batch   *batch.Batch
+}
+
+type newTableIterReq struct {
+	TableID int64
+	Expr    *plan.Expr
+	Data    []byte
+}
+
+type newTableIterResp struct {
+	IterID int64
+}
+
+type readReq struct {
+	IterID   int64
+	ColNames []string
+}
+
+type readResp struct {
+	Batch *batch.Batch
+}
+
+type closeTableIterReq struct {
+	IterID int64
 }

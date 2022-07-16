@@ -94,11 +94,12 @@ type Relation interface {
 	DelTableDef(context.Context, TableDef) error
 
 	// first argument is the number of reader, second argument is the filter extend,  third parameter is the payload required by the engine
-	NewReader(context.Context, int, *plan.Expr, []byte) []Reader
+	NewReader(context.Context, int, *plan.Expr, []byte) ([]Reader, error)
 }
 
 type Reader interface {
 	Read([]string) (*batch.Batch, error)
+	Close() error
 }
 
 type Database interface {
