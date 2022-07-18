@@ -72,7 +72,7 @@ func (*AttributeDef) tableDef() {}
 type Relation interface {
 	Statistics
 
-	Nodes() Nodes
+	Ranges(context.Context) [][]byte
 
 	TableDefs(context.Context) ([]TableDef, error)
 
@@ -94,7 +94,7 @@ type Relation interface {
 	DelTableDef(context.Context, TableDef) error
 
 	// first argument is the number of reader, second argument is the filter extend,  third parameter is the payload required by the engine
-	NewReader(context.Context, int, *plan.Expr, []byte) ([]Reader, error)
+	NewReader(context.Context, int, *plan.Expr, [][]byte) ([]Reader, error)
 }
 
 type Reader interface {
