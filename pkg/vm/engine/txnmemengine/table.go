@@ -142,10 +142,37 @@ func (t *Table) GetPrimaryKeys(ctx context.Context) ([]*engine.Attribute, error)
 	return resp.Attrs, nil
 }
 
-func (t *Table) NewReader(ctx context.Context, parallel int, expr *plan.Expr, data []byte) (readers []engine.Reader, err error) {
+func (t *Table) Ranges(ctx context.Context) ([][]byte, error) {
+	var shards [][]byte
+	for _, node := range t.engine.getDataNodes() {
+		shards = append(shards, []byte(node.UUID))
+	}
+	return shards, nil
+}
+
+func (t *Table) NewReader(
+	ctx context.Context,
+	parallel int,
+	expr *plan.Expr,
+	shards [][]byte,
+) (readers []engine.Reader, err error) {
 
 	readers = make([]engine.Reader, parallel)
 	nodes := t.engine.getDataNodes()
+
+	if len(shards) > 0 {
+		uuidSet := make(map[string]bool)
+		for _, shard := range shards {
+			uuidSet[string(shard)] = true
+		}
+		filteredNodes := nodes[:0]
+		for _, node := range nodes {
+			if uuidSet[node.UUID] {
+				filteredNodes = append(filteredNodes, node)
+			}
+		}
+		nodes = filteredNodes
+	}
 
 	resps, err := doTxnRequest(
 		ctx,
@@ -155,6 +182,8 @@ func (t *Table) NewReader(ctx context.Context, parallel int, expr *plan.Expr, da
 		opNewTableIter,
 		newTableIterReq{
 			TableID: t.id,
+			Expr:    expr,
+			Shards:  shards,
 		},
 	)
 	if err != nil {

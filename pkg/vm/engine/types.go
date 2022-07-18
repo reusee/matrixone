@@ -72,7 +72,7 @@ func (*AttributeDef) tableDef() {}
 type Relation interface {
 	Statistics
 
-	Ranges(context.Context) [][]byte
+	Ranges(context.Context) ([][]byte, error)
 
 	TableDefs(context.Context) ([]TableDef, error)
 

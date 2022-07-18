@@ -155,7 +155,7 @@ type writeReq struct {
 type newTableIterReq struct {
 	TableID int64
 	Expr    *plan.Expr
-	Data    []byte
+	Shards  [][]byte
 }
 
 type newTableIterResp struct {
