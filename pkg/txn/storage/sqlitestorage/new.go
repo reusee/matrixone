@@ -17,16 +17,18 @@ package sqlitestorage
 import (
 	"database/sql"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func New() (*Storage, error) {
-	db, err := sql.Open("sqlite", ":memory:")
+	db, err := sql.Open("sqlite3", "file:db?mode=memory")
 	if err != nil {
 		return nil, err
 	}
 
 	//TODO re-design
+	// 使用单一的表，使用字段的并集
+	// partial index, view 等等都可以用上
 	stmts := []string{
 
 		0: `
