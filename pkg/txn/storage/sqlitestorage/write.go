@@ -15,39 +15,45 @@
 package sqlitestorage
 
 import (
-	"database/sql"
-
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
-	"github.com/matrixorigin/matrixone/pkg/txn/storage"
+	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnmemengine"
 )
 
-type Storage struct {
-	db *sql.DB
-}
+func (*Storage) Write(txnMeta txn.TxnMeta, op uint32, payload []byte) (result []byte, err error) {
 
-var _ storage.TxnStorage = new(Storage)
+	switch op {
 
-func (*Storage) Commit(txnMeta txn.TxnMeta) error {
-	//TODO
-	panic("unimplemented")
-}
+	case txnmemengine.OpCreateDatabase:
+		//TODO
 
-func (*Storage) Committing(txnMeta txn.TxnMeta) error {
-	//TODO
-	panic("unimplemented")
-}
+	case txnmemengine.OpDeleteDatabase:
+		//TODO
 
-func (*Storage) Prepare(txnMeta txn.TxnMeta) error {
-	//TODO
-	panic("unimplemented")
-}
+	case txnmemengine.OpCreateRelation:
+		//TODO
 
-func (*Storage) Rollback(txnMeta txn.TxnMeta) error {
-	//TODO
-	panic("unimplemented")
-}
+	case txnmemengine.OpDeleteRelation:
+		//TODO
 
-func (*Storage) StartRecovery(chan txn.TxnMeta) {
-	//TODO
-	panic("unimplemented")
+	case txnmemengine.OpAddTableDef:
+		//TODO
+
+	case txnmemengine.OpDelTableDef:
+		//TODO
+
+	case txnmemengine.OpDelete:
+		//TODO
+
+	case txnmemengine.OpTruncate:
+		//TODO
+
+	case txnmemengine.OpUpdate:
+		//TODO
+
+	case txnmemengine.OpWrite:
+		//TODO
+
+	}
+
+	return
 }

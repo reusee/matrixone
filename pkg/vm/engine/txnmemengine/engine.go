@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package engine
+package txnmemengine
 
 import (
 	"bytes"
@@ -73,8 +73,8 @@ func (e *Engine) Create(ctx context.Context, dbName string, txnOperator client.T
 		txnOperator.Write,
 		e.getDataNodes(),
 		txn.TxnMethod_Write,
-		opCreateDatabase,
-		createDatabaseReq{
+		OpCreateDatabase,
+		CreateDatabaseReq{
 			Name: dbName,
 		},
 	)
@@ -92,8 +92,8 @@ func (e *Engine) Database(ctx context.Context, dbName string, txnOperator client
 		txnOperator.Read,
 		e.getDataNodes()[:1],
 		txn.TxnMethod_Read,
-		opOpenDatabase,
-		openDatabaseReq{
+		OpOpenDatabase,
+		OpenDatabaseReq{
 			Name: dbName,
 		},
 	)
@@ -101,7 +101,7 @@ func (e *Engine) Database(ctx context.Context, dbName string, txnOperator client
 		return nil, err
 	}
 
-	var resp openDatabaseResp
+	var resp OpenDatabaseResp
 	if err := gob.NewDecoder(bytes.NewReader(resps[0])).Decode(&resp); err != nil {
 		return nil, err
 	}
@@ -122,7 +122,7 @@ func (e *Engine) Databases(ctx context.Context, txnOperator client.TxnOperator) 
 		txnOperator.Read,
 		e.getDataNodes()[:1],
 		txn.TxnMethod_Read,
-		opGetDatabases,
+		OpGetDatabases,
 		nil,
 	)
 	if err != nil {
@@ -131,7 +131,7 @@ func (e *Engine) Databases(ctx context.Context, txnOperator client.TxnOperator) 
 
 	var dbNames []string
 	for _, resp := range resps {
-		var r getDatabasesResp
+		var r GetDatabasesResp
 		if err := gob.NewDecoder(bytes.NewReader(resp)).Decode(&r); err != nil {
 			return nil, err
 		}
@@ -148,8 +148,8 @@ func (e *Engine) Delete(ctx context.Context, dbName string, txnOperator client.T
 		txnOperator.Write,
 		e.getDataNodes(),
 		txn.TxnMethod_Write,
-		opDeleteDatabase,
-		deleteDatabaseReq{
+		OpDeleteDatabase,
+		DeleteDatabaseReq{
 			Name: dbName,
 		},
 	)

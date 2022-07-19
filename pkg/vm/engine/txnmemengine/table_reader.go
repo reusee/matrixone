@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package engine
+package txnmemengine
 
 import (
 	"bytes"
@@ -53,8 +53,8 @@ func (t *TableReader) Read(colNames []string) (*batch.Batch, error) {
 			t.txnOperator.Read,
 			[]logservicepb.DNNode{t.iterInfos[0].Node},
 			txn.TxnMethod_Read,
-			opRead,
-			readReq{
+			OpRead,
+			ReadReq{
 				IterID:   t.iterInfos[0].IterID,
 				ColNames: colNames,
 			},
@@ -63,7 +63,7 @@ func (t *TableReader) Read(colNames []string) (*batch.Batch, error) {
 			return nil, err
 		}
 
-		var r readResp
+		var r ReadResp
 		if err := gob.NewDecoder(bytes.NewReader(resps[0])).Decode(&r); err != nil {
 			return nil, err
 		}
@@ -86,8 +86,8 @@ func (t *TableReader) Close() error {
 			t.txnOperator.Read,
 			[]logservicepb.DNNode{info.Node},
 			txn.TxnMethod_Read,
-			opCloseTableIter,
-			closeTableIterReq{
+			OpCloseTableIter,
+			CloseTableIterReq{
 				IterID: info.IterID,
 			},
 		)

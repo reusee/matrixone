@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package engine
+package txnmemengine
 
 import (
 	"bytes"
@@ -50,8 +50,8 @@ func (t *Table) AddTableDef(ctx context.Context, def engine.TableDef) error {
 		t.txnOperator.Write,
 		t.engine.getDataNodes(),
 		txn.TxnMethod_Write,
-		opAddTableDef,
-		addTableDefReq{
+		OpAddTableDef,
+		AddTableDefReq{
 			TableID: t.id,
 			Def:     def,
 		},
@@ -70,8 +70,8 @@ func (t *Table) DelTableDef(ctx context.Context, def engine.TableDef) error {
 		t.txnOperator.Write,
 		t.engine.getDataNodes(),
 		txn.TxnMethod_Write,
-		opDelTableDef,
-		delTableDefReq{
+		OpDelTableDef,
+		DelTableDefReq{
 			TableID: t.id,
 			Def:     def,
 		},
@@ -96,8 +96,8 @@ func (t *Table) Delete(ctx context.Context, vec *vector.Vector, _ string) error 
 			t.txnOperator.Write,
 			shard.Nodes,
 			txn.TxnMethod_Write,
-			opDelete,
-			deleteReq{
+			OpDelete,
+			DeleteReq{
 				TableID: t.id,
 				Vector:  shard.Vector,
 			},
@@ -125,8 +125,8 @@ func (t *Table) GetPrimaryKeys(ctx context.Context) ([]*engine.Attribute, error)
 		t.txnOperator.Read,
 		t.engine.getDataNodes()[:1],
 		txn.TxnMethod_Read,
-		opGetPrimaryKeys,
-		getPrimaryKeysReq{
+		OpGetPrimaryKeys,
+		GetPrimaryKeysReq{
 			TableID: t.id,
 		},
 	)
@@ -134,7 +134,7 @@ func (t *Table) GetPrimaryKeys(ctx context.Context) ([]*engine.Attribute, error)
 		return nil, err
 	}
 
-	var resp getPrimaryKeysResp
+	var resp GetPrimaryKeysResp
 	if err := gob.NewDecoder(bytes.NewReader(resps[0])).Decode(&resp); err != nil {
 		return nil, err
 	}
@@ -179,8 +179,8 @@ func (t *Table) NewReader(
 		t.txnOperator.Read,
 		nodes,
 		txn.TxnMethod_Read,
-		opNewTableIter,
-		newTableIterReq{
+		OpNewTableIter,
+		NewTableIterReq{
 			TableID: t.id,
 			Expr:    expr,
 			Shards:  shards,
@@ -193,7 +193,7 @@ func (t *Table) NewReader(
 	iterIDSets := make([][]int64, parallel)
 	i := 0
 	for _, payload := range resps {
-		var r newTableIterResp
+		var r NewTableIterResp
 		if err := gob.NewDecoder(bytes.NewReader(payload)).Decode(&r); err != nil {
 			return nil, err
 		}
@@ -238,8 +238,8 @@ func (t *Table) TableDefs(ctx context.Context) ([]engine.TableDef, error) {
 		t.txnOperator.Read,
 		t.engine.getDataNodes()[:1],
 		txn.TxnMethod_Read,
-		opGetTableDefs,
-		getTableDefsReq{
+		OpGetTableDefs,
+		GetTableDefsReq{
 			TableID: t.id,
 		},
 	)
@@ -247,7 +247,7 @@ func (t *Table) TableDefs(ctx context.Context) ([]engine.TableDef, error) {
 		return nil, err
 	}
 
-	var resp getTableDefsResp
+	var resp GetTableDefsResp
 	if err := gob.NewDecoder(bytes.NewReader(resps[0])).Decode(&resp); err != nil {
 		return nil, err
 	}
@@ -262,8 +262,8 @@ func (t *Table) Truncate(ctx context.Context) (uint64, error) {
 		t.txnOperator.Write,
 		t.engine.getDataNodes(),
 		txn.TxnMethod_Write,
-		opTruncate,
-		truncateReq{
+		OpTruncate,
+		TruncateReq{
 			TableID: t.id,
 		},
 	)
@@ -273,7 +273,7 @@ func (t *Table) Truncate(ctx context.Context) (uint64, error) {
 
 	var affectedRows int64
 	for _, payload := range resps {
-		var r truncateResp
+		var r TruncateResp
 		if err := gob.NewDecoder(bytes.NewReader(payload)).Decode(&r); err != nil {
 			return uint64(affectedRows), err
 		}
@@ -296,8 +296,8 @@ func (t *Table) Update(ctx context.Context, data *batch.Batch) error {
 			t.txnOperator.Write,
 			shard.Nodes,
 			txn.TxnMethod_Write,
-			opUpdate,
-			updateReq{
+			OpUpdate,
+			UpdateReq{
 				TableID: t.id,
 				Batch:   shard.Batch,
 			},
@@ -323,8 +323,8 @@ func (t *Table) Write(ctx context.Context, data *batch.Batch) error {
 			t.txnOperator.Write,
 			shard.Nodes,
 			txn.TxnMethod_Write,
-			opWrite,
-			writeReq{
+			OpWrite,
+			WriteReq{
 				TableID: t.id,
 				Batch:   shard.Batch,
 			},

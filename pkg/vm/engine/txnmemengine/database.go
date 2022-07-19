@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package engine
+package txnmemengine
 
 import (
 	"bytes"
@@ -40,8 +40,8 @@ func (d *Database) Create(ctx context.Context, relName string, defs []engine.Tab
 		d.txnOperator.Write,
 		d.engine.getDataNodes(),
 		txn.TxnMethod_Write,
-		opCreateRelation,
-		createRelationReq{
+		OpCreateRelation,
+		CreateRelationReq{
 			DatabaseID: d.id,
 			Name:       relName,
 			Defs:       defs,
@@ -61,8 +61,8 @@ func (d *Database) Delete(ctx context.Context, relName string) error {
 		d.txnOperator.Write,
 		d.engine.getDataNodes(),
 		txn.TxnMethod_Write,
-		opDeleteRelation,
-		deleteRelationReq{
+		OpDeleteRelation,
+		DeleteRelationReq{
 			DatabaseID: d.id,
 			Name:       relName,
 		},
@@ -81,8 +81,8 @@ func (d *Database) Relation(ctx context.Context, relName string) (engine.Relatio
 		d.txnOperator.Read,
 		d.engine.getDataNodes()[:1],
 		txn.TxnMethod_Read,
-		opOpenRelation,
-		openRelationReq{
+		OpOpenRelation,
+		OpenRelationReq{
 			DatabaseID: d.id,
 			Name:       relName,
 		},
@@ -91,7 +91,7 @@ func (d *Database) Relation(ctx context.Context, relName string) (engine.Relatio
 		return nil, err
 	}
 
-	var resp openRelationResp
+	var resp OpenRelationResp
 	if err := gob.NewDecoder(bytes.NewReader(resps[0])).Decode(&resp); err != nil {
 		return nil, err
 	}
@@ -119,8 +119,8 @@ func (d *Database) Relations(ctx context.Context) ([]string, error) {
 		d.txnOperator.Read,
 		d.engine.getDataNodes()[:1],
 		txn.TxnMethod_Read,
-		opGetRelations,
-		getRelationsReq{
+		OpGetRelations,
+		GetRelationsReq{
 			DatabaseID: d.id,
 		},
 	)
@@ -130,7 +130,7 @@ func (d *Database) Relations(ctx context.Context) ([]string, error) {
 
 	var relNames []string
 	for _, resp := range resps {
-		var r getRelationsResp
+		var r GetRelationsResp
 		if err := gob.NewDecoder(bytes.NewReader(resp)).Decode(&r); err != nil {
 			return nil, err
 		}

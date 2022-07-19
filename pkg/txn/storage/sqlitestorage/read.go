@@ -15,39 +15,43 @@
 package sqlitestorage
 
 import (
-	"database/sql"
-
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
 	"github.com/matrixorigin/matrixone/pkg/txn/storage"
+	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnmemengine"
 )
 
-type Storage struct {
-	db *sql.DB
-}
+func (*Storage) Read(txnMeta txn.TxnMeta, op uint32, payload []byte) (res storage.ReadResult, err error) {
 
-var _ storage.TxnStorage = new(Storage)
+	switch op {
 
-func (*Storage) Commit(txnMeta txn.TxnMeta) error {
-	//TODO
-	panic("unimplemented")
-}
+	case txnmemengine.OpOpenDatabase:
+		//TODO
 
-func (*Storage) Committing(txnMeta txn.TxnMeta) error {
-	//TODO
-	panic("unimplemented")
-}
+	case txnmemengine.OpGetDatabases:
+		//TODO
 
-func (*Storage) Prepare(txnMeta txn.TxnMeta) error {
-	//TODO
-	panic("unimplemented")
-}
+	case txnmemengine.OpOpenRelation:
+		//TODO
 
-func (*Storage) Rollback(txnMeta txn.TxnMeta) error {
-	//TODO
-	panic("unimplemented")
-}
+	case txnmemengine.OpGetRelations:
+		//TODO
 
-func (*Storage) StartRecovery(chan txn.TxnMeta) {
-	//TODO
-	panic("unimplemented")
+	case txnmemengine.OpGetPrimaryKeys:
+		//TODO
+
+	case txnmemengine.OpGetTableDefs:
+		//TODO
+
+	case txnmemengine.OpNewTableIter:
+		//TODO
+
+	case txnmemengine.OpRead:
+		//TODO
+
+	case txnmemengine.OpCloseTableIter:
+		//TODO
+
+	}
+
+	return
 }

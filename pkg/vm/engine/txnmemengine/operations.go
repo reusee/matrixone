@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package engine
+package txnmemengine
 
 import (
 	"bytes"
@@ -25,25 +25,25 @@ import (
 )
 
 const (
-	opCreateDatabase = iota + 64
-	opOpenDatabase
-	opGetDatabases
-	opDeleteDatabase
-	opCreateRelation
-	opDeleteRelation
-	opOpenRelation
-	opGetRelations
-	opAddTableDef
-	opDelTableDef
-	opDelete
-	opGetPrimaryKeys
-	opGetTableDefs
-	opTruncate
-	opUpdate
-	opWrite
-	opNewTableIter
-	opRead
-	opCloseTableIter
+	OpCreateDatabase = iota + 64
+	OpOpenDatabase
+	OpGetDatabases
+	OpDeleteDatabase
+	OpCreateRelation
+	OpDeleteRelation
+	OpOpenRelation
+	OpGetRelations
+	OpAddTableDef
+	OpDelTableDef
+	OpDelete
+	OpGetPrimaryKeys
+	OpGetTableDefs
+	OpTruncate
+	OpUpdate
+	OpWrite
+	OpNewTableIter
+	OpRead
+	OpCloseTableIter
 )
 
 func mustEncodePayload(o any) []byte {
@@ -54,123 +54,123 @@ func mustEncodePayload(o any) []byte {
 	return buf.Bytes()
 }
 
-type createDatabaseReq struct {
+type CreateDatabaseReq struct {
 	Name string
 }
 
-type openDatabaseReq struct {
+type OpenDatabaseReq struct {
 	Name string
 }
 
-type openDatabaseResp struct {
+type OpenDatabaseResp struct {
 	ID int64
 }
 
-type getDatabasesResp struct {
+type GetDatabasesResp struct {
 	Names []string
 }
 
-type deleteDatabaseReq struct {
+type DeleteDatabaseReq struct {
 	Name string
 }
 
-type createRelationReq struct {
+type CreateRelationReq struct {
 	DatabaseID int64
 	Name       string
 	Defs       []engine.TableDef
 }
 
-type deleteRelationReq struct {
+type DeleteRelationReq struct {
 	DatabaseID int64
 	Name       string
 }
 
-type openRelationReq struct {
+type OpenRelationReq struct {
 	DatabaseID int64
 	Name       string
 }
 
-type openRelationResp struct {
+type OpenRelationResp struct {
 	ID   int64
 	Type RelationType
 }
 
-type getRelationsReq struct {
+type GetRelationsReq struct {
 	DatabaseID int64
 }
 
-type getRelationsResp struct {
+type GetRelationsResp struct {
 	Names []string
 }
 
-type addTableDefReq struct {
+type AddTableDefReq struct {
 	TableID int64
 	Def     engine.TableDef
 }
 
-type delTableDefReq struct {
+type DelTableDefReq struct {
 	TableID int64
 	Def     engine.TableDef
 }
 
-type deleteReq struct {
+type DeleteReq struct {
 	TableID int64
 	Vector  *vector.Vector
 }
 
-type getPrimaryKeysReq struct {
+type GetPrimaryKeysReq struct {
 	TableID int64
 }
 
-type getPrimaryKeysResp struct {
+type GetPrimaryKeysResp struct {
 	Attrs []*engine.Attribute
 }
 
-type getTableDefsReq struct {
+type GetTableDefsReq struct {
 	TableID int64
 }
 
-type getTableDefsResp struct {
+type GetTableDefsResp struct {
 	Defs []engine.TableDef
 }
 
-type truncateReq struct {
+type TruncateReq struct {
 	TableID int64
 }
 
-type truncateResp struct {
+type TruncateResp struct {
 	AffectedRows int64
 }
 
-type updateReq struct {
+type UpdateReq struct {
 	TableID int64
 	Batch   *batch.Batch
 }
 
-type writeReq struct {
+type WriteReq struct {
 	TableID int64
 	Batch   *batch.Batch
 }
 
-type newTableIterReq struct {
+type NewTableIterReq struct {
 	TableID int64
 	Expr    *plan.Expr
 	Shards  [][]byte
 }
 
-type newTableIterResp struct {
+type NewTableIterResp struct {
 	IterID int64
 }
 
-type readReq struct {
+type ReadReq struct {
 	IterID   int64
 	ColNames []string
 }
 
-type readResp struct {
+type ReadResp struct {
 	Batch *batch.Batch
 }
 
-type closeTableIterReq struct {
+type CloseTableIterReq struct {
 	IterID int64
 }
