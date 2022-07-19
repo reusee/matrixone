@@ -14,6 +14,10 @@
 
 package memdbstorage
 
+import (
+	txnpb "github.com/matrixorigin/matrixone/pkg/pb/txn"
+)
+
 type Database struct {
 	ID int
 }
