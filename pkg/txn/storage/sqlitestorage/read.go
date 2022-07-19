@@ -20,12 +20,27 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnmemengine"
 )
 
-func (*Storage) Read(txnMeta txn.TxnMeta, op uint32, payload []byte) (res storage.ReadResult, err error) {
+func (s *Storage) Read(txnMeta txn.TxnMeta, op uint32, payload []byte) (res storage.ReadResult, err error) {
 
 	switch op {
 
 	case txnmemengine.OpOpenDatabase:
-		//TODO
+		return handleRead(s, txnMeta, payload, func(
+			req txnmemengine.OpenDatabaseReq,
+		) (
+			resp txnmemengine.OpenDatabaseResp,
+			err error,
+		) {
+			err = s.db.QueryRow(`
+        select id from databases
+        where name = ?
+        and (tx_id is null or tx_id = ?)
+        `,
+				req.Name,
+				string(txnMeta.ID),
+			).Scan(&resp.ID)
+			return
+		})
 
 	case txnmemengine.OpGetDatabases:
 		//TODO

@@ -26,10 +26,14 @@ func New() (*Storage, error) {
 		return nil, err
 	}
 
+	//TODO re-design
 	stmts := []string{
+
 		0: `
     create table databases (
-      id integer primary key autoincrement
+      id integer primary key autoincrement,
+      tx_id integer,
+      foreign key(tx_id) references transactions(id)
     );
     `,
 
@@ -38,6 +42,8 @@ func New() (*Storage, error) {
       id integer primary key autoincrement,
       database_id integer not null,
       name text not null,
+      tx_id integer,
+      foreign key(tx_id) references transactions(id),
       foreign key(database_id) references databases(id)
     );
     `,
@@ -48,6 +54,8 @@ func New() (*Storage, error) {
       table_id integer not null,
       name text not null,
       type text not null,
+      tx_id integer,
+      foreign key(tx_id) references transactions(id),
       foreign key(table_id) references tables(id)
     );
     `,
@@ -57,7 +65,15 @@ func New() (*Storage, error) {
       id integer primary key autoincrement,
       table_id integer not null,
       data json not null,
+      tx_id integer,
+      foreign key(tx_id) references transactions(id),
       foreign key(table_id) references tables(id)
+    );
+    `,
+
+		4: `
+    create table transactions (
+      id text primary key
     );
     `,
 	}
@@ -69,8 +85,9 @@ func New() (*Storage, error) {
 		}
 	}
 
-	return &Storage{
+	s := &Storage{
 		db: db,
-	}, nil
+	}
 
+	return s, nil
 }
