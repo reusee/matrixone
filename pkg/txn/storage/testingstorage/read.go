@@ -27,47 +27,220 @@ func (s *Storage) Read(txnMeta txn.TxnMeta, op uint32, payload []byte) (storage.
 	switch op {
 
 	case txnmemengine.OpOpenDatabase:
-		var req txnmemengine.OpenDatabaseReq
-		if err := gob.NewDecoder(bytes.NewReader(payload)).Decode(&req); err != nil {
-			return nil, err
-		}
-		var resp txnmemengine.OpenDatabaseResp
-		tx := s.getTransaction(txnMeta)
-		_ = tx
-		resp.ID = 42 //TODO
-		buf := new(bytes.Buffer)
-		if err := gob.NewEncoder(buf).Encode(resp); err != nil {
-			return nil, err
-		}
-		return &readResult{
-			payload: buf.Bytes(),
-		}, nil
+		return handleRead(
+			s, txnMeta, payload,
+			func(
+				tx *Transaction,
+				req txnmemengine.OpenDatabaseReq,
+				resp *txnmemengine.OpenDatabaseResp,
+			) error {
+				//TODO
+				return nil
+			},
+		)
 
 	case txnmemengine.OpGetDatabases:
-		//TODO
+		return handleReadNoReq(
+			s, txnMeta, payload,
+			func(
+				tx *Transaction,
+				resp *txnmemengine.OpenDatabaseResp,
+			) error {
+				//TODO
+				return nil
+			},
+		)
 
 	case txnmemengine.OpOpenRelation:
-		//TODO
+		return handleRead(
+			s, txnMeta, payload,
+			func(
+				tx *Transaction,
+				req txnmemengine.OpenRelationReq,
+				resp *txnmemengine.OpenRelationResp,
+			) error {
+				//TODO
+				return nil
+			},
+		)
 
 	case txnmemengine.OpGetRelations:
-		//TODO
+		return handleRead(
+			s, txnMeta, payload,
+			func(
+				tx *Transaction,
+				req txnmemengine.GetRelationsReq,
+				resp *txnmemengine.GetRelationsResp,
+			) error {
+				//TODO
+				return nil
+			},
+		)
 
 	case txnmemengine.OpGetPrimaryKeys:
-		//TODO
+		return handleRead(
+			s, txnMeta, payload,
+			func(
+				tx *Transaction,
+				req txnmemengine.GetPrimaryKeysReq,
+				resp *txnmemengine.GetPrimaryKeysResp,
+			) error {
+				//TODO
+				return nil
+			},
+		)
 
 	case txnmemengine.OpGetTableDefs:
-		//TODO
+		return handleRead(
+			s, txnMeta, payload,
+			func(
+				tx *Transaction,
+				req txnmemengine.GetTableDefsReq,
+				resp *txnmemengine.GetTableDefsResp,
+			) error {
+				//TODO
+				return nil
+			},
+		)
 
 	case txnmemengine.OpNewTableIter:
-		//TODO
+		return handleRead(
+			s, txnMeta, payload,
+			func(
+				tx *Transaction,
+				req txnmemengine.NewTableIterReq,
+				resp *txnmemengine.NewTableIterResp,
+			) error {
+				//TODO
+				return nil
+			},
+		)
 
 	case txnmemengine.OpRead:
-		//TODO
+		return handleRead(
+			s, txnMeta, payload,
+			func(
+				tx *Transaction,
+				req txnmemengine.ReadReq,
+				resp *txnmemengine.ReadResp,
+			) error {
+				//TODO
+				return nil
+			},
+		)
 
 	case txnmemengine.OpCloseTableIter:
-		//TODO
+		return handleReadNoResp(
+			s, txnMeta, payload,
+			func(
+				tx *Transaction,
+				req txnmemengine.CloseTableIterReq,
+			) error {
+				//TODO
+				return nil
+			},
+		)
 
 	}
 
 	panic("bad op")
+}
+
+func handleRead[
+	Req any,
+	Resp any,
+](
+	s *Storage,
+	txnMeta txn.TxnMeta,
+	payload []byte,
+	fn func(
+		*Transaction,
+		Req,
+		*Resp,
+	) error,
+) (
+	res storage.ReadResult,
+	err error,
+) {
+
+	var req Req
+	if err := gob.NewDecoder(bytes.NewReader(payload)).Decode(&req); err != nil {
+		return nil, err
+	}
+
+	var resp Resp
+	tx := s.getTransaction(txnMeta)
+	if err := fn(tx, req, &resp); err != nil {
+		return nil, err
+	}
+
+	buf := new(bytes.Buffer)
+	if err := gob.NewEncoder(buf).Encode(resp); err != nil {
+		return nil, err
+	}
+
+	return &readResult{
+		payload: buf.Bytes(),
+	}, nil
+}
+
+func handleReadNoReq[
+	Resp any,
+](
+	s *Storage,
+	txnMeta txn.TxnMeta,
+	payload []byte,
+	fn func(
+		*Transaction,
+		*Resp,
+	) error,
+) (
+	res storage.ReadResult,
+	err error,
+) {
+
+	var resp Resp
+	tx := s.getTransaction(txnMeta)
+	if err := fn(tx, &resp); err != nil {
+		return nil, err
+	}
+
+	buf := new(bytes.Buffer)
+	if err := gob.NewEncoder(buf).Encode(resp); err != nil {
+		return nil, err
+	}
+
+	return &readResult{
+		payload: buf.Bytes(),
+	}, nil
+}
+
+func handleReadNoResp[
+	Req any,
+](
+	s *Storage,
+	txnMeta txn.TxnMeta,
+	payload []byte,
+	fn func(
+		*Transaction,
+		Req,
+	) error,
+) (
+	res storage.ReadResult,
+	err error,
+) {
+
+	var req Req
+	if err := gob.NewDecoder(bytes.NewReader(payload)).Decode(&req); err != nil {
+		return nil, err
+	}
+
+	tx := s.getTransaction(txnMeta)
+	if err := fn(tx, req); err != nil {
+		return nil, err
+	}
+
+	return &readResult{
+		payload: nil,
+	}, nil
 }
