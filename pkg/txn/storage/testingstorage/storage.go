@@ -34,6 +34,13 @@ type ChangeSet struct {
 	Writes map[Key]struct{}
 }
 
+func NewChangeSet() *ChangeSet {
+	return &ChangeSet{
+		Reads:  make(map[Key]struct{}),
+		Writes: make(map[Key]struct{}),
+	}
+}
+
 type ChangeHistoryItem struct {
 	Version   int64
 	Changeset ChangeSet

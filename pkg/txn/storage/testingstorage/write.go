@@ -16,36 +16,44 @@ package storage
 
 import (
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
-	"github.com/matrixorigin/matrixone/pkg/txn/storage"
+	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnmemengine"
 )
 
-var _ storage.TxnStorage = new(Storage)
+func (s *Storage) Write(txnMeta txn.TxnMeta, op uint32, payload []byte) ([]byte, error) {
 
-func (s *Storage) StartRecovery(ch chan txn.TxnMeta) {
-	//TODO
-}
+	switch op {
 
-func (s *Storage) Prepare(txnMeta txn.TxnMeta) error {
-	//TODO
-	return nil
-}
+	case txnmemengine.OpCreateDatabase:
+		//TODO
 
-func (s *Storage) Committing(txnMeta txn.TxnMeta) error {
-	//TODO
-	return nil
-}
+	case txnmemengine.OpDeleteDatabase:
+		//TODO
 
-func (s *Storage) Commit(txnMeta txn.TxnMeta) error {
-	//TODO
-	return nil
-}
+	case txnmemengine.OpCreateRelation:
+		//TODO
 
-func (s *Storage) Rollback(txnMeta txn.TxnMeta) error {
-	//TODO
-	return nil
-}
+	case txnmemengine.OpDeleteRelation:
+		//TODO
 
-func (s *Storage) Close() error {
-	//TODO
-	return nil
+	case txnmemengine.OpAddTableDef:
+		//TODO
+
+	case txnmemengine.OpDelTableDef:
+		//TODO
+
+	case txnmemengine.OpDelete:
+		//TODO
+
+	case txnmemengine.OpTruncate:
+		//TODO
+
+	case txnmemengine.OpUpdate:
+		//TODO
+
+	case txnmemengine.OpWrite:
+		//TODO
+
+	}
+
+	panic("bad op")
 }

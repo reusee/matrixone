@@ -18,18 +18,37 @@ import (
 	"sync"
 
 	iradix "github.com/hashicorp/go-immutable-radix"
+	"github.com/matrixorigin/matrixone/pkg/pb/txn"
 )
 
 type Transaction struct {
 	ID        string
-	Snapshot  *iradix.Tree
+	Meta      txn.TxnMeta
+	Tree      *iradix.Tree
 	Log       []ChangeLogItem
-	ChangeSet ChangeSet
+	ChangeSet *ChangeSet
 }
 
 type Transactions struct {
 	sync.Mutex
 	Map map[string]*Transaction
+}
+
+func (s *Storage) getTransaction(meta txn.TxnMeta) *Transaction {
+	s.transactions.Lock()
+	defer s.transactions.Unlock()
+	id := string(meta.ID)
+	tx, ok := s.transactions.Map[id]
+	if !ok {
+		tx = &Transaction{
+			ID:        id,
+			Meta:      meta,
+			Tree:      s.main,
+			ChangeSet: NewChangeSet(),
+		}
+		s.transactions.Map[id] = tx
+	}
+	return tx
 }
 
 func (t *Transaction) Write() {

@@ -14,38 +14,22 @@
 
 package storage
 
-import (
-	"github.com/matrixorigin/matrixone/pkg/pb/txn"
-	"github.com/matrixorigin/matrixone/pkg/txn/storage"
-)
+import "github.com/matrixorigin/matrixone/pkg/txn/storage"
 
-var _ storage.TxnStorage = new(Storage)
-
-func (s *Storage) StartRecovery(ch chan txn.TxnMeta) {
-	//TODO
+type readResult struct {
+	payload []byte
 }
 
-func (s *Storage) Prepare(txnMeta txn.TxnMeta) error {
-	//TODO
-	return nil
+var _ storage.ReadResult = new(readResult)
+
+func (r *readResult) Read() ([]byte, error) {
+	return r.payload, nil
 }
 
-func (s *Storage) Committing(txnMeta txn.TxnMeta) error {
-	//TODO
-	return nil
+func (*readResult) Release() {
 }
 
-func (s *Storage) Commit(txnMeta txn.TxnMeta) error {
-	//TODO
-	return nil
-}
-
-func (s *Storage) Rollback(txnMeta txn.TxnMeta) error {
-	//TODO
-	return nil
-}
-
-func (s *Storage) Close() error {
+func (*readResult) WaitTxns() [][]byte {
 	//TODO
 	return nil
 }
