@@ -15,6 +15,8 @@
 package sqlitestorage
 
 import (
+	"database/sql"
+
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
 	"github.com/matrixorigin/matrixone/pkg/txn/storage"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnmemengine"
@@ -31,13 +33,15 @@ func (s *Storage) Read(txnMeta txn.TxnMeta, op uint32, payload []byte) (res stor
 			resp txnmemengine.OpenDatabaseResp,
 			err error,
 		) {
+			var args Args
 			err = s.db.QueryRow(`
         select id from databases
-        where name = ?
-        and (tx_id is null or tx_id = ?)
+        where name = `+args.bind(req.Name)+`
+        and (tx_id is null or tx_id = `+args.bind(string(txnMeta.ID))+`)
+        order by physical_time desc, logical_time desc
+        limit 1
         `,
-				req.Name,
-				string(txnMeta.ID),
+				args...,
 			).Scan(&resp.ID)
 			return
 		})
