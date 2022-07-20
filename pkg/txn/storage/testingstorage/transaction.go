@@ -34,7 +34,7 @@ type Transactions struct {
 	Map map[string]*Transaction
 }
 
-func (s *Storage) getTransaction(meta txn.TxnMeta) *Transaction {
+func (s *Storage) getTransaction(meta txn.TxnMeta) (*Transaction, error) {
 	s.transactions.Lock()
 	defer s.transactions.Unlock()
 	id := string(meta.ID)
@@ -48,7 +48,7 @@ func (s *Storage) getTransaction(meta txn.TxnMeta) *Transaction {
 		}
 		s.transactions.Map[id] = tx
 	}
-	return tx
+	return tx, nil
 }
 
 func (t *Transaction) Write() {

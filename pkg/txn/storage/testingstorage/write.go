@@ -15,6 +15,9 @@
 package storage
 
 import (
+	"bytes"
+	"encoding/gob"
+
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnmemengine"
 )
@@ -24,36 +27,199 @@ func (s *Storage) Write(txnMeta txn.TxnMeta, op uint32, payload []byte) ([]byte,
 	switch op {
 
 	case txnmemengine.OpCreateDatabase:
-		//TODO
+		return handleWriteNoResp(
+			s, txnMeta, payload,
+			func(
+				tx *Transaction,
+				req txnmemengine.CreateDatabaseReq,
+			) error {
+				//TODO
+				return nil
+			},
+		)
 
 	case txnmemengine.OpDeleteDatabase:
-		//TODO
+		return handleWriteNoResp(
+			s, txnMeta, payload,
+			func(
+				tx *Transaction,
+				req txnmemengine.DeleteDatabaseReq,
+			) error {
+				//TODO
+				return nil
+			},
+		)
 
 	case txnmemengine.OpCreateRelation:
-		//TODO
+		return handleWriteNoResp(
+			s, txnMeta, payload,
+			func(
+				tx *Transaction,
+				req txnmemengine.CreateRelationReq,
+			) error {
+				//TODO
+				return nil
+			},
+		)
 
 	case txnmemengine.OpDeleteRelation:
-		//TODO
+		return handleWriteNoResp(
+			s, txnMeta, payload,
+			func(
+				tx *Transaction,
+				req txnmemengine.DeleteRelationReq,
+			) error {
+				//TODO
+				return nil
+			},
+		)
 
 	case txnmemengine.OpAddTableDef:
-		//TODO
+		return handleWriteNoResp(
+			s, txnMeta, payload,
+			func(
+				tx *Transaction,
+				req txnmemengine.AddTableDefReq,
+			) error {
+				//TODO
+				return nil
+			},
+		)
 
 	case txnmemengine.OpDelTableDef:
-		//TODO
+		return handleWriteNoResp(
+			s, txnMeta, payload,
+			func(
+				tx *Transaction,
+				req txnmemengine.DelTableDefReq,
+			) error {
+				//TODO
+				return nil
+			},
+		)
 
 	case txnmemengine.OpDelete:
-		//TODO
+		return handleWriteNoResp(
+			s, txnMeta, payload,
+			func(
+				tx *Transaction,
+				req txnmemengine.DeleteReq,
+			) error {
+				//TODO
+				return nil
+			},
+		)
 
 	case txnmemengine.OpTruncate:
-		//TODO
+		return handleWrite(
+			s, txnMeta, payload,
+			func(
+				tx *Transaction,
+				req txnmemengine.TruncateReq,
+				resp *txnmemengine.TruncateResp,
+			) error {
+				//TODO
+				return nil
+			},
+		)
 
 	case txnmemengine.OpUpdate:
-		//TODO
+		return handleWriteNoResp(
+			s, txnMeta, payload,
+			func(
+				tx *Transaction,
+				req txnmemengine.UpdateReq,
+			) error {
+				//TODO
+				return nil
+			},
+		)
 
 	case txnmemengine.OpWrite:
-		//TODO
+		return handleWriteNoResp(
+			s, txnMeta, payload,
+			func(
+				tx *Transaction,
+				req txnmemengine.WriteReq,
+			) error {
+				//TODO
+				return nil
+			},
+		)
 
 	}
 
 	panic("bad op")
+}
+
+func handleWrite[
+	Req any,
+	Resp any,
+](
+	s *Storage,
+	meta txn.TxnMeta,
+	payload []byte,
+	fn func(
+		tx *Transaction,
+		req Req,
+		resp *Resp,
+	) error,
+) (
+	res []byte,
+	err error,
+) {
+
+	var req Req
+	if err := gob.NewDecoder(bytes.NewReader(payload)).Decode(&req); err != nil {
+		return nil, err
+	}
+
+	tx, err := s.getTransaction(meta)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp Resp
+	if err := fn(tx, req, &resp); err != nil {
+		return nil, err
+	}
+
+	buf := new(bytes.Buffer)
+	if err := gob.NewEncoder(buf).Encode(resp); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+func handleWriteNoResp[
+	Req any,
+](
+	s *Storage,
+	meta txn.TxnMeta,
+	payload []byte,
+	fn func(
+		tx *Transaction,
+		req Req,
+	) error,
+) (
+	res []byte,
+	err error,
+) {
+
+	var req Req
+	if err := gob.NewDecoder(bytes.NewReader(payload)).Decode(&req); err != nil {
+		return nil, err
+	}
+
+	tx, err := s.getTransaction(meta)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := fn(tx, req); err != nil {
+		return nil, err
+	}
+
+	return nil, nil
 }

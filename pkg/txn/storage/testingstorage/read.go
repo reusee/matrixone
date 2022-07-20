@@ -168,8 +168,12 @@ func handleRead[
 		return nil, err
 	}
 
+	tx, err := s.getTransaction(txnMeta)
+	if err != nil {
+		return nil, err
+	}
+
 	var resp Resp
-	tx := s.getTransaction(txnMeta)
 	if err := fn(tx, req, &resp); err != nil {
 		return nil, err
 	}
@@ -199,8 +203,12 @@ func handleReadNoReq[
 	err error,
 ) {
 
+	tx, err := s.getTransaction(txnMeta)
+	if err != nil {
+		return nil, err
+	}
+
 	var resp Resp
-	tx := s.getTransaction(txnMeta)
 	if err := fn(tx, &resp); err != nil {
 		return nil, err
 	}
@@ -235,7 +243,11 @@ func handleReadNoResp[
 		return nil, err
 	}
 
-	tx := s.getTransaction(txnMeta)
+	tx, err := s.getTransaction(txnMeta)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := fn(tx, req); err != nil {
 		return nil, err
 	}
