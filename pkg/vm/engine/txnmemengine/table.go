@@ -30,7 +30,7 @@ import (
 type Table struct {
 	engine      *Engine
 	txnOperator client.TxnOperator
-	id          int64
+	id          string
 }
 
 var _ engine.Relation = new(Table)
@@ -190,14 +190,14 @@ func (t *Table) NewReader(
 		return nil, err
 	}
 
-	iterIDSets := make([][]int64, parallel)
+	iterIDSets := make([][]string, parallel)
 	i := 0
 	for _, payload := range resps {
 		var r NewTableIterResp
 		if err := gob.NewDecoder(bytes.NewReader(payload)).Decode(&r); err != nil {
 			return nil, err
 		}
-		if r.IterID > 0 {
+		if r.IterID != "" {
 			iterIDSets[i] = append(iterIDSets[i], r.IterID)
 			i++
 			if i >= parallel {

@@ -35,7 +35,7 @@ type TableReader struct {
 
 type IterInfo struct {
 	Node   logservicepb.DNNode
-	IterID int64
+	IterID string
 }
 
 var _ engine.Reader = new(TableReader)

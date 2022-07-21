@@ -41,7 +41,7 @@ func New() (*Storage, error) {
 		0: `
     create table databases (
       ` + commonAttrs + `
-      id integer not null,
+      id text not null,
       name text not null
     );
     `,
@@ -49,28 +49,28 @@ func New() (*Storage, error) {
 		1: `
     create table relations (
       ` + commonAttrs + `
-      id integer not null,
+      id text not null,
       name text not null,
-      database_id integer not null
+      database_id text not null
     );
     `,
 
 		2: `
     create table attributes (
       ` + commonAttrs + `
-      id integer not null,
+      id text not null,
       name text not null,
       type text not null,
-      table_id integer not null
+      table_id text not null
     );
     `,
 
 		3: `
     create table rows (
       ` + commonAttrs + `
-      id integer not null,
+      id text not null,
       data json not null,
-      table_id integer not null
+      table_id text not null
     );
     `,
 

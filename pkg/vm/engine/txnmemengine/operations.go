@@ -67,7 +67,7 @@ type OpenDatabaseReq struct {
 }
 
 type OpenDatabaseResp struct {
-	ID          int64
+	ID          string
 	ErrNotFound bool
 }
 
@@ -87,7 +87,7 @@ type DeleteDatabaseResp struct {
 }
 
 type CreateRelationReq struct {
-	DatabaseID int64
+	DatabaseID string
 	Name       string
 	Defs       []engine.TableDef
 }
@@ -97,7 +97,7 @@ type CreateRelationResp struct {
 }
 
 type DeleteRelationReq struct {
-	DatabaseID int64
+	DatabaseID string
 	Name       string
 }
 
@@ -106,18 +106,18 @@ type DeleteRelationResp struct {
 }
 
 type OpenRelationReq struct {
-	DatabaseID int64
+	DatabaseID string
 	Name       string
 }
 
 type OpenRelationResp struct {
-	ID          int64
+	ID          string
 	Type        RelationType
 	ErrNotFound bool
 }
 
 type GetRelationsReq struct {
-	DatabaseID int64
+	DatabaseID string
 }
 
 type GetRelationsResp struct {
@@ -125,7 +125,7 @@ type GetRelationsResp struct {
 }
 
 type AddTableDefReq struct {
-	TableID int64
+	TableID string
 	Def     engine.TableDef
 }
 
@@ -135,7 +135,7 @@ type AddTableDefResp struct {
 }
 
 type DelTableDefReq struct {
-	TableID int64
+	TableID string
 	Def     engine.TableDef
 }
 
@@ -145,7 +145,7 @@ type DelTableDefResp struct {
 }
 
 type DeleteReq struct {
-	TableID int64
+	TableID string
 	Vector  *vector.Vector
 }
 
@@ -154,7 +154,7 @@ type DeleteResp struct {
 }
 
 type GetPrimaryKeysReq struct {
-	TableID int64
+	TableID string
 }
 
 type GetPrimaryKeysResp struct {
@@ -163,7 +163,7 @@ type GetPrimaryKeysResp struct {
 }
 
 type GetTableDefsReq struct {
-	TableID int64
+	TableID string
 }
 
 type GetTableDefsResp struct {
@@ -172,7 +172,7 @@ type GetTableDefsResp struct {
 }
 
 type TruncateReq struct {
-	TableID int64
+	TableID string
 }
 
 type TruncateResp struct {
@@ -181,7 +181,7 @@ type TruncateResp struct {
 }
 
 type UpdateReq struct {
-	TableID int64
+	TableID string
 	Batch   *batch.Batch
 }
 
@@ -190,7 +190,7 @@ type UpdateResp struct {
 }
 
 type WriteReq struct {
-	TableID int64
+	TableID string
 	Batch   *batch.Batch
 }
 
@@ -199,18 +199,18 @@ type WriteResp struct {
 }
 
 type NewTableIterReq struct {
-	TableID int64
+	TableID string
 	Expr    *plan.Expr
 	Shards  [][]byte
 }
 
 type NewTableIterResp struct {
-	IterID           int64
+	IterID           string
 	ErrTableNotFound bool
 }
 
 type ReadReq struct {
-	IterID   int64
+	IterID   string
 	ColNames []string
 }
 
@@ -220,7 +220,7 @@ type ReadResp struct {
 }
 
 type CloseTableIterReq struct {
-	IterID int64
+	IterID string
 }
 
 type CloseTableIterResp struct {

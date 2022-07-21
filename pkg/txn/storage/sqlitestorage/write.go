@@ -16,8 +16,10 @@ package sqlitestorage
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/gob"
 
+	"github.com/google/uuid"
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnmemengine"
 )
@@ -33,7 +35,16 @@ func (s *Storage) Write(txnMeta txn.TxnMeta, op uint32, payload []byte) (result 
 				req txnmemengine.CreateDatabaseReq,
 				resp *txnmemengine.CreateDatabaseResp,
 			) error {
-				//TODO
+
+				//TODO check existence
+
+				if err := insert(txnMeta, s.db, "databases", map[string]any{
+					"id":   uuid.NewString(),
+					"name": req.Name,
+				}); err != nil {
+					return err
+				}
+
 				return nil
 			},
 		)
@@ -185,6 +196,51 @@ func handleWrite[
 		return nil, err
 	}
 	res = buf.Bytes()
+
+	return
+}
+
+func insert(
+	meta txn.TxnMeta,
+	db *sql.DB,
+	table string,
+	values map[string]any,
+) (
+	err error,
+) {
+
+	var attrList string
+	var marks string
+	var args []any
+	add := func(attr string, value any) {
+		if attrList != "" {
+			attrList += ","
+		}
+		if marks != "" {
+			marks += ","
+		}
+		attrList += attr
+		marks += "?"
+		args = append(args, value)
+	}
+	for attr, value := range values {
+		add(attr, value)
+	}
+
+	// common fields
+	add("min_tx_id", string(meta.ID))
+	add("min_physical_time", meta.SnapshotTS.PhysicalTime)
+	add("min_logical_time", meta.SnapshotTS.LogicalTime)
+
+	_, err = db.Exec(`
+    insert into `+table+` 
+    (`+attrList+`)
+    values
+    (`+marks+`)
+  `, args...)
+	if err != nil {
+		return
+	}
 
 	return
 }

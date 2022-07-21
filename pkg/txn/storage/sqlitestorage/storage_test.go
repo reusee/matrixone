@@ -25,7 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestRead(t *testing.T) {
+func TestDatabase(t *testing.T) {
 	s, err := New()
 	assert.Nil(t, err)
 	defer s.Close()
@@ -39,22 +39,91 @@ func TestRead(t *testing.T) {
 		},
 	}
 
-	req := txnmemengine.OpenDatabaseReq{
-		Name: "foo",
+	{
+		resp := testRead[txnmemengine.OpenDatabaseResp](
+			t, s, txnMeta,
+			txnmemengine.OpOpenDatabase,
+			txnmemengine.OpenDatabaseReq{
+				Name: "foo",
+			},
+		)
+		assert.Equal(t, true, resp.ErrNotFound)
 	}
+
+	{
+		resp := testWrite[txnmemengine.CreateDatabaseResp](
+			t, s, txnMeta,
+			txnmemengine.OpCreateDatabase,
+			txnmemengine.CreateDatabaseReq{
+				Name: "foo",
+			},
+		)
+		assert.Equal(t, false, resp.ErrExisted)
+	}
+
+	{
+		resp := testRead[txnmemengine.OpenDatabaseResp](
+			t, s, txnMeta,
+			txnmemengine.OpOpenDatabase,
+			txnmemengine.OpenDatabaseReq{
+				Name: "foo",
+			},
+		)
+		assert.Equal(t, false, resp.ErrNotFound)
+	}
+
+}
+
+func testRead[
+	Resp any,
+	Req any,
+](
+	t *testing.T,
+	s *Storage,
+	txnMeta txn.TxnMeta,
+	op uint32,
+	req Req,
+) (
+	resp Resp,
+) {
+
 	buf := new(bytes.Buffer)
-	err = gob.NewEncoder(buf).Encode(req)
+	err := gob.NewEncoder(buf).Encode(req)
 	assert.Nil(t, err)
 
-	res, err := s.Read(txnMeta, txnmemengine.OpOpenDatabase, buf.Bytes())
+	res, err := s.Read(txnMeta, op, buf.Bytes())
 	assert.Nil(t, err)
 	data, err := res.Read()
 	assert.Nil(t, err)
 
-	var resp txnmemengine.OpenDatabaseResp
 	err = gob.NewDecoder(bytes.NewReader(data)).Decode(&resp)
 	assert.Nil(t, err)
 
-	assert.Equal(t, true, resp.ErrNotFound)
+	return
+}
 
+func testWrite[
+	Resp any,
+	Req any,
+](
+	t *testing.T,
+	s *Storage,
+	txnMeta txn.TxnMeta,
+	op uint32,
+	req Req,
+) (
+	resp Resp,
+) {
+
+	buf := new(bytes.Buffer)
+	err := gob.NewEncoder(buf).Encode(req)
+	assert.Nil(t, err)
+
+	data, err := s.Write(txnMeta, op, buf.Bytes())
+	assert.Nil(t, err)
+
+	err = gob.NewDecoder(bytes.NewReader(data)).Decode(&resp)
+	assert.Nil(t, err)
+
+	return
 }

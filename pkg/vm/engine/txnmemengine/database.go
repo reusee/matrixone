@@ -28,7 +28,7 @@ type Database struct {
 	engine      *Engine
 	txnOperator client.TxnOperator
 
-	id int64
+	id string
 }
 
 var _ engine.Database = new(Database)
