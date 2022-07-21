@@ -51,3 +51,8 @@ func (*Storage) StartRecovery(chan txn.TxnMeta) {
 	//TODO
 	panic("unimplemented")
 }
+
+func (*Storage) Close() error {
+	//TODO
+	panic("unimplemented")
+}

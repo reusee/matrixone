@@ -26,73 +26,59 @@ func New() (*Storage, error) {
 		return nil, err
 	}
 
-	//TODO re-design
-	// 使用单一的表，使用字段的并集
-	// partial index, view 等等都可以用上
+	commonAttrs := `
+    _row_id integer primary key autoincrement,
+    min_tx_id text not null references transactions(id),
+    min_physical_time integer not null,
+    min_logical_time integer not null,
+    max_tx_id text,
+    max_physical_time integer,
+    max_logical_time integer,
+  `
+
 	stmts := []string{
 
 		0: `
     create table databases (
-      id integer primary key autoincrement,
-      tx_id integer,
-      physical_time integer not null,
-      logical_time integer not null,
-
-      name text,
-
-      foreign key(tx_id) references transactions(id)
+      ` + commonAttrs + `
+      id integer not null,
+      name text not null
     );
     `,
 
 		1: `
     create table relations (
-      id integer primary key autoincrement,
-      tx_id integer,
-      physical_time integer not null,
-      logical_time integer not null,
-
+      ` + commonAttrs + `
+      id integer not null,
       name text not null,
-      database_id integer not null,
-
-      foreign key(tx_id) references transactions(id),
-      foreign key(database_id) references databases(id)
+      database_id integer not null
     );
     `,
 
 		2: `
     create table attributes (
-      id integer primary key autoincrement,
-      tx_id integer,
-      physical_time integer not null,
-      logical_time integer not null,
-
+      ` + commonAttrs + `
+      id integer not null,
       name text not null,
       type text not null,
-      table_id integer not null,
-
-      foreign key(tx_id) references transactions(id)
-      foreign key(table_id) references tables(id)
+      table_id integer not null
     );
     `,
 
 		3: `
     create table rows (
-      id integer primary key autoincrement,
-      tx_id integer,
-      physical_time integer not null,
-      logical_time integer not null,
-
+      ` + commonAttrs + `
+      id integer not null,
       data json not null,
-      table_id integer not null,
-
-      foreign key(tx_id) references transactions(id),
-      foreign key(table_id) references tables(id)
+      table_id integer not null
     );
     `,
 
 		4: `
     create table transactions (
-      id text primary key
+      id text primary key,
+      physical_time integer not null,
+      logical_time integer not null
     );
     `,
 	}

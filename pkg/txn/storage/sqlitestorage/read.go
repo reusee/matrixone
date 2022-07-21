@@ -15,8 +15,6 @@
 package sqlitestorage
 
 import (
-	"database/sql"
-
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
 	"github.com/matrixorigin/matrixone/pkg/txn/storage"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnmemengine"
