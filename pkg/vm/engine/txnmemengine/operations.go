@@ -58,12 +58,18 @@ type CreateDatabaseReq struct {
 	Name string
 }
 
+type CreateDatabaseResp struct {
+}
+
 type OpenDatabaseReq struct {
 	Name string
 }
 
 type OpenDatabaseResp struct {
 	ID int64
+}
+
+type GetDatabasesReq struct {
 }
 
 type GetDatabasesResp struct {
@@ -74,15 +80,24 @@ type DeleteDatabaseReq struct {
 	Name string
 }
 
+type DeleteDatabaseResp struct {
+}
+
 type CreateRelationReq struct {
 	DatabaseID int64
 	Name       string
 	Defs       []engine.TableDef
 }
 
+type CreateRelationResp struct {
+}
+
 type DeleteRelationReq struct {
 	DatabaseID int64
 	Name       string
+}
+
+type DeleteRelationResp struct {
 }
 
 type OpenRelationReq struct {
@@ -108,14 +123,23 @@ type AddTableDefReq struct {
 	Def     engine.TableDef
 }
 
+type AddTableDefResp struct {
+}
+
 type DelTableDefReq struct {
 	TableID int64
 	Def     engine.TableDef
 }
 
+type DelTableDefResp struct {
+}
+
 type DeleteReq struct {
 	TableID int64
 	Vector  *vector.Vector
+}
+
+type DeleteResp struct {
 }
 
 type GetPrimaryKeysReq struct {
@@ -147,9 +171,15 @@ type UpdateReq struct {
 	Batch   *batch.Batch
 }
 
+type UpdateResp struct {
+}
+
 type WriteReq struct {
 	TableID int64
 	Batch   *batch.Batch
+}
+
+type WriteResp struct {
 }
 
 type NewTableIterReq struct {
@@ -173,4 +203,7 @@ type ReadResp struct {
 
 type CloseTableIterReq struct {
 	IterID int64
+}
+
+type CloseTableIterResp struct {
 }

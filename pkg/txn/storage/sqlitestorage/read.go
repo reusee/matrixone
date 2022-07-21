@@ -15,6 +15,9 @@
 package sqlitestorage
 
 import (
+	"bytes"
+	"encoding/gob"
+
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
 	"github.com/matrixorigin/matrixone/pkg/txn/storage"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnmemengine"
@@ -25,50 +28,169 @@ func (s *Storage) Read(txnMeta txn.TxnMeta, op uint32, payload []byte) (res stor
 	switch op {
 
 	case txnmemengine.OpOpenDatabase:
-		return handleRead(s, txnMeta, payload, func(
-			req txnmemengine.OpenDatabaseReq,
-		) (
-			resp txnmemengine.OpenDatabaseResp,
-			err error,
-		) {
-			var args Args
-			err = s.db.QueryRow(`
-        select id from databases
-        where name = `+args.bind(req.Name)+`
-        and (tx_id is null or tx_id = `+args.bind(string(txnMeta.ID))+`)
-        order by physical_time desc, logical_time desc
-        limit 1
-        `,
-				args...,
-			).Scan(&resp.ID)
-			return
-		})
+		return handleRead(
+			s, txnMeta, payload,
+			func(
+				req txnmemengine.OpenDatabaseReq,
+				resp *txnmemengine.OpenDatabaseResp,
+			) (
+				err error,
+			) {
+				//TODO
+				return
+			},
+		)
 
 	case txnmemengine.OpGetDatabases:
-		//TODO
+		return handleRead(
+			s, txnMeta, payload,
+			func(
+				req txnmemengine.GetDatabasesReq,
+				resp *txnmemengine.GetDatabasesResp,
+			) (
+				err error,
+			) {
+				//TODO
+				return
+			},
+		)
 
 	case txnmemengine.OpOpenRelation:
-		//TODO
+		return handleRead(
+			s, txnMeta, payload,
+			func(
+				req txnmemengine.OpenRelationReq,
+				resp *txnmemengine.OpenRelationResp,
+			) (
+				err error,
+			) {
+				//TODO
+				return
+			},
+		)
 
 	case txnmemengine.OpGetRelations:
-		//TODO
+		return handleRead(
+			s, txnMeta, payload,
+			func(
+				req txnmemengine.GetRelationsReq,
+				resp *txnmemengine.GetRelationsResp,
+			) (
+				err error,
+			) {
+				//TODO
+				return
+			},
+		)
 
 	case txnmemengine.OpGetPrimaryKeys:
-		//TODO
+		return handleRead(
+			s, txnMeta, payload,
+			func(
+				req txnmemengine.GetPrimaryKeysReq,
+				resp *txnmemengine.GetPrimaryKeysResp,
+			) (
+				err error,
+			) {
+				//TODO
+				return
+			},
+		)
 
 	case txnmemengine.OpGetTableDefs:
-		//TODO
+		return handleRead(
+			s, txnMeta, payload,
+			func(
+				req txnmemengine.GetTableDefsReq,
+				resp *txnmemengine.GetTableDefsResp,
+			) (
+				err error,
+			) {
+				//TODO
+				return
+			},
+		)
 
 	case txnmemengine.OpNewTableIter:
-		//TODO
+		return handleRead(
+			s, txnMeta, payload,
+			func(
+				req txnmemengine.NewTableIterReq,
+				resp *txnmemengine.NewTableIterResp,
+			) (
+				err error,
+			) {
+				//TODO
+				return
+			},
+		)
 
 	case txnmemengine.OpRead:
-		//TODO
+		return handleRead(
+			s, txnMeta, payload,
+			func(
+				req txnmemengine.ReadReq,
+				resp *txnmemengine.ReadResp,
+			) (
+				err error,
+			) {
+				//TODO
+				return
+			},
+		)
 
 	case txnmemengine.OpCloseTableIter:
-		//TODO
+		return handleRead(
+			s, txnMeta, payload,
+			func(
+				req txnmemengine.CloseTableIterReq,
+				resp *txnmemengine.CloseTableIterResp,
+			) (
+				err error,
+			) {
+				//TODO
+				return
+			},
+		)
 
 	}
 
 	return
+}
+
+func handleRead[Req any, Resp any](
+	s *Storage,
+	txnMeta txn.TxnMeta,
+	payload []byte,
+	fn func(
+		req Req,
+		resp *Resp,
+	) (
+		err error,
+	),
+) (
+	res storage.ReadResult,
+	err error,
+) {
+
+	var req Req
+	if err := gob.NewDecoder(bytes.NewReader(payload)).Decode(&req); err != nil {
+		return nil, err
+	}
+
+	var resp Resp
+	err = fn(req, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	buf := new(bytes.Buffer)
+	if err := gob.NewEncoder(buf).Encode(resp); err != nil {
+		return nil, err
+	}
+	res = &readResult{
+		payload: buf.Bytes(),
+	}
+
+	return res, nil
 }
