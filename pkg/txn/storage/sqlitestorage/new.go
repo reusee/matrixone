@@ -77,8 +77,10 @@ func New() (*Storage, error) {
 		4: `
     create table transactions (
       id text primary key,
-      physical_time integer not null,
-      logical_time integer not null
+      snapshot_physical_time integer not null,
+      snapshot_logical_time integer not null,
+      commit_physical_time integer,
+      commit_logical_time integer
     );
     `,
 	}

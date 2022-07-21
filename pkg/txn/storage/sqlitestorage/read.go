@@ -16,7 +16,9 @@ package sqlitestorage
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/gob"
+	"errors"
 
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
 	"github.com/matrixorigin/matrixone/pkg/txn/storage"
@@ -36,8 +38,25 @@ func (s *Storage) Read(txnMeta txn.TxnMeta, op uint32, payload []byte) (res stor
 			) (
 				err error,
 			) {
-				//TODO
-				return
+
+				var args Args
+				err = s.db.QueryRow(`
+          select id from databases
+          where name = `+args.bind(req.Name)+`
+          and `+args.visible(txnMeta)+`
+          order by min_physical_time desc, min_logical_time desc
+          limit 1
+          `, args...).Scan(&resp.ID)
+				if errors.Is(err, sql.ErrNoRows) {
+					err = nil
+					resp.ErrNotFound = true
+					return
+				}
+				if err != nil {
+					return err
+				}
+
+				return nil
 			},
 		)
 

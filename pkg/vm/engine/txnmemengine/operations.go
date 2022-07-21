@@ -59,6 +59,7 @@ type CreateDatabaseReq struct {
 }
 
 type CreateDatabaseResp struct {
+	ErrExisted bool
 }
 
 type OpenDatabaseReq struct {
@@ -66,7 +67,8 @@ type OpenDatabaseReq struct {
 }
 
 type OpenDatabaseResp struct {
-	ID int64
+	ID          int64
+	ErrNotFound bool
 }
 
 type GetDatabasesReq struct {
@@ -81,6 +83,7 @@ type DeleteDatabaseReq struct {
 }
 
 type DeleteDatabaseResp struct {
+	ErrNotFound bool
 }
 
 type CreateRelationReq struct {
@@ -90,6 +93,7 @@ type CreateRelationReq struct {
 }
 
 type CreateRelationResp struct {
+	ErrExisted bool
 }
 
 type DeleteRelationReq struct {
@@ -98,6 +102,7 @@ type DeleteRelationReq struct {
 }
 
 type DeleteRelationResp struct {
+	ErrNotFound bool
 }
 
 type OpenRelationReq struct {
@@ -106,8 +111,9 @@ type OpenRelationReq struct {
 }
 
 type OpenRelationResp struct {
-	ID   int64
-	Type RelationType
+	ID          int64
+	Type        RelationType
+	ErrNotFound bool
 }
 
 type GetRelationsReq struct {
@@ -124,6 +130,8 @@ type AddTableDefReq struct {
 }
 
 type AddTableDefResp struct {
+	ErrTableNotFound bool
+	ErrExisted       bool
 }
 
 type DelTableDefReq struct {
@@ -132,6 +140,8 @@ type DelTableDefReq struct {
 }
 
 type DelTableDefResp struct {
+	ErrTableNotFound bool
+	ErrDefNotFound   bool
 }
 
 type DeleteReq struct {
@@ -140,6 +150,7 @@ type DeleteReq struct {
 }
 
 type DeleteResp struct {
+	ErrTableNotFound bool
 }
 
 type GetPrimaryKeysReq struct {
@@ -147,7 +158,8 @@ type GetPrimaryKeysReq struct {
 }
 
 type GetPrimaryKeysResp struct {
-	Attrs []*engine.Attribute
+	Attrs            []*engine.Attribute
+	ErrTableNotFound bool
 }
 
 type GetTableDefsReq struct {
@@ -155,7 +167,8 @@ type GetTableDefsReq struct {
 }
 
 type GetTableDefsResp struct {
-	Defs []engine.TableDef
+	Defs             []engine.TableDef
+	ErrTableNotFound bool
 }
 
 type TruncateReq struct {
@@ -163,7 +176,8 @@ type TruncateReq struct {
 }
 
 type TruncateResp struct {
-	AffectedRows int64
+	AffectedRows     int64
+	ErrTableNotFound bool
 }
 
 type UpdateReq struct {
@@ -172,6 +186,7 @@ type UpdateReq struct {
 }
 
 type UpdateResp struct {
+	ErrTableNotFound bool
 }
 
 type WriteReq struct {
@@ -180,6 +195,7 @@ type WriteReq struct {
 }
 
 type WriteResp struct {
+	ErrTableNotFound bool
 }
 
 type NewTableIterReq struct {
@@ -189,7 +205,8 @@ type NewTableIterReq struct {
 }
 
 type NewTableIterResp struct {
-	IterID int64
+	IterID           int64
+	ErrTableNotFound bool
 }
 
 type ReadReq struct {
@@ -198,7 +215,8 @@ type ReadReq struct {
 }
 
 type ReadResp struct {
-	Batch *batch.Batch
+	Batch            *batch.Batch
+	ErrTableNotFound bool
 }
 
 type CloseTableIterReq struct {
@@ -206,4 +224,5 @@ type CloseTableIterReq struct {
 }
 
 type CloseTableIterResp struct {
+	ErrIterNotFound bool
 }
