@@ -70,6 +70,16 @@ func TestDatabase(t *testing.T) {
 			},
 		)
 		assert.Equal(t, false, resp.ErrNotFound)
+		assert.NotNil(t, resp.ID)
+	}
+
+	{
+		resp := testRead[txnmemengine.GetDatabasesResp](
+			t, s, txnMeta,
+			txnmemengine.OpGetDatabases,
+			txnmemengine.GetDatabasesReq{},
+		)
+		pt("%v\n", resp)
 	}
 
 }

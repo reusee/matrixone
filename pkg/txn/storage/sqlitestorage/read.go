@@ -69,7 +69,23 @@ func (s *Storage) Read(txnMeta txn.TxnMeta, op uint32, payload []byte) (res stor
 			) (
 				err error,
 			) {
-				//TODO
+
+				var args Args
+				err = queryRows(s.db, `
+          select name from databases
+          where `+args.visible(txnMeta)+`
+        `, func(rows *sql.Rows) error {
+					var name string
+					if err := rows.Scan(&name); err != nil {
+						return err
+					}
+					resp.Names = append(resp.Names, name)
+					return nil
+				}, args...)
+				if err != nil {
+					return err
+				}
+
 				return
 			},
 		)
