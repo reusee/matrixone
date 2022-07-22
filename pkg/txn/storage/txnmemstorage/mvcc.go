@@ -19,11 +19,11 @@ type MVCC[T any] struct {
 }
 
 type MVCCValue[T any] struct {
-	CreateTx   *Transaction
-	CreateTime Timestamp
-	DeleteTx   *Transaction
-	DeleteTime Timestamp
-	Value      T
+	BornTx   *Transaction
+	BornTime Timestamp
+	LockTx   *Transaction
+	LockTime Timestamp
+	Value    T
 }
 
 // Read reads the visible value from Values
@@ -53,32 +53,32 @@ func (m *MVCCValue[T]) Visible(txID string, readTime Timestamp) bool {
 	// "[Mike Olson] says 17 march 1993: the tests in this routine are correct; if you think they’re not, you’re wrongand you should think about it again. i know, it happened to me."
 
 	// inserted by current tx
-	if m.CreateTx.ID == txID {
+	if m.BornTx.ID == txID {
 		// inserted before the read time
-		if m.CreateTime.Less(readTime) {
+		if m.BornTime.Less(readTime) {
 			// not been deleted
-			if m.DeleteTx == nil {
+			if m.LockTx == nil {
 				return true
 			}
 			// deleted by current tx after the read time
-			if m.DeleteTx.ID == txID && m.DeleteTime.Greater(readTime) {
+			if m.LockTx.ID == txID && m.LockTime.Greater(readTime) {
 				return true
 			}
 		}
 	}
 
 	// inserted by a committed tx
-	if m.CreateTx.State == Committed {
+	if m.BornTx.State == Committed {
 		// not been deleted
-		if m.DeleteTx == nil {
+		if m.LockTx == nil {
 			return true
 		}
 		// being deleted by current tx after the read time
-		if m.DeleteTx.ID == txID && m.DeleteTime.Greater(readTime) {
+		if m.LockTx.ID == txID && m.LockTime.Greater(readTime) {
 			return true
 		}
 		// deleted by another tx but not committed
-		if m.DeleteTx.ID != txID && m.DeleteTx.State != Committed {
+		if m.LockTx.ID != txID && m.LockTx.State != Committed {
 			return true
 		}
 	}
