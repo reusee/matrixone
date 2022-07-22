@@ -19,22 +19,22 @@ type MVCC[T any] struct {
 }
 
 type MVCCValue[T any] struct {
-	CreateTx *Transaction
-	DeleteTx *Transaction
-	Value    T
+	CreateTx   *Transaction
+	CreateTime Time
+	DeleteTx   *Transaction
+	DeleteTime Time
+	Value      T
 }
 
-func (m *MVCC[T]) Read(tx *Transaction) *T {
+// Read reads the visible value from Values
+// readTime's logical time should be monotonically increasing in one transaction to reflect commands order
+func (m *MVCC[T]) Read(tx *Transaction, readTime Time) *T {
 	if tx.State != Active {
 		panic("should not read")
 	}
 
 	for i := len(m.Values) - 1; i >= 0; i-- {
-		if m.Values[i].Visible(tx) {
-			if m.Values[i].DeleteTx != nil {
-				// deleted
-				return nil
-			}
+		if m.Values[i].Visible(tx.ID, readTime) {
 			v := m.Values[i].Value
 			return &v
 		}
@@ -47,25 +47,27 @@ func (m *MVCC[T]) Read(tx *Transaction) *T {
 //TODO delete
 //TODO update
 
-func (m *MVCCValue[T]) Visible(tx *Transaction) bool {
+func (m *MVCCValue[T]) Visible(txID string, readTime Time) bool {
 
-	// read current tx created
-	if tx == m.CreateTx {
+	// the following algorithm is from https://momjian.us/main/writings/pgsql/mvcc.pdf
+	// "[Mike Olson] says 17 march 1993: the tests in this routine are correct; if you think they’re not, you’re wrongand you should think about it again. i know, it happened to me."
+
+	//TODO make it readable
+
+	if m.CreateTx.ID == txID /* inserted by current tx */ &&
+		m.CreateTime.Before(readTime) /* before the read time */ &&
+		(m.DeleteTx == nil /* not been deleted, or */ ||
+			(m.DeleteTx.ID == txID /* deleted by current tx */ &&
+				m.DeleteTime.After(readTime) /* but after the read time */)) {
 		return true
 	}
 
-	// read committed not deleted
-	if m.CreateTx.State == Committed &&
-		tx.BeginTime.After(*m.CreateTx.CommitTime) &&
-		m.DeleteTx == nil {
-		return true
-	}
-
-	// read committed before deleted
-	if m.CreateTx.State == Committed &&
-		tx.BeginTime.After(*m.CreateTx.CommitTime) &&
-		m.DeleteTx != nil &&
-		tx.BeginTime.Before(m.DeleteTx.BeginTime) {
+	if m.CreateTx.State == Committed /* inserted by a committed tx */ &&
+		(m.DeleteTx == nil /* not been deleted */ ||
+			(m.DeleteTx.ID == txID /* being deleted by current tx */ &&
+				m.DeleteTime.After(readTime) /* but after the read time */) ||
+			(m.DeleteTx.ID != txID /* deleted by another tx */ &&
+				m.DeleteTx.State != Committed /* but not committed */)) {
 		return true
 	}
 
