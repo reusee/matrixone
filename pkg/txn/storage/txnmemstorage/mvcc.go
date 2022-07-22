@@ -19,24 +19,22 @@ type MVCC[T any] struct {
 }
 
 type MVCCValue[T any] struct {
-	MinTxID         string
-	MinPhysicalTime int64
-	MinLogicalTime  int64
-	MaxTxID         string
-	MaxPhysicalTime int64
-	MaxLogicalTime  int64
-	Value           T
+	CreateTx *Transaction
+	DeleteTx *Transaction
+	Value    T
 }
 
-func (m *MVCC[T]) Read(
-	txID string,
-	physicalTime int64,
-	logicalTime int64,
-	txIsActive func(string) bool,
-) *T {
+func (m *MVCC[T]) Read(tx *Transaction) *T {
+	if tx.State != Active {
+		panic("should not read")
+	}
 
 	for i := len(m.Values) - 1; i >= 0; i-- {
-		if m.Values[i].Visible(txID, physicalTime, logicalTime, txIsActive) {
+		if m.Values[i].Visible(tx) {
+			if m.Values[i].DeleteTx != nil {
+				// deleted
+				return nil
+			}
 			v := m.Values[i].Value
 			return &v
 		}
@@ -49,37 +47,27 @@ func (m *MVCC[T]) Read(
 //TODO delete
 //TODO update
 
-func (m *MVCCValue[T]) Visible(
-	txID string,
-	physicalTime int64,
-	logicalTime int64,
-	txIsActive func(string) bool,
-) bool {
+func (m *MVCCValue[T]) Visible(tx *Transaction) bool {
 
-	// future value
-	if physicalTime < m.MinPhysicalTime {
-		return false
+	// read current tx created
+	if tx == m.CreateTx {
+		return true
 	}
 
-	// future value
-	if logicalTime < m.MinLogicalTime {
-		return false
+	// read committed not deleted
+	if m.CreateTx.State == Committed &&
+		tx.BeginTime.After(*m.CreateTx.CommitTime) &&
+		m.DeleteTx == nil {
+		return true
 	}
 
-	// uncommitted value by other tx
-	if m.MinTxID != txID && txIsActive(m.MinTxID) {
-		return false
+	// read committed before deleted
+	if m.CreateTx.State == Committed &&
+		tx.BeginTime.After(*m.CreateTx.CommitTime) &&
+		m.DeleteTx != nil &&
+		tx.BeginTime.Before(m.DeleteTx.BeginTime) {
+		return true
 	}
 
-	// deleted by committed tx
-	if m.MaxTxID != "" &&
-		m.MaxTxID != txID &&
-		(physicalTime > m.MaxPhysicalTime || (physicalTime == m.MaxPhysicalTime && logicalTime > m.MaxLogicalTime)) &&
-		!txIsActive(m.MaxTxID) {
-		return false
-	}
-
-	//TODO deleted by current tx
-
-	return true
+	return false
 }
