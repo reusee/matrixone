@@ -15,6 +15,7 @@
 package memstorage
 
 import (
+	"github.com/matrixorigin/matrixone/pkg/pb/timestamp"
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
 	"github.com/matrixorigin/matrixone/pkg/txn/storage"
 )
@@ -42,7 +43,7 @@ func (*Storage) Committing(txnMeta txn.TxnMeta) error {
 	panic("unimplemented")
 }
 
-func (*Storage) Prepare(txnMeta txn.TxnMeta) error {
+func (*Storage) Prepare(txnMeta txn.TxnMeta) (timestamp.Timestamp, error) {
 	//TODO
 	panic("unimplemented")
 }
@@ -58,5 +59,10 @@ func (*Storage) StartRecovery(chan txn.TxnMeta) {
 }
 
 func (*Storage) Close() error {
+	return nil
+}
+
+func (*Storage) Destroy() error {
+	//TODO
 	return nil
 }

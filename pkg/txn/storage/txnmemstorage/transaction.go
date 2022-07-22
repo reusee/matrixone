@@ -15,10 +15,9 @@
 package memstorage
 
 type Transaction struct {
-	ID         string
-	BeginTime  Time
-	CommitTime *Time
-	State      TransactionState
+	ID        string
+	BeginTime Timestamp
+	State     TransactionState
 }
 
 type TransactionState uint8

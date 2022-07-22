@@ -14,8 +14,16 @@
 
 package memstorage
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/matrixorigin/matrixone/pkg/pb/timestamp"
+)
 
 var (
 	pt = fmt.Printf
+)
+
+type (
+	Timestamp = timestamp.Timestamp
 )
