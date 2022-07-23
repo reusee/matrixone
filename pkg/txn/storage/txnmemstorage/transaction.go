@@ -14,6 +14,8 @@
 
 package memstorage
 
+import "fmt"
+
 type Transaction struct {
 	ID        string
 	BeginTime Timestamp
@@ -27,3 +29,12 @@ const (
 	Committed
 	Aborted
 )
+
+type ErrWriteConflict struct {
+	WritingTx     *Transaction
+	ConflictingTx *Transaction
+}
+
+func (e ErrWriteConflict) Error() string {
+	return fmt.Sprintf("write conflict: %s %s", e.WritingTx.ID, e.ConflictingTx.ID)
+}

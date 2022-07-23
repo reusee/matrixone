@@ -14,8 +14,13 @@
 
 package memstorage
 
+import (
+	"sync"
+)
+
 type MVCC[T any] struct {
-	Values []MVCCValue[T]
+	sync.RWMutex
+	Values []*MVCCValue[T]
 }
 
 type MVCCValue[T any] struct {
@@ -23,29 +28,26 @@ type MVCCValue[T any] struct {
 	BornTime Timestamp
 	LockTx   *Transaction
 	LockTime Timestamp
-	Value    T
+	Value    *T
 }
 
 // Read reads the visible value from Values
 // readTime's logical time should be monotonically increasing in one transaction to reflect commands order
 func (m *MVCC[T]) Read(tx *Transaction, readTime Timestamp) *T {
 	if tx.State != Active {
-		panic("should not read")
+		panic("should not call Read")
 	}
 
+	m.RLock()
+	defer m.RUnlock()
 	for i := len(m.Values) - 1; i >= 0; i-- {
 		if m.Values[i].Visible(tx.ID, readTime) {
-			v := m.Values[i].Value
-			return &v
+			return m.Values[i].Value
 		}
 	}
 
 	return nil
 }
-
-//TODO insert
-//TODO delete
-//TODO update
 
 func (m *MVCCValue[T]) Visible(txID string, readTime Timestamp) bool {
 
@@ -84,4 +86,93 @@ func (m *MVCCValue[T]) Visible(txID string, readTime Timestamp) bool {
 	}
 
 	return false
+}
+
+func (m *MVCC[T]) Insert(tx *Transaction, writeTime Timestamp, value T) error {
+	if tx.State != Active {
+		panic("should not call Insert")
+	}
+
+	m.Lock()
+	defer m.Unlock()
+	m.Values = append(m.Values, &MVCCValue[T]{
+		BornTx:   tx,
+		BornTime: writeTime,
+		Value:    &value,
+	})
+	return nil
+}
+
+func (m *MVCC[T]) Delete(tx *Transaction, writeTime Timestamp) error {
+	if tx.State != Active {
+		panic("should not call Delete")
+	}
+
+	m.Lock()
+	defer m.Unlock()
+
+	for i := len(m.Values) - 1; i >= 0; i-- {
+		value := m.Values[i]
+		if value.Visible(tx.ID, writeTime) {
+			if value.LockTx != nil {
+				return &ErrWriteConflict{
+					WritingTx:     tx,
+					ConflictingTx: value.LockTx,
+				}
+			}
+			value.LockTx = tx
+			value.LockTime = writeTime
+			return nil
+		}
+	}
+
+	panic("no value")
+}
+
+func (m *MVCC[T]) Update(tx *Transaction, writeTime Timestamp, newValue T) error {
+	if tx.State != Active {
+		panic("should not call Update")
+	}
+
+	m.Lock()
+	defer m.Unlock()
+
+	for i := len(m.Values) - 1; i >= 0; i-- {
+		value := m.Values[i]
+		if value.Visible(tx.ID, writeTime) {
+			if value.LockTx != nil {
+				return &ErrWriteConflict{
+					WritingTx:     tx,
+					ConflictingTx: value.LockTx,
+				}
+			}
+			value.LockTx = tx
+			value.LockTime = writeTime
+			m.Values = append(m.Values, &MVCCValue[T]{
+				BornTx:   tx,
+				BornTime: writeTime,
+				Value:    &newValue,
+			})
+			return nil
+		}
+	}
+
+	panic("no value")
+}
+
+func (m *MVCC[T]) dump() {
+	for _, value := range m.Values {
+		pt("born tx %s, born time %s, value %v",
+			value.BornTx.ID,
+			value.BornTime.String(),
+			*value.Value,
+		)
+		if value.LockTx != nil {
+			pt(" lock tx %s, lock time %s",
+				value.LockTx.ID,
+				value.LockTime.String(),
+			)
+		}
+		pt("\n")
+	}
 }
