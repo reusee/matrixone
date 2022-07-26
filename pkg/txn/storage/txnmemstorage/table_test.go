@@ -29,37 +29,27 @@ func (i I) Less(i2 I) bool {
 func TestTable(t *testing.T) {
 	table := NewTable[I, int]()
 
-	tx := &Transaction{
-		ID: "1",
-	}
-	now := Timestamp{
-		PhysicalTime: 1,
-		LogicalTime:  0,
-	}
+	tx := NewTransaction("1", Timestamp{})
 
 	// insert
-	err := table.Insert(tx, now, I(1), 1)
+	err := table.Insert(tx, tx.CurrentTime, I(1), 1)
 	assert.Nil(t, err)
 
 	// get
-	now = now.Next()
-	n, err := table.Get(tx, now, I(1))
+	n, err := table.Get(tx, tx.CurrentTime, I(1))
 	assert.Nil(t, err)
 	assert.Equal(t, 1, n)
 
 	// update
-	now = now.Next()
-	err = table.Update(tx, now, I(1), 42)
+	err = table.Update(tx, tx.CurrentTime, I(1), 42)
 	assert.Nil(t, err)
 
-	now = now.Next()
-	n, err = table.Get(tx, now, I(1))
+	n, err = table.Get(tx, tx.CurrentTime, I(1))
 	assert.Nil(t, err)
 	assert.Equal(t, 42, n)
 
 	// delete
-	now = now.Next()
-	err = table.Delete(tx, now, I(1))
+	err = table.Delete(tx, tx.CurrentTime, I(1))
 	assert.Nil(t, err)
 
 }

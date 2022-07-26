@@ -17,9 +17,19 @@ package memstorage
 import "fmt"
 
 type Transaction struct {
-	ID        string
-	BeginTime Timestamp
-	State     TransactionState
+	ID          string
+	BeginTime   Timestamp
+	CurrentTime Timestamp
+	State       TransactionState
+}
+
+func NewTransaction(id string, t Timestamp) *Transaction {
+	return &Transaction{
+		ID:          id,
+		BeginTime:   t,
+		CurrentTime: t,
+		State:       Active,
+	}
 }
 
 type TransactionState uint8
@@ -37,4 +47,8 @@ type ErrWriteConflict struct {
 
 func (e ErrWriteConflict) Error() string {
 	return fmt.Sprintf("write conflict: %s %s", e.WritingTx.ID, e.ConflictingTx.ID)
+}
+
+func (t *Transaction) Tick() {
+	t.CurrentTime = t.CurrentTime.Next()
 }

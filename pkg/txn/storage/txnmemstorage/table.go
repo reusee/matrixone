@@ -61,6 +61,9 @@ func (t *Table[PrimaryKey, Attrs]) Insert(
 	row := t.getRow(key)
 	t.Unlock()
 	row.Values.Insert(tx, writeTime, attrs)
+	// writeTime's logical time should be the statement number, but currently the engine does not expose statement numbers
+	// just tick on every operation
+	tx.Tick()
 	return nil
 }
 
@@ -74,6 +77,7 @@ func (t *Table[PrimaryKey, Attrs]) Update(
 	row := t.getRow(key)
 	t.Unlock()
 	row.Values.Update(tx, writeTime, attrs)
+	tx.Tick()
 	return nil
 }
 
@@ -86,6 +90,7 @@ func (t *Table[PrimaryKey, Attrs]) Delete(
 	row := t.getRow(key)
 	t.Unlock()
 	row.Values.Delete(tx, writeTime)
+	tx.Tick()
 	return nil
 }
 

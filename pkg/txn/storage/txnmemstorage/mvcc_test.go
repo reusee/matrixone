@@ -25,12 +25,8 @@ func TestMVCC(t *testing.T) {
 	m := new(MVCC[int])
 
 	// tx
-	tx1 := &Transaction{
-		ID: "1",
-	}
-	tx2 := &Transaction{
-		ID: "2",
-	}
+	tx1 := NewTransaction("1", Timestamp{})
+	tx2 := NewTransaction("2", Timestamp{})
 
 	// time
 	now := Timestamp{
