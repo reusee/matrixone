@@ -61,8 +61,10 @@ func (t *Table[PrimaryKey, Attrs]) Insert(
 	row := t.getRow(key)
 	t.Unlock()
 	row.Values.Insert(tx, writeTime, attrs)
-	// writeTime's logical time should be the statement number, but currently the engine does not expose statement numbers
-	// just tick on every operation
+	//TODO this is wrong
+	// writeTime's logical time should be the statement number
+	// but currently the engine does not expose statement numbers
+	// for now, just tick on every write operation
 	tx.Tick()
 	return nil
 }
