@@ -21,7 +21,7 @@ import (
 
 	"github.com/matrixorigin/matrixone/pkg/pb/timestamp"
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
-	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnmemengine"
+	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnengine"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -43,10 +43,10 @@ func testDatabase(
 	}
 
 	{
-		resp := testRead[txnmemengine.OpenDatabaseResp](
+		resp := testRead[txnengine.OpenDatabaseResp](
 			t, s, txnMeta,
-			txnmemengine.OpOpenDatabase,
-			txnmemengine.OpenDatabaseReq{
+			txnengine.OpOpenDatabase,
+			txnengine.OpenDatabaseReq{
 				Name: "foo",
 			},
 		)
@@ -54,10 +54,10 @@ func testDatabase(
 	}
 
 	{
-		resp := testWrite[txnmemengine.CreateDatabaseResp](
+		resp := testWrite[txnengine.CreateDatabaseResp](
 			t, s, txnMeta,
-			txnmemengine.OpCreateDatabase,
-			txnmemengine.CreateDatabaseReq{
+			txnengine.OpCreateDatabase,
+			txnengine.CreateDatabaseReq{
 				Name: "foo",
 			},
 		)
@@ -65,10 +65,10 @@ func testDatabase(
 	}
 
 	{
-		resp := testRead[txnmemengine.OpenDatabaseResp](
+		resp := testRead[txnengine.OpenDatabaseResp](
 			t, s, txnMeta,
-			txnmemengine.OpOpenDatabase,
-			txnmemengine.OpenDatabaseReq{
+			txnengine.OpOpenDatabase,
+			txnengine.OpenDatabaseReq{
 				Name: "foo",
 			},
 		)
@@ -77,10 +77,10 @@ func testDatabase(
 	}
 
 	{
-		resp := testRead[txnmemengine.GetDatabasesResp](
+		resp := testRead[txnengine.GetDatabasesResp](
 			t, s, txnMeta,
-			txnmemengine.OpGetDatabases,
-			txnmemengine.GetDatabasesReq{},
+			txnengine.OpGetDatabases,
+			txnengine.GetDatabasesReq{},
 		)
 		assert.Equal(t, 1, len(resp.Names))
 		assert.Equal(t, "foo", resp.Names[0])

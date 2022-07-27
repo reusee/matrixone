@@ -19,68 +19,68 @@ import (
 	"encoding/gob"
 
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
-	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnmemengine"
+	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnengine"
 )
 
 func (s *Storage) Write(txnMeta txn.TxnMeta, op uint32, payload []byte) (result []byte, err error) {
 
 	switch op {
 
-	case txnmemengine.OpCreateDatabase:
+	case txnengine.OpCreateDatabase:
 		return handleWrite(
 			s, txnMeta, payload,
 			s.handler.HandleCreateDatabase,
 		)
 
-	case txnmemengine.OpDeleteDatabase:
+	case txnengine.OpDeleteDatabase:
 		return handleWrite(
 			s, txnMeta, payload,
 			s.handler.HandleDeleteDatabase,
 		)
 
-	case txnmemengine.OpCreateRelation:
+	case txnengine.OpCreateRelation:
 		return handleWrite(
 			s, txnMeta, payload,
 			s.handler.HandleCreateRelation,
 		)
 
-	case txnmemengine.OpDeleteRelation:
+	case txnengine.OpDeleteRelation:
 		return handleWrite(
 			s, txnMeta, payload,
 			s.handler.HandleDeleteRelation,
 		)
 
-	case txnmemengine.OpAddTableDef:
+	case txnengine.OpAddTableDef:
 		return handleWrite(
 			s, txnMeta, payload,
 			s.handler.HandleAddTableDef,
 		)
 
-	case txnmemengine.OpDelTableDef:
+	case txnengine.OpDelTableDef:
 		return handleWrite(
 			s, txnMeta, payload,
 			s.handler.HandleDelTableDef,
 		)
 
-	case txnmemengine.OpDelete:
+	case txnengine.OpDelete:
 		return handleWrite(
 			s, txnMeta, payload,
 			s.handler.HandleDelete,
 		)
 
-	case txnmemengine.OpTruncate:
+	case txnengine.OpTruncate:
 		return handleWrite(
 			s, txnMeta, payload,
 			s.handler.HandleTruncate,
 		)
 
-	case txnmemengine.OpUpdate:
+	case txnengine.OpUpdate:
 		return handleWrite(
 			s, txnMeta, payload,
 			s.handler.HandleUpdate,
 		)
 
-	case txnmemengine.OpWrite:
+	case txnengine.OpWrite:
 		return handleWrite(
 			s, txnMeta, payload,
 			s.handler.HandleWrite,

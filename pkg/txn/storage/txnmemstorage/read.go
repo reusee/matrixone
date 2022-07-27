@@ -20,62 +20,62 @@ import (
 
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
 	"github.com/matrixorigin/matrixone/pkg/txn/storage"
-	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnmemengine"
+	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnengine"
 )
 
 func (s *Storage) Read(txnMeta txn.TxnMeta, op uint32, payload []byte) (res storage.ReadResult, err error) {
 
 	switch op {
 
-	case txnmemengine.OpOpenDatabase:
+	case txnengine.OpOpenDatabase:
 		return handleRead(
 			s, txnMeta, payload,
 			s.handler.HandleOpenDatabase,
 		)
 
-	case txnmemengine.OpGetDatabases:
+	case txnengine.OpGetDatabases:
 		return handleRead(
 			s, txnMeta, payload,
 			s.handler.HandleGetDatabases,
 		)
 
-	case txnmemengine.OpOpenRelation:
+	case txnengine.OpOpenRelation:
 		return handleRead(
 			s, txnMeta, payload,
 			s.handler.HandleOpenRelation,
 		)
 
-	case txnmemengine.OpGetRelations:
+	case txnengine.OpGetRelations:
 		return handleRead(
 			s, txnMeta, payload,
 			s.handler.HandleGetRelations,
 		)
 
-	case txnmemengine.OpGetPrimaryKeys:
+	case txnengine.OpGetPrimaryKeys:
 		return handleRead(
 			s, txnMeta, payload,
 			s.handler.HandleGetPrimaryKeys,
 		)
 
-	case txnmemengine.OpGetTableDefs:
+	case txnengine.OpGetTableDefs:
 		return handleRead(
 			s, txnMeta, payload,
 			s.handler.HandleGetTableDefs,
 		)
 
-	case txnmemengine.OpNewTableIter:
+	case txnengine.OpNewTableIter:
 		return handleRead(
 			s, txnMeta, payload,
 			s.handler.HandleNewTableIter,
 		)
 
-	case txnmemengine.OpRead:
+	case txnengine.OpRead:
 		return handleRead(
 			s, txnMeta, payload,
 			s.handler.HandleRead,
 		)
 
-	case txnmemengine.OpCloseTableIter:
+	case txnengine.OpCloseTableIter:
 		return handleRead(
 			s, txnMeta, payload,
 			s.handler.HandleCloseTableIter,

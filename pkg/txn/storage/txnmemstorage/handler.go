@@ -16,121 +16,121 @@ package memstorage
 
 import (
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
-	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnmemengine"
+	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnengine"
 )
 
 type Handler interface {
 	HandleOpenDatabase(
 		meta txn.TxnMeta,
-		req txnmemengine.OpenDatabaseReq,
-		resp *txnmemengine.OpenDatabaseResp,
+		req txnengine.OpenDatabaseReq,
+		resp *txnengine.OpenDatabaseResp,
 	) error
 
 	HandleGetDatabases(
 		meta txn.TxnMeta,
-		req txnmemengine.GetDatabasesReq,
-		resp *txnmemengine.GetDatabasesResp,
+		req txnengine.GetDatabasesReq,
+		resp *txnengine.GetDatabasesResp,
 	) error
 
 	HandleOpenRelation(
 		meta txn.TxnMeta,
-		req txnmemengine.OpenRelationReq,
-		resp *txnmemengine.OpenRelationResp,
+		req txnengine.OpenRelationReq,
+		resp *txnengine.OpenRelationResp,
 	) error
 
 	HandleGetRelations(
 		meta txn.TxnMeta,
-		req txnmemengine.GetRelationsReq,
-		resp *txnmemengine.GetRelationsResp,
+		req txnengine.GetRelationsReq,
+		resp *txnengine.GetRelationsResp,
 	) error
 
 	HandleGetPrimaryKeys(
 		meta txn.TxnMeta,
-		req txnmemengine.GetPrimaryKeysReq,
-		resp *txnmemengine.GetPrimaryKeysResp,
+		req txnengine.GetPrimaryKeysReq,
+		resp *txnengine.GetPrimaryKeysResp,
 	) error
 
 	HandleGetTableDefs(
 		meta txn.TxnMeta,
-		req txnmemengine.GetTableDefsReq,
-		resp *txnmemengine.GetTableDefsResp,
+		req txnengine.GetTableDefsReq,
+		resp *txnengine.GetTableDefsResp,
 	) error
 
 	HandleNewTableIter(
 		meta txn.TxnMeta,
-		req txnmemengine.NewTableIterReq,
-		resp *txnmemengine.NewTableIterResp,
+		req txnengine.NewTableIterReq,
+		resp *txnengine.NewTableIterResp,
 	) error
 
 	HandleRead(
 		meta txn.TxnMeta,
-		req txnmemengine.ReadReq,
-		resp *txnmemengine.ReadResp,
+		req txnengine.ReadReq,
+		resp *txnengine.ReadResp,
 	) error
 
 	HandleCloseTableIter(
 		meta txn.TxnMeta,
-		req txnmemengine.CloseTableIterReq,
-		resp *txnmemengine.CloseTableIterResp,
+		req txnengine.CloseTableIterReq,
+		resp *txnengine.CloseTableIterResp,
 	) error
 
 	HandleCreateDatabase(
 		meta txn.TxnMeta,
-		req txnmemengine.CreateDatabaseReq,
-		resp *txnmemengine.CreateDatabaseResp,
+		req txnengine.CreateDatabaseReq,
+		resp *txnengine.CreateDatabaseResp,
 	) error
 
 	HandleDeleteDatabase(
 		meta txn.TxnMeta,
-		req txnmemengine.DeleteDatabaseReq,
-		resp *txnmemengine.DeleteDatabaseResp,
+		req txnengine.DeleteDatabaseReq,
+		resp *txnengine.DeleteDatabaseResp,
 	) error
 
 	HandleCreateRelation(
 		meta txn.TxnMeta,
-		req txnmemengine.CreateRelationReq,
-		resp *txnmemengine.CreateRelationResp,
+		req txnengine.CreateRelationReq,
+		resp *txnengine.CreateRelationResp,
 	) error
 
 	HandleDeleteRelation(
 		meta txn.TxnMeta,
-		req txnmemengine.DeleteRelationReq,
-		resp *txnmemengine.DeleteRelationResp,
+		req txnengine.DeleteRelationReq,
+		resp *txnengine.DeleteRelationResp,
 	) error
 
 	HandleAddTableDef(
 		meta txn.TxnMeta,
-		req txnmemengine.AddTableDefReq,
-		resp *txnmemengine.AddTableDefResp,
+		req txnengine.AddTableDefReq,
+		resp *txnengine.AddTableDefResp,
 	) error
 
 	HandleDelTableDef(
 		meta txn.TxnMeta,
-		req txnmemengine.DelTableDefReq,
-		resp *txnmemengine.DelTableDefResp,
+		req txnengine.DelTableDefReq,
+		resp *txnengine.DelTableDefResp,
 	) error
 
 	HandleDelete(
 		meta txn.TxnMeta,
-		req txnmemengine.DeleteReq,
-		resp *txnmemengine.DeleteResp,
+		req txnengine.DeleteReq,
+		resp *txnengine.DeleteResp,
 	) error
 
 	HandleTruncate(
 		meta txn.TxnMeta,
-		req txnmemengine.TruncateReq,
-		resp *txnmemengine.TruncateResp,
+		req txnengine.TruncateReq,
+		resp *txnengine.TruncateResp,
 	) error
 
 	HandleUpdate(
 		meta txn.TxnMeta,
-		req txnmemengine.UpdateReq,
-		resp *txnmemengine.UpdateResp,
+		req txnengine.UpdateReq,
+		resp *txnengine.UpdateResp,
 	) error
 
 	HandleWrite(
 		meta txn.TxnMeta,
-		req txnmemengine.WriteReq,
-		resp *txnmemengine.WriteResp,
+		req txnengine.WriteReq,
+		resp *txnengine.WriteResp,
 	) error
 }
