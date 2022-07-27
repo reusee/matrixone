@@ -1,4 +1,4 @@
-// Copyright 2021 Matrix Origin
+// Copyright 2022 Matrix Origin
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,19 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package rpcserver
+package avg
 
 import (
-	"github.com/fagongzi/goetty"
+	"github.com/matrixorigin/matrixone/pkg/container/types"
 )
 
-type Server interface {
-	Stop()
-	Run() error
-	Register(func(uint64, interface{}, goetty.IOSession) error) int
+type Numeric interface {
+	types.Ints | types.UInts | types.Floats
 }
 
-type server struct {
-	app goetty.NetApplication
-	fs  []func(uint64, interface{}, goetty.IOSession) error
+type Avg[T Numeric] struct {
+	cnt int64
+}
+
+type Decimal64Avg struct {
+	cnt int64
+}
+
+type Decimal128Avg struct {
+	cnt int64
 }

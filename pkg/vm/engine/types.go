@@ -23,37 +23,90 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/container/vector"
 	"github.com/matrixorigin/matrixone/pkg/pb/plan"
 	"github.com/matrixorigin/matrixone/pkg/txn/client"
+	"github.com/matrixorigin/matrixone/pkg/vm/mheap"
 )
+
+// Snapshot a tricky approach
+type Snapshot []byte
 
 type Nodes []Node
 
 type Node struct {
 	Mcpu int
-	Id   string `json:"id"`
-	Addr string `json:"address"`
-	Data []byte `json:"payload"`
+	Id   string   `json:"id"`
+	Addr string   `json:"address"`
+	Data [][]byte `json:"payload"`
 }
 
+// Attribute is a column
 type Attribute struct {
-	IsHide  bool
-	Name    string      // name of attribute
-	Alg     compress.T  // compression algorithm
-	Type    types.Type  // type of attribute
-	Default DefaultExpr // default value of this attribute.
-	Primary bool        // if true, it is primary key
-	Comment string      // comment of attribute
+	// IsHide whether the attribute is hidden or not
+	IsHidden bool
+	// IsRowId whether the attribute is rowid or not
+	IsRowId bool
+	// Name name of attribute
+	Name string
+	// Alg compression algorithm
+	Alg compress.T
+	// Type attribute's type
+	Type types.Type
+	// DefaultExpr default value of this attribute
+	Default DefaultExpr
+	// Primary is primary key or not
+	Primary bool
+	// Comment of attribute
+	Comment string
 }
 
+// DefaultExpr default value of this attribute
 type DefaultExpr struct {
 	Exist  bool
-	Expr   *plan.Expr
+	Value  interface{} // int64, float32, float64, string, types.Date, types.Datetime
 	IsNull bool
+}
+
+type PrimaryIndexDef struct {
+	Names []string
+}
+
+type PropertiesDef struct {
+	Properties []Property
+}
+
+type Property struct {
+	Key   string
+	Value string
 }
 
 type Statistics interface {
 	Rows() int64
 	Size(string) int64
 }
+
+type IndexTableDef struct {
+	Typ      IndexT
+	ColNames []string
+	Name     string
+}
+
+type IndexT int
+
+func (node IndexT) ToString() string {
+	switch node {
+	case ZoneMap:
+		return "ZONEMAP"
+	case BsiIndex:
+		return "BSI"
+	default:
+		return "INVAILD"
+	}
+}
+
+const (
+	Invalid IndexT = iota
+	ZoneMap
+	BsiIndex
+)
 
 type AttributeDef struct {
 	Attr Attribute
@@ -67,8 +120,11 @@ type TableDef interface {
 	tableDef()
 }
 
-func (*CommentDef) tableDef()   {}
-func (*AttributeDef) tableDef() {}
+func (*CommentDef) tableDef()      {}
+func (*AttributeDef) tableDef()    {}
+func (*IndexTableDef) tableDef()   {}
+func (*PropertiesDef) tableDef()   {}
+func (*PrimaryIndexDef) tableDef() {}
 
 type Relation interface {
 	Statistics
@@ -79,9 +135,7 @@ type Relation interface {
 
 	GetPrimaryKeys(context.Context) ([]*Attribute, error)
 
-	GetHideKey() *Attribute
-	// true: primary key, false: hide key
-	GetPriKeyOrHideKey() ([]Attribute, bool)
+	GetHideKeys(context.Context) ([]*Attribute, error)
 
 	Write(context.Context, *batch.Batch) error
 
@@ -94,13 +148,13 @@ type Relation interface {
 	AddTableDef(context.Context, TableDef) error
 	DelTableDef(context.Context, TableDef) error
 
-	// first argument is the number of reader, second argument is the filter extend,  third parameter is the payload required by the engine
+	// second argument is the number of reader, third argument is the filter extend, foruth parameter is the payload required by the engine
 	NewReader(context.Context, int, *plan.Expr, [][]byte) ([]Reader, error)
 }
 
 type Reader interface {
-	Read([]string) (*batch.Batch, error)
 	Close() error
+	Read([]string, *plan.Expr, *mheap.Mheap) (*batch.Batch, error)
 }
 
 type Database interface {
@@ -113,6 +167,7 @@ type Database interface {
 
 type Engine interface {
 	Delete(context.Context, string, client.TxnOperator) error
+
 	Create(context.Context, string, client.TxnOperator) error // Create Database - (name, engine type)
 
 	Databases(context.Context, client.TxnOperator) ([]string, error)
@@ -122,10 +177,10 @@ type Engine interface {
 }
 
 // MakeDefaultExpr returns a new DefaultExpr
-func MakeDefaultExpr(exist bool, expr *plan.Expr, isNull bool) DefaultExpr {
+func MakeDefaultExpr(exist bool, value interface{}, isNull bool) DefaultExpr {
 	return DefaultExpr{
-		Expr:   expr,
 		Exist:  exist,
+		Value:  value,
 		IsNull: isNull,
 	}
 }
@@ -137,6 +192,6 @@ func (node Attribute) HasDefaultExpr() bool {
 	return node.Default.Exist
 }
 
-func (node Attribute) GetDefaultExpr() (*plan.Expr, bool) {
-	return node.Default.Expr, node.Default.IsNull
+func (node Attribute) GetDefaultExpr() (interface{}, bool) {
+	return node.Default.Value, node.Default.IsNull
 }
