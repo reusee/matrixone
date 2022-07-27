@@ -336,3 +336,8 @@ func (t *Table) Write(ctx context.Context, data *batch.Batch) error {
 
 	return nil
 }
+
+func (t *Table) GetHideKeys(ctx context.Context) (attrs []*engine.Attribute, err error) {
+	//TODO
+	return
+}

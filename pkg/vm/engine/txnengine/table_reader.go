@@ -22,9 +22,11 @@ import (
 
 	"github.com/matrixorigin/matrixone/pkg/container/batch"
 	logservicepb "github.com/matrixorigin/matrixone/pkg/pb/logservice"
+	"github.com/matrixorigin/matrixone/pkg/pb/plan"
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
 	"github.com/matrixorigin/matrixone/pkg/txn/client"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine"
+	"github.com/matrixorigin/matrixone/pkg/vm/mheap"
 )
 
 type TableReader struct {
@@ -40,7 +42,7 @@ type IterInfo struct {
 
 var _ engine.Reader = new(TableReader)
 
-func (t *TableReader) Read(colNames []string) (*batch.Batch, error) {
+func (t *TableReader) Read(colNames []string, plan *plan.Expr, mh *mheap.Mheap) (*batch.Batch, error) {
 
 	for {
 
