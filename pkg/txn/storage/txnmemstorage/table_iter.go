@@ -29,19 +29,18 @@ type TableIter[
 
 func (t *Table[PrimaryKey, Attrs]) NewIter(
 	tx *Transaction,
-	readTime Timestamp,
 ) (
 	iter *TableIter[PrimaryKey, Attrs],
 ) {
 	iter = &TableIter[PrimaryKey, Attrs]{
 		tx:       tx,
-		iter:     t.Rows.Iter(),
-		readTime: readTime,
+		iter:     t.Rows.Copy().Iter(),
+		readTime: tx.CurrentTime,
 	}
 	return
 }
 
-func (t *TableIter[PrimaryKey, Attrs]) Get() (key PrimaryKey, attrs *Attrs) {
+func (t *TableIter[PrimaryKey, Attrs]) Read() (key PrimaryKey, attrs *Attrs) {
 	row := t.iter.Item()
 	key = row.PrimaryKey
 	attrs = row.Values.Read(t.tx, t.readTime)
@@ -50,6 +49,10 @@ func (t *TableIter[PrimaryKey, Attrs]) Get() (key PrimaryKey, attrs *Attrs) {
 
 func (t *TableIter[PrimaryKey, Attrs]) Next() bool {
 	return t.iter.Next()
+}
+
+func (t *TableIter[PrimaryKey, Attrs]) First() bool {
+	return t.iter.First()
 }
 
 func (t *TableIter[PrimaryKey, Attrs]) Close() error {

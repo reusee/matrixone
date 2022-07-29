@@ -37,25 +37,25 @@ func TestTable(t *testing.T) {
 	attrs := TestAttrs{Key: 42, Value: 1}
 
 	// insert
-	err := table.Insert(tx, tx.CurrentTime, attrs)
+	err := table.Insert(tx, attrs)
 	assert.Nil(t, err)
 
 	// get
-	row, err := table.Get(tx, tx.CurrentTime, Int(42))
+	row, err := table.Get(tx, Int(42))
 	assert.Nil(t, err)
 	assert.Equal(t, attrs, row)
 
 	// update
 	attrs.Value = 2
-	err = table.Update(tx, tx.CurrentTime, attrs)
+	err = table.Update(tx, attrs)
 	assert.Nil(t, err)
 
-	row, err = table.Get(tx, tx.CurrentTime, Int(42))
+	row, err = table.Get(tx, Int(42))
 	assert.Nil(t, err)
 	assert.Equal(t, attrs, row)
 
 	// delete
-	err = table.Delete(tx, tx.CurrentTime, Int(42))
+	err = table.Delete(tx, Int(42))
 	assert.Nil(t, err)
 
 }

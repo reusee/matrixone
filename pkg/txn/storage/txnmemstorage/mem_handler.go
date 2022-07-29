@@ -17,6 +17,7 @@ package memstorage
 import (
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnengine"
 )
@@ -50,10 +51,30 @@ func (*MemHandler) HandleCloseTableIter(meta txn.TxnMeta, req txnengine.CloseTab
 	panic("unimplemented")
 }
 
-// HandleCreateDatabase implements Handler
-func (*MemHandler) HandleCreateDatabase(meta txn.TxnMeta, req txnengine.CreateDatabaseReq, resp *txnengine.CreateDatabaseResp) error {
-	//TODO
-	panic("unimplemented")
+func (m *MemHandler) HandleCreateDatabase(meta txn.TxnMeta, req txnengine.CreateDatabaseReq, resp *txnengine.CreateDatabaseResp) error {
+	tx := m.getTx(meta)
+	iter := m.databases.NewIter(tx)
+	defer iter.Close()
+	existed := false
+	for ok := iter.First(); ok; ok = iter.Next() {
+		_, attrs := iter.Read()
+		if attrs.Name == req.Name {
+			existed = true
+			break
+		}
+	}
+	if existed {
+		resp.ErrExisted = true
+		return nil
+	}
+	err := m.databases.Insert(tx, DatabaseAttrs{
+		ID:   uuid.NewString(),
+		Name: req.Name,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // HandleCreateRelation implements Handler
@@ -86,10 +107,15 @@ func (*MemHandler) HandleDeleteRelation(meta txn.TxnMeta, req txnengine.DeleteRe
 	panic("unimplemented")
 }
 
-// HandleGetDatabases implements Handler
-func (*MemHandler) HandleGetDatabases(meta txn.TxnMeta, req txnengine.GetDatabasesReq, resp *txnengine.GetDatabasesResp) error {
-	//TODO
-	panic("unimplemented")
+func (m *MemHandler) HandleGetDatabases(meta txn.TxnMeta, req txnengine.GetDatabasesReq, resp *txnengine.GetDatabasesResp) error {
+	tx := m.getTx(meta)
+	iter := m.databases.NewIter(tx)
+	defer iter.Close()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		_, attrs := iter.Read()
+		resp.Names = append(resp.Names, attrs.Name)
+	}
+	return nil
 }
 
 // HandleGetPrimaryKeys implements Handler
@@ -118,10 +144,10 @@ func (*MemHandler) HandleNewTableIter(meta txn.TxnMeta, req txnengine.NewTableIt
 
 func (m *MemHandler) HandleOpenDatabase(meta txn.TxnMeta, req txnengine.OpenDatabaseReq, resp *txnengine.OpenDatabaseResp) error {
 	tx := m.getTx(meta)
-	iter := m.databases.NewIter(tx, tx.CurrentTime)
+	iter := m.databases.NewIter(tx)
 	defer iter.Close()
-	for iter.Next() {
-		_, attrs := iter.Get()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		_, attrs := iter.Read()
 		if attrs.Name == req.Name {
 			resp.ID = attrs.ID
 			return nil

@@ -58,14 +58,13 @@ func NewTable[
 
 func (t *Table[PrimaryKey, Attrs]) Insert(
 	tx *Transaction,
-	writeTime Timestamp,
 	attrs Attrs,
 ) error {
 	t.Lock()
 	key := attrs.PrimaryKey()
 	row := t.getRow(key)
 	t.Unlock()
-	row.Values.Insert(tx, writeTime, attrs)
+	row.Values.Insert(tx, tx.CurrentTime, attrs)
 	//TODO this is wrong
 	// writeTime's logical time should be the statement number
 	// but currently the engine does not expose statement numbers
@@ -76,34 +75,31 @@ func (t *Table[PrimaryKey, Attrs]) Insert(
 
 func (t *Table[PrimaryKey, Attrs]) Update(
 	tx *Transaction,
-	writeTime Timestamp,
 	attrs Attrs,
 ) error {
 	t.Lock()
 	key := attrs.PrimaryKey()
 	row := t.getRow(key)
 	t.Unlock()
-	row.Values.Update(tx, writeTime, attrs)
+	row.Values.Update(tx, tx.CurrentTime, attrs)
 	tx.Tick()
 	return nil
 }
 
 func (t *Table[PrimaryKey, Attrs]) Delete(
 	tx *Transaction,
-	writeTime Timestamp,
 	key PrimaryKey,
 ) error {
 	t.Lock()
 	row := t.getRow(key)
 	t.Unlock()
-	row.Values.Delete(tx, writeTime)
+	row.Values.Delete(tx, tx.CurrentTime)
 	tx.Tick()
 	return nil
 }
 
 func (t *Table[PrimaryKey, Attrs]) Get(
 	tx *Transaction,
-	readTime Timestamp,
 	key PrimaryKey,
 ) (
 	attrs Attrs,
@@ -116,7 +112,7 @@ func (t *Table[PrimaryKey, Attrs]) Get(
 		err = sql.ErrNoRows
 		return
 	}
-	attrs = *row.Values.Read(tx, readTime)
+	attrs = *row.Values.Read(tx, tx.CurrentTime)
 	return
 }
 
