@@ -14,6 +14,11 @@
 
 package memstorage
 
+import (
+	"github.com/matrixorigin/matrixone/pkg/vm/engine"
+	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnengine"
+)
+
 type DatabaseAttrs struct {
 	ID   string
 	Name string
@@ -21,4 +26,38 @@ type DatabaseAttrs struct {
 
 func (d DatabaseAttrs) PrimaryKey() Text {
 	return Text(d.ID)
+}
+
+type RelationAttrs struct {
+	ID               string
+	DatabaseID       string
+	Name             string
+	Type             txnengine.RelationType
+	Comments         string
+	Properties       map[string]string
+	PrimaryColumnIDs []string
+}
+
+func (r RelationAttrs) PrimaryKey() Text {
+	return Text(r.ID)
+}
+
+type AttributeAttrs struct {
+	ID         string
+	RelationID string
+	engine.Attribute
+}
+
+func (a AttributeAttrs) PrimaryKey() Text {
+	return Text(a.ID)
+}
+
+type IndexAttrs struct {
+	ID         string
+	RelationID string
+	engine.IndexTableDef
+}
+
+func (i IndexAttrs) PrimaryKey() Text {
+	return Text(i.ID)
 }

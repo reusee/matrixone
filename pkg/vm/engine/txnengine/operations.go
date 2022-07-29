@@ -89,6 +89,7 @@ type DeleteDatabaseResp struct {
 type CreateRelationReq struct {
 	DatabaseID string
 	Name       string
+	Type       RelationType
 	Defs       []engine.TableDef
 }
 

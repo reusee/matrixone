@@ -49,6 +49,21 @@ func (m *MVCC[T]) Read(tx *Transaction, readTime Timestamp) *T {
 	return nil
 }
 
+func (m *MVCC[T]) Visible(tx *Transaction, readTime Timestamp) bool {
+	if tx.State != Active {
+		panic("should not call Visible")
+	}
+
+	m.RLock()
+	defer m.RUnlock()
+	for i := len(m.Values) - 1; i >= 0; i-- {
+		if m.Values[i].Visible(tx.ID, readTime) {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *MVCCValue[T]) Visible(txID string, readTime Timestamp) bool {
 
 	// the following algorithm is from https://momjian.us/main/writings/pgsql/mvcc.pdf

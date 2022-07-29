@@ -48,11 +48,32 @@ func (t *TableIter[PrimaryKey, Attrs]) Read() (key PrimaryKey, attrs *Attrs) {
 }
 
 func (t *TableIter[PrimaryKey, Attrs]) Next() bool {
-	return t.iter.Next()
+	for {
+		if ok := t.iter.Next(); !ok {
+			return false
+		}
+		// skip invisible values
+		if !t.iter.Item().Values.Visible(t.tx, t.tx.CurrentTime) {
+			continue
+		}
+		return true
+	}
 }
 
 func (t *TableIter[PrimaryKey, Attrs]) First() bool {
-	return t.iter.First()
+	if ok := t.iter.First(); !ok {
+		return false
+	}
+	for {
+		// skip invisible values
+		if !t.iter.Item().Values.Visible(t.tx, t.tx.CurrentTime) {
+			if ok := t.iter.Next(); !ok {
+				return false
+			}
+			continue
+		}
+		return true
+	}
 }
 
 func (t *TableIter[PrimaryKey, Attrs]) Close() error {

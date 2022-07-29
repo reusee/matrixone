@@ -27,7 +27,9 @@ type Table[
 ] struct {
 	sync.Mutex
 	Rows *btree.Generic[*Row[PrimaryKey, Attrs]]
+	//TODO unique index
 	//TODO indexes
+	//TODO foreign keys
 }
 
 type Attributes[PrimaryKey any] interface {

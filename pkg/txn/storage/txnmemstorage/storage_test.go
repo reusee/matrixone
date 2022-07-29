@@ -69,31 +69,6 @@ func testDatabase(
 		assert.Equal(t, false, resp.ErrExisted)
 	}
 
-	// open database
-	{
-		resp := testRead[txnengine.OpenDatabaseResp](
-			t, s, txnMeta,
-			txnengine.OpOpenDatabase,
-			txnengine.OpenDatabaseReq{
-				Name: "foo",
-			},
-		)
-		assert.Equal(t, false, resp.ErrNotFound)
-		assert.NotNil(t, resp.ID)
-
-		// delete database
-		defer func() {
-			resp := testWrite[txnengine.DeleteDatabaseResp](
-				t, s, txnMeta,
-				txnengine.OpDeleteDatabase,
-				txnengine.DeleteDatabaseReq{
-					Name: "foo",
-				},
-			)
-			assert.Equal(t, false, resp.ErrNotFound)
-		}()
-	}
-
 	// get databases
 	{
 		resp := testRead[txnengine.GetDatabasesResp](
@@ -105,6 +80,125 @@ func testDatabase(
 		assert.Equal(t, "foo", resp.Names[0])
 	}
 
+	// open database
+	var dbID string
+	{
+		resp := testRead[txnengine.OpenDatabaseResp](
+			t, s, txnMeta,
+			txnengine.OpOpenDatabase,
+			txnengine.OpenDatabaseReq{
+				Name: "foo",
+			},
+		)
+		assert.Equal(t, false, resp.ErrNotFound)
+		assert.NotNil(t, resp.ID)
+		dbID = resp.ID
+
+		// delete database
+		defer func() {
+			{
+				resp := testWrite[txnengine.DeleteDatabaseResp](
+					t, s, txnMeta,
+					txnengine.OpDeleteDatabase,
+					txnengine.DeleteDatabaseReq{
+						Name: "foo",
+					},
+				)
+				assert.Equal(t, false, resp.ErrNotFound)
+			}
+			{
+				resp := testRead[txnengine.GetDatabasesResp](
+					t, s, txnMeta,
+					txnengine.OpGetDatabases,
+					txnengine.GetDatabasesReq{},
+				)
+				assert.Equal(t, 0, len(resp.Names))
+			}
+		}()
+	}
+
+	// open relation
+	{
+		resp := testRead[txnengine.OpenRelationResp](
+			t, s, txnMeta,
+			txnengine.OpOpenRelation,
+			txnengine.OpenRelationReq{
+				DatabaseID: dbID,
+				Name:       "table",
+			},
+		)
+		assert.Equal(t, true, resp.ErrNotFound)
+	}
+
+	// create relation
+	{
+		resp := testWrite[txnengine.CreateRelationResp](
+			t, s, txnMeta,
+			txnengine.OpCreateRelation,
+			txnengine.CreateRelationReq{
+				DatabaseID: dbID,
+				Name:       "table",
+				Type:       txnengine.RelationTable,
+			},
+		)
+		assert.Equal(t, false, resp.ErrExisted)
+	}
+
+	// get relations
+	{
+		resp := testRead[txnengine.GetRelationsResp](
+			t, s, txnMeta,
+			txnengine.OpGetRelations,
+			txnengine.GetRelationsReq{
+				DatabaseID: dbID,
+			},
+		)
+		assert.Equal(t, 1, len(resp.Names))
+		assert.Equal(t, "table", resp.Names[0])
+	}
+
+	// open relation
+	var relID string
+	{
+		resp := testRead[txnengine.OpenRelationResp](
+			t, s, txnMeta,
+			txnengine.OpOpenRelation,
+			txnengine.OpenRelationReq{
+				DatabaseID: dbID,
+				Name:       "table",
+			},
+		)
+		assert.Equal(t, false, resp.ErrNotFound)
+		assert.NotNil(t, resp.ID)
+		relID = resp.ID
+		assert.Equal(t, txnengine.RelationTable, resp.Type)
+	}
+	_ = relID
+
+	defer func() {
+		// delete relation
+		{
+			resp := testWrite[txnengine.DeleteRelationResp](
+				t, s, txnMeta,
+				txnengine.OpDeleteRelation,
+				txnengine.DeleteRelationReq{
+					DatabaseID: dbID,
+					Name:       "table",
+				},
+			)
+			assert.Equal(t, false, resp.ErrNotFound)
+		}
+		{
+			resp := testRead[txnengine.GetRelationsResp](
+				t, s, txnMeta,
+				txnengine.OpGetRelations,
+				txnengine.GetRelationsReq{
+					DatabaseID: dbID,
+				},
+			)
+			assert.Equal(t, 0, len(resp.Names))
+		}
+	}()
 }
 
 func testRead[

@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
+	"github.com/matrixorigin/matrixone/pkg/vm/engine"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnengine"
 )
 
@@ -27,13 +28,20 @@ type MemHandler struct {
 		sync.Mutex
 		Map map[string]*Transaction
 	}
-	databases *Table[Text, DatabaseAttrs]
+
+	databases  *Table[Text, DatabaseAttrs]
+	relations  *Table[Text, RelationAttrs]
+	attributes *Table[Text, AttributeAttrs]
+	indexes    *Table[Text, IndexAttrs]
 }
 
 func NewMemHandler() *MemHandler {
 	h := &MemHandler{}
 	h.transactions.Map = make(map[string]*Transaction)
 	h.databases = NewTable[Text, DatabaseAttrs]()
+	h.relations = NewTable[Text, RelationAttrs]()
+	h.attributes = NewTable[Text, AttributeAttrs]()
+	h.indexes = NewTable[Text, IndexAttrs]()
 	return h
 }
 
@@ -77,10 +85,96 @@ func (m *MemHandler) HandleCreateDatabase(meta txn.TxnMeta, req txnengine.Create
 	return nil
 }
 
-// HandleCreateRelation implements Handler
-func (*MemHandler) HandleCreateRelation(meta txn.TxnMeta, req txnengine.CreateRelationReq, resp *txnengine.CreateRelationResp) error {
-	//TODO
-	panic("unimplemented")
+func (m *MemHandler) HandleCreateRelation(meta txn.TxnMeta, req txnengine.CreateRelationReq, resp *txnengine.CreateRelationResp) error {
+	tx := m.getTx(meta)
+
+	// check existence
+	iter := m.relations.NewIter(tx)
+	defer iter.Close()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		_, attrs := iter.Read()
+		if attrs.DatabaseID == req.DatabaseID &&
+			attrs.Name == req.Name {
+			resp.ErrExisted = true
+			return nil
+		}
+	}
+
+	// attrs
+	attrs := RelationAttrs{
+		ID:         uuid.NewString(),
+		DatabaseID: req.DatabaseID,
+		Name:       req.Name,
+		Type:       req.Type,
+		Properties: make(map[string]string),
+	}
+
+	// handle defs
+	var relAttrs []engine.Attribute
+	var relIndexes []engine.IndexTableDef
+	var primaryColumnNames []string
+	for _, def := range req.Defs {
+		switch def := def.(type) {
+
+		case *engine.CommentDef:
+			attrs.Comments = def.Comment
+
+		case *engine.AttributeDef:
+			relAttrs = append(relAttrs, def.Attr)
+
+		case *engine.IndexTableDef:
+			relIndexes = append(relIndexes, *def)
+
+		case *engine.PropertiesDef:
+			for _, prop := range def.Properties {
+				attrs.Properties[prop.Key] = prop.Value
+			}
+
+		case *engine.PrimaryIndexDef:
+			primaryColumnNames = def.Names
+
+		}
+	}
+
+	// insert relation attributes
+	attrNameIDMap := make(map[string]string)
+	for _, attr := range relAttrs {
+		attrAttrs := AttributeAttrs{
+			ID:         uuid.NewString(),
+			RelationID: attrs.ID,
+			Attribute:  attr,
+		}
+		attrNameIDMap[attr.Name] = attrAttrs.ID
+		if err := m.attributes.Insert(tx, attrAttrs); err != nil {
+			return err
+		}
+	}
+
+	// set primary column ids
+	var ids []string
+	for _, name := range primaryColumnNames {
+		ids = append(ids, attrNameIDMap[name])
+	}
+	attrs.PrimaryColumnIDs = ids
+
+	// insert relation indexes
+	for _, idx := range relIndexes {
+		idxAttrs := IndexAttrs{
+			ID:            uuid.NewString(),
+			RelationID:    attrs.ID,
+			IndexTableDef: idx,
+		}
+		if err := m.indexes.Insert(tx, idxAttrs); err != nil {
+			return err
+		}
+	}
+
+	// insert relation
+	if err := m.relations.Insert(tx, attrs); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // HandleDelTableDef implements Handler
@@ -101,21 +195,47 @@ func (m *MemHandler) HandleDeleteDatabase(meta txn.TxnMeta, req txnengine.Delete
 	defer iter.Close()
 	for ok := iter.First(); ok; ok = iter.Next() {
 		key, attrs := iter.Read()
-		if attrs.Name == req.Name {
-			if err := m.databases.Delete(tx, key); err != nil {
-				return err
-			}
-			return nil
+		if attrs.Name != req.Name {
+			continue
 		}
+
+		// delete database
+		if err := m.databases.Delete(tx, key); err != nil {
+			return err
+		}
+
+		//TODO delete related
+
+		return nil
 	}
+
 	resp.ErrNotFound = true
 	return nil
 }
 
-// HandleDeleteRelation implements Handler
-func (*MemHandler) HandleDeleteRelation(meta txn.TxnMeta, req txnengine.DeleteRelationReq, resp *txnengine.DeleteRelationResp) error {
-	//TODO
-	panic("unimplemented")
+func (m *MemHandler) HandleDeleteRelation(meta txn.TxnMeta, req txnengine.DeleteRelationReq, resp *txnengine.DeleteRelationResp) error {
+	tx := m.getTx(meta)
+	iter := m.relations.NewIter(tx)
+	defer iter.Close()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		key, attrs := iter.Read()
+		if attrs.DatabaseID != req.DatabaseID ||
+			attrs.Name != req.Name {
+			continue
+		}
+
+		// delete relation
+		if err := m.relations.Delete(tx, key); err != nil {
+			return err
+		}
+
+		//TODO delete related
+
+		return nil
+	}
+
+	resp.ErrNotFound = true
+	return nil
 }
 
 func (m *MemHandler) HandleGetDatabases(meta txn.TxnMeta, req txnengine.GetDatabasesReq, resp *txnengine.GetDatabasesResp) error {
@@ -135,10 +255,15 @@ func (*MemHandler) HandleGetPrimaryKeys(meta txn.TxnMeta, req txnengine.GetPrima
 	panic("unimplemented")
 }
 
-// HandleGetRelations implements Handler
-func (*MemHandler) HandleGetRelations(meta txn.TxnMeta, req txnengine.GetRelationsReq, resp *txnengine.GetRelationsResp) error {
-	//TODO
-	panic("unimplemented")
+func (m *MemHandler) HandleGetRelations(meta txn.TxnMeta, req txnengine.GetRelationsReq, resp *txnengine.GetRelationsResp) error {
+	tx := m.getTx(meta)
+	iter := m.relations.NewIter(tx)
+	defer iter.Close()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		_, attrs := iter.Read()
+		resp.Names = append(resp.Names, attrs.Name)
+	}
+	return nil
 }
 
 // HandleGetTableDefs implements Handler
@@ -168,10 +293,21 @@ func (m *MemHandler) HandleOpenDatabase(meta txn.TxnMeta, req txnengine.OpenData
 	return nil
 }
 
-// HandleOpenRelation implements Handler
-func (*MemHandler) HandleOpenRelation(meta txn.TxnMeta, req txnengine.OpenRelationReq, resp *txnengine.OpenRelationResp) error {
-	//TODO
-	panic("unimplemented")
+func (m *MemHandler) HandleOpenRelation(meta txn.TxnMeta, req txnengine.OpenRelationReq, resp *txnengine.OpenRelationResp) error {
+	tx := m.getTx(meta)
+	iter := m.relations.NewIter(tx)
+	defer iter.Close()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		_, attrs := iter.Read()
+		if attrs.DatabaseID == req.DatabaseID &&
+			attrs.Name == req.Name {
+			resp.ID = attrs.ID
+			resp.Type = attrs.Type
+			return nil
+		}
+	}
+	resp.ErrNotFound = true
+	return nil
 }
 
 // HandleRead implements Handler
