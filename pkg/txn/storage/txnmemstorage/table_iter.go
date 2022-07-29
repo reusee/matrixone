@@ -14,23 +14,45 @@
 
 package memstorage
 
+import (
+	"github.com/tidwall/btree"
+)
+
 type TableIter[
 	PrimaryKey Ordered[PrimaryKey],
-	Attrs any,
-] interface {
-	Next() (key PrimaryKey, attrs Attrs, err error)
-	Close() error
+	Attrs Attributes[PrimaryKey],
+] struct {
+	tx       *Transaction
+	iter     btree.GenericIter[*Row[PrimaryKey, Attrs]]
+	readTime Timestamp
 }
 
 func (t *Table[PrimaryKey, Attrs]) NewIter(
 	tx *Transaction,
 	readTime Timestamp,
-	lower *PrimaryKey,
-	upper *PrimaryKey,
 ) (
 	iter *TableIter[PrimaryKey, Attrs],
-	err error,
 ) {
-	//TODO
+	iter = &TableIter[PrimaryKey, Attrs]{
+		tx:       tx,
+		iter:     t.Rows.Iter(),
+		readTime: readTime,
+	}
 	return
+}
+
+func (t *TableIter[PrimaryKey, Attrs]) Get() (key PrimaryKey, attrs *Attrs) {
+	row := t.iter.Item()
+	key = row.PrimaryKey
+	attrs = row.Values.Read(t.tx, t.readTime)
+	return
+}
+
+func (t *TableIter[PrimaryKey, Attrs]) Next() bool {
+	return t.iter.Next()
+}
+
+func (t *TableIter[PrimaryKey, Attrs]) Close() error {
+	t.iter.Release()
+	return nil
 }

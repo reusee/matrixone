@@ -15,9 +15,10 @@
 package memstorage
 
 import (
+	"database/sql"
 	"sync"
 
-	"github.com/google/btree"
+	"github.com/tidwall/btree"
 )
 
 type Table[
@@ -25,10 +26,10 @@ type Table[
 	Attrs Attributes[PrimaryKey],
 ] struct {
 	sync.Mutex
-	Rows *btree.BTreeG[*Row[PrimaryKey, Attrs]]
+	Rows *btree.Generic[*Row[PrimaryKey, Attrs]]
 }
 
-type Attributes[PrimaryKey Ordered[PrimaryKey]] interface {
+type Attributes[PrimaryKey any] interface {
 	PrimaryKey() PrimaryKey
 }
 
@@ -49,7 +50,7 @@ func NewTable[
 	Attrs Attributes[PrimaryKey],
 ]() *Table[PrimaryKey, Attrs] {
 	return &Table[PrimaryKey, Attrs]{
-		Rows: btree.NewG(2, func(a, b *Row[PrimaryKey, Attrs]) bool {
+		Rows: btree.NewGeneric(func(a, b *Row[PrimaryKey, Attrs]) bool {
 			return a.PrimaryKey.Less(b.PrimaryKey)
 		}),
 	}
@@ -111,6 +112,10 @@ func (t *Table[PrimaryKey, Attrs]) Get(
 	t.Lock()
 	row := t.getRow(key)
 	t.Unlock()
+	if row == nil {
+		err = sql.ErrNoRows
+		return
+	}
 	attrs = *row.Values.Read(tx, readTime)
 	return
 }
@@ -123,7 +128,7 @@ func (t *Table[PrimaryKey, Attrs]) getRow(key PrimaryKey) *Row[PrimaryKey, Attrs
 	if !ok {
 		row = pivot
 		row.Values = new(MVCC[Attrs])
-		t.Rows.ReplaceOrInsert(row)
+		t.Rows.Set(row)
 	}
 	return row
 }

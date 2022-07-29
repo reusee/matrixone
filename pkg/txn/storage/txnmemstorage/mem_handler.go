@@ -15,15 +15,24 @@
 package memstorage
 
 import (
+	"sync"
+
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnengine"
 )
 
 type MemHandler struct {
+	transactions struct {
+		sync.Mutex
+		Map map[string]*Transaction
+	}
+	databases *Table[Text, DatabaseAttrs]
 }
 
 func NewMemHandler() *MemHandler {
 	h := &MemHandler{}
+	h.transactions.Map = make(map[string]*Transaction)
+	h.databases = NewTable[Text, DatabaseAttrs]()
 	return h
 }
 
@@ -107,10 +116,19 @@ func (*MemHandler) HandleNewTableIter(meta txn.TxnMeta, req txnengine.NewTableIt
 	panic("unimplemented")
 }
 
-// HandleOpenDatabase implements Handler
-func (*MemHandler) HandleOpenDatabase(meta txn.TxnMeta, req txnengine.OpenDatabaseReq, resp *txnengine.OpenDatabaseResp) error {
-	//TODO
-	panic("unimplemented")
+func (m *MemHandler) HandleOpenDatabase(meta txn.TxnMeta, req txnengine.OpenDatabaseReq, resp *txnengine.OpenDatabaseResp) error {
+	tx := m.getTx(meta)
+	iter := m.databases.NewIter(tx, tx.CurrentTime)
+	defer iter.Close()
+	for iter.Next() {
+		_, attrs := iter.Get()
+		if attrs.Name == req.Name {
+			resp.ID = attrs.ID
+			return nil
+		}
+	}
+	resp.ErrNotFound = true
+	return nil
 }
 
 // HandleOpenRelation implements Handler
@@ -141,4 +159,16 @@ func (*MemHandler) HandleUpdate(meta txn.TxnMeta, req txnengine.UpdateReq, resp 
 func (*MemHandler) HandleWrite(meta txn.TxnMeta, req txnengine.WriteReq, resp *txnengine.WriteResp) error {
 	//TODO
 	panic("unimplemented")
+}
+
+func (m *MemHandler) getTx(meta txn.TxnMeta) *Transaction {
+	id := string(meta.ID)
+	m.transactions.Lock()
+	defer m.transactions.Unlock()
+	tx, ok := m.transactions.Map[id]
+	if !ok {
+		tx = NewTransaction(id, meta.SnapshotTS)
+		m.transactions.Map[id] = tx
+	}
+	return tx
 }
