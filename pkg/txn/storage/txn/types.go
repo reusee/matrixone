@@ -12,12 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package memstorage
+package txnstorage
 
-import "testing"
+type Text string
 
-func TestMemHandler(t *testing.T) {
-	testDatabase(t, func() (*Storage, error) {
-		return New(NewMemHandler())
-	})
+func (t Text) Less(than Text) bool {
+	return t < than
+}
+
+type Int int
+
+func (i Int) Less(than Int) bool {
+	return i < than
 }

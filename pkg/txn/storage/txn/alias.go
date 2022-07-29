@@ -12,16 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package memstorage
+package txnstorage
 
-type Text string
+import (
+	"fmt"
 
-func (t Text) Less(than Text) bool {
-	return t < than
-}
+	"github.com/matrixorigin/matrixone/pkg/pb/timestamp"
+)
 
-type Int int
+var (
+	pt = fmt.Printf
+)
 
-func (i Int) Less(than Int) bool {
-	return i < than
-}
+type (
+	Timestamp = timestamp.Timestamp
+)

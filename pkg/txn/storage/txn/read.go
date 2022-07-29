@@ -12,78 +12,73 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package memstorage
+package txnstorage
 
 import (
 	"bytes"
 	"encoding/gob"
 
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
+	"github.com/matrixorigin/matrixone/pkg/txn/storage"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnengine"
 )
 
-func (s *Storage) Write(txnMeta txn.TxnMeta, op uint32, payload []byte) (result []byte, err error) {
+func (s *Storage) Read(txnMeta txn.TxnMeta, op uint32, payload []byte) (res storage.ReadResult, err error) {
 
 	switch op {
 
-	case txnengine.OpCreateDatabase:
-		return handleWrite(
+	case txnengine.OpOpenDatabase:
+		return handleRead(
 			s, txnMeta, payload,
-			s.handler.HandleCreateDatabase,
+			s.handler.HandleOpenDatabase,
 		)
 
-	case txnengine.OpDeleteDatabase:
-		return handleWrite(
+	case txnengine.OpGetDatabases:
+		return handleRead(
 			s, txnMeta, payload,
-			s.handler.HandleDeleteDatabase,
+			s.handler.HandleGetDatabases,
 		)
 
-	case txnengine.OpCreateRelation:
-		return handleWrite(
+	case txnengine.OpOpenRelation:
+		return handleRead(
 			s, txnMeta, payload,
-			s.handler.HandleCreateRelation,
+			s.handler.HandleOpenRelation,
 		)
 
-	case txnengine.OpDeleteRelation:
-		return handleWrite(
+	case txnengine.OpGetRelations:
+		return handleRead(
 			s, txnMeta, payload,
-			s.handler.HandleDeleteRelation,
+			s.handler.HandleGetRelations,
 		)
 
-	case txnengine.OpAddTableDef:
-		return handleWrite(
+	case txnengine.OpGetPrimaryKeys:
+		return handleRead(
 			s, txnMeta, payload,
-			s.handler.HandleAddTableDef,
+			s.handler.HandleGetPrimaryKeys,
 		)
 
-	case txnengine.OpDelTableDef:
-		return handleWrite(
+	case txnengine.OpGetTableDefs:
+		return handleRead(
 			s, txnMeta, payload,
-			s.handler.HandleDelTableDef,
+			s.handler.HandleGetTableDefs,
 		)
 
-	case txnengine.OpDelete:
-		return handleWrite(
+	case txnengine.OpNewTableIter:
+		return handleRead(
 			s, txnMeta, payload,
-			s.handler.HandleDelete,
+			s.handler.HandleNewTableIter,
 		)
 
-	case txnengine.OpTruncate:
-		return handleWrite(
+	case txnengine.OpRead:
+		return handleRead(
 			s, txnMeta, payload,
-			s.handler.HandleTruncate,
+			s.handler.HandleRead,
 		)
 
-	case txnengine.OpUpdate:
-		return handleWrite(
+	case txnengine.OpCloseTableIter:
+		return handleRead(
 			s, txnMeta, payload,
-			s.handler.HandleUpdate,
-		)
-
-	case txnengine.OpWrite:
-		return handleWrite(
-			s, txnMeta, payload,
-			s.handler.HandleWrite,
+			s.handler.HandleCloseTableIter,
 		)
 
 	}
@@ -91,12 +86,9 @@ func (s *Storage) Write(txnMeta txn.TxnMeta, op uint32, payload []byte) (result 
 	return
 }
 
-func handleWrite[
-	Req any,
-	Resp any,
-](
+func handleRead[Req any, Resp any](
 	s *Storage,
-	meta txn.TxnMeta,
+	txnMeta txn.TxnMeta,
 	payload []byte,
 	fn func(
 		meta txn.TxnMeta,
@@ -106,7 +98,7 @@ func handleWrite[
 		err error,
 	),
 ) (
-	res []byte,
+	res storage.ReadResult,
 	err error,
 ) {
 
@@ -116,7 +108,7 @@ func handleWrite[
 	}
 
 	var resp Resp
-	err = fn(meta, req, &resp)
+	err = fn(txnMeta, req, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +117,9 @@ func handleWrite[
 	if err := gob.NewEncoder(buf).Encode(resp); err != nil {
 		return nil, err
 	}
-	res = buf.Bytes()
+	res = &readResult{
+		payload: buf.Bytes(),
+	}
 
-	return
+	return res, nil
 }

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package memstorage
+package txnstorage
 
 import (
 	"github.com/matrixorigin/matrixone/pkg/pb/timestamp"

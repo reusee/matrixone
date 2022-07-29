@@ -12,18 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package memstorage
+package txnstorage
 
-import (
-	"fmt"
+import "github.com/matrixorigin/matrixone/pkg/txn/storage"
 
-	"github.com/matrixorigin/matrixone/pkg/pb/timestamp"
-)
+type readResult struct {
+	payload []byte
+}
 
-var (
-	pt = fmt.Printf
-)
+var _ storage.ReadResult = new(readResult)
 
-type (
-	Timestamp = timestamp.Timestamp
-)
+func (r *readResult) Read() ([]byte, error) {
+	return r.payload, nil
+}
+
+func (*readResult) Release() {
+}
+
+func (*readResult) WaitTxns() [][]byte {
+	//TODO
+	return nil
+}

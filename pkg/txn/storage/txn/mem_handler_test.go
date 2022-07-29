@@ -12,24 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package memstorage
+package txnstorage
 
-import "github.com/matrixorigin/matrixone/pkg/txn/storage"
+import "testing"
 
-type readResult struct {
-	payload []byte
-}
-
-var _ storage.ReadResult = new(readResult)
-
-func (r *readResult) Read() ([]byte, error) {
-	return r.payload, nil
-}
-
-func (*readResult) Release() {
-}
-
-func (*readResult) WaitTxns() [][]byte {
-	//TODO
-	return nil
+func TestMemHandler(t *testing.T) {
+	testDatabase(t, func() (*Storage, error) {
+		return New(NewMemHandler())
+	})
 }
