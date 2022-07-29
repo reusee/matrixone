@@ -22,15 +22,19 @@ import (
 
 type Table[
 	PrimaryKey Ordered[PrimaryKey],
-	Attrs any,
+	Attrs Attributes[PrimaryKey],
 ] struct {
 	sync.Mutex
 	Rows *btree.BTreeG[*Row[PrimaryKey, Attrs]]
 }
 
+type Attributes[PrimaryKey Ordered[PrimaryKey]] interface {
+	PrimaryKey() PrimaryKey
+}
+
 type Row[
 	PrimaryKey Ordered[PrimaryKey],
-	Attrs any,
+	Attrs Attributes[PrimaryKey],
 ] struct {
 	PrimaryKey PrimaryKey
 	Values     *MVCC[Attrs]
@@ -42,7 +46,7 @@ type Ordered[To any] interface {
 
 func NewTable[
 	PrimaryKey Ordered[PrimaryKey],
-	Attrs any,
+	Attrs Attributes[PrimaryKey],
 ]() *Table[PrimaryKey, Attrs] {
 	return &Table[PrimaryKey, Attrs]{
 		Rows: btree.NewG(2, func(a, b *Row[PrimaryKey, Attrs]) bool {
@@ -54,10 +58,10 @@ func NewTable[
 func (t *Table[PrimaryKey, Attrs]) Insert(
 	tx *Transaction,
 	writeTime Timestamp,
-	key PrimaryKey,
 	attrs Attrs,
 ) error {
 	t.Lock()
+	key := attrs.PrimaryKey()
 	row := t.getRow(key)
 	t.Unlock()
 	row.Values.Insert(tx, writeTime, attrs)
@@ -72,10 +76,10 @@ func (t *Table[PrimaryKey, Attrs]) Insert(
 func (t *Table[PrimaryKey, Attrs]) Update(
 	tx *Transaction,
 	writeTime Timestamp,
-	key PrimaryKey,
 	attrs Attrs,
 ) error {
 	t.Lock()
+	key := attrs.PrimaryKey()
 	row := t.getRow(key)
 	t.Unlock()
 	row.Values.Update(tx, writeTime, attrs)

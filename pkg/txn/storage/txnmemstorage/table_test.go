@@ -20,36 +20,42 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type I int
+type TestAttrs struct {
+	Key   Int
+	Value int
+}
 
-func (i I) Less(i2 I) bool {
-	return i < i2
+func (t TestAttrs) PrimaryKey() Int {
+	return t.Key
 }
 
 func TestTable(t *testing.T) {
-	table := NewTable[I, int]()
+	table := NewTable[Int, TestAttrs]()
 
 	tx := NewTransaction("1", Timestamp{})
 
+	attrs := TestAttrs{Key: 42, Value: 1}
+
 	// insert
-	err := table.Insert(tx, tx.CurrentTime, I(1), 1)
+	err := table.Insert(tx, tx.CurrentTime, attrs)
 	assert.Nil(t, err)
 
 	// get
-	n, err := table.Get(tx, tx.CurrentTime, I(1))
+	row, err := table.Get(tx, tx.CurrentTime, Int(42))
 	assert.Nil(t, err)
-	assert.Equal(t, 1, n)
+	assert.Equal(t, attrs, row)
 
 	// update
-	err = table.Update(tx, tx.CurrentTime, I(1), 42)
+	attrs.Value = 2
+	err = table.Update(tx, tx.CurrentTime, attrs)
 	assert.Nil(t, err)
 
-	n, err = table.Get(tx, tx.CurrentTime, I(1))
+	row, err = table.Get(tx, tx.CurrentTime, Int(42))
 	assert.Nil(t, err)
-	assert.Equal(t, 42, n)
+	assert.Equal(t, attrs, row)
 
 	// delete
-	err = table.Delete(tx, tx.CurrentTime, I(1))
+	err = table.Delete(tx, tx.CurrentTime, Int(42))
 	assert.Nil(t, err)
 
 }
