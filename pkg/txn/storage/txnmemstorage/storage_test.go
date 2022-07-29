@@ -29,10 +29,13 @@ func testDatabase(
 	t *testing.T,
 	newStorage func() (*Storage, error),
 ) {
+
+	// new
 	s, err := newStorage()
 	assert.Nil(t, err)
 	defer s.Close()
 
+	// txn
 	txnMeta := txn.TxnMeta{
 		ID:     []byte("1"),
 		Status: txn.TxnStatus_Active,
@@ -42,6 +45,7 @@ func testDatabase(
 		},
 	}
 
+	// open database
 	{
 		resp := testRead[txnengine.OpenDatabaseResp](
 			t, s, txnMeta,
@@ -53,6 +57,7 @@ func testDatabase(
 		assert.Equal(t, true, resp.ErrNotFound)
 	}
 
+	// create database
 	{
 		resp := testWrite[txnengine.CreateDatabaseResp](
 			t, s, txnMeta,
@@ -64,6 +69,7 @@ func testDatabase(
 		assert.Equal(t, false, resp.ErrExisted)
 	}
 
+	// open database
 	{
 		resp := testRead[txnengine.OpenDatabaseResp](
 			t, s, txnMeta,
@@ -74,8 +80,21 @@ func testDatabase(
 		)
 		assert.Equal(t, false, resp.ErrNotFound)
 		assert.NotNil(t, resp.ID)
+
+		// delete database
+		defer func() {
+			resp := testWrite[txnengine.DeleteDatabaseResp](
+				t, s, txnMeta,
+				txnengine.OpDeleteDatabase,
+				txnengine.DeleteDatabaseReq{
+					Name: "foo",
+				},
+			)
+			assert.Equal(t, false, resp.ErrNotFound)
+		}()
 	}
 
+	// get databases
 	{
 		resp := testRead[txnengine.GetDatabasesResp](
 			t, s, txnMeta,

@@ -95,10 +95,21 @@ func (*MemHandler) HandleDelete(meta txn.TxnMeta, req txnengine.DeleteReq, resp 
 	panic("unimplemented")
 }
 
-// HandleDeleteDatabase implements Handler
-func (*MemHandler) HandleDeleteDatabase(meta txn.TxnMeta, req txnengine.DeleteDatabaseReq, resp *txnengine.DeleteDatabaseResp) error {
-	//TODO
-	panic("unimplemented")
+func (m *MemHandler) HandleDeleteDatabase(meta txn.TxnMeta, req txnengine.DeleteDatabaseReq, resp *txnengine.DeleteDatabaseResp) error {
+	tx := m.getTx(meta)
+	iter := m.databases.NewIter(tx)
+	defer iter.Close()
+	for ok := iter.First(); ok; ok = iter.Next() {
+		key, attrs := iter.Read()
+		if attrs.Name == req.Name {
+			if err := m.databases.Delete(tx, key); err != nil {
+				return err
+			}
+			return nil
+		}
+	}
+	resp.ErrNotFound = true
+	return nil
 }
 
 // HandleDeleteRelation implements Handler
