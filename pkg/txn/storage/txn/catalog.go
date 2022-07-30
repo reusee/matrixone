@@ -16,7 +16,7 @@ package txnstorage
 
 import (
 	"github.com/matrixorigin/matrixone/pkg/vm/engine"
-	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnengine"
+	txnengine "github.com/matrixorigin/matrixone/pkg/vm/engine/txn"
 )
 
 type DatabaseAttrs struct {

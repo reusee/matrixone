@@ -23,7 +23,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/matrixorigin/matrixone/pkg/pb/txn"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine"
-	"github.com/matrixorigin/matrixone/pkg/vm/engine/txnengine"
+	txnengine "github.com/matrixorigin/matrixone/pkg/vm/engine/txn"
 )
 
 type MemHandler struct {
