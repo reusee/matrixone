@@ -140,8 +140,9 @@ type AddTableDefReq struct {
 }
 
 type AddTableDefResp struct {
-	ErrTableNotFound bool
-	ErrExisted       bool
+	ErrTableNotFound  bool
+	ErrExisted        bool
+	ErrColumnNotFound string
 }
 
 type DelTableDefReq struct {

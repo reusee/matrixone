@@ -156,7 +156,7 @@ func (m *MemHandler) HandleAddTableDef(meta txn.TxnMeta, req txnengine.AddTableD
 		for _, name := range def.Names {
 			id, ok := nameToID[name]
 			if !ok {
-				resp.ErrTableNotFound = true //TODO add ErrColumnNotFound
+				resp.ErrColumnNotFound = name
 				return nil
 			}
 			ids = append(ids, id)
