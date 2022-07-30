@@ -15,6 +15,9 @@
 package txnstorage
 
 import (
+	"database/sql"
+	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/google/uuid"
@@ -47,10 +50,128 @@ func NewMemHandler() *MemHandler {
 
 var _ Handler = new(MemHandler)
 
-// HandleAddTableDef implements Handler
-func (*MemHandler) HandleAddTableDef(meta txn.TxnMeta, req txnengine.AddTableDefReq, resp *txnengine.AddTableDefResp) error {
-	//TODO
-	panic("unimplemented")
+func (m *MemHandler) HandleAddTableDef(meta txn.TxnMeta, req txnengine.AddTableDefReq, resp *txnengine.AddTableDefResp) error {
+	tx := m.getTx(meta)
+	switch def := req.Def.(type) {
+
+	case *engine.CommentDef:
+		// update comments
+		attrs, err := m.relations.Get(tx, Text(req.TableID))
+		if errors.Is(err, sql.ErrNoRows) {
+			resp.ErrTableNotFound = true
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		attrs.Comments = def.Comment
+		if err := m.relations.Update(tx, attrs); err != nil {
+			return err
+		}
+
+	case *engine.AttributeDef:
+		// add attribute
+		// check existence
+		iter := m.attributes.NewIter(tx)
+		defer iter.Close()
+		for ok := iter.First(); ok; ok = iter.Next() {
+			_, attrs := iter.Read()
+			if attrs.RelationID == req.TableID &&
+				attrs.Name == def.Attr.Name {
+				resp.ErrExisted = true
+				return nil
+			}
+		}
+		// insert
+		attrAttrs := AttributeAttrs{
+			ID:         uuid.NewString(),
+			RelationID: req.TableID,
+			Attribute:  def.Attr,
+		}
+		if err := m.attributes.Insert(tx, attrAttrs); err != nil {
+			return err
+		}
+
+	case *engine.IndexTableDef:
+		// add index
+		// check existence
+		iter := m.indexes.NewIter(tx)
+		defer iter.Close()
+		for ok := iter.First(); ok; ok = iter.Next() {
+			_, attrs := iter.Read()
+			if attrs.RelationID == req.TableID &&
+				attrs.Name == def.Name {
+				resp.ErrExisted = true
+				return nil
+			}
+		}
+		// insert
+		idxAttrs := IndexAttrs{
+			ID:            uuid.NewString(),
+			RelationID:    req.TableID,
+			IndexTableDef: *def,
+		}
+		if err := m.indexes.Insert(tx, idxAttrs); err != nil {
+			return err
+		}
+
+	case *engine.PropertiesDef:
+		// update properties
+		attrs, err := m.relations.Get(tx, Text(req.TableID))
+		if errors.Is(err, sql.ErrNoRows) {
+			resp.ErrTableNotFound = true
+			return nil
+		}
+		for _, prop := range def.Properties {
+			attrs.Properties[prop.Key] = prop.Value
+		}
+		if err := m.relations.Update(tx, attrs); err != nil {
+			return err
+		}
+
+	case *engine.PrimaryIndexDef:
+		// set primary index
+		// check existence
+		attrs, err := m.relations.Get(tx, Text(req.TableID))
+		if errors.Is(err, sql.ErrNoRows) {
+			resp.ErrTableNotFound = true
+			return nil
+		}
+		if len(attrs.PrimaryColumnIDs) > 0 {
+			resp.ErrExisted = true
+			return nil
+		}
+		// set
+		iter := m.attributes.NewIter(tx)
+		defer iter.Close()
+		nameToID := make(map[string]string)
+		for ok := iter.First(); ok; ok = iter.Next() {
+			_, attrAttrs := iter.Read()
+			if attrAttrs.RelationID != req.TableID {
+				continue
+			}
+			nameToID[attrAttrs.Name] = attrAttrs.ID
+		}
+		var ids []string
+		for _, name := range def.Names {
+			id, ok := nameToID[name]
+			if !ok {
+				resp.ErrTableNotFound = true //TODO add ErrColumnNotFound
+				return nil
+			}
+			ids = append(ids, id)
+		}
+		attrs.PrimaryColumnIDs = ids
+		if err := m.relations.Update(tx, attrs); err != nil {
+			return err
+		}
+
+	default:
+		return fmt.Errorf("unknown table def: %T", req.Def)
+
+	}
+
+	return nil
 }
 
 // HandleCloseTableIter implements Handler

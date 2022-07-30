@@ -139,6 +139,7 @@ func testDatabase(
 				DatabaseID: dbID,
 				Name:       "table",
 				Type:       txnengine.RelationTable,
+				//TODO defs
 			},
 		)
 		assert.Equal(t, false, resp.ErrExisted)
@@ -199,6 +200,9 @@ func testDatabase(
 			assert.Equal(t, 0, len(resp.Names))
 		}
 	}()
+
+	//TODO AddTableDef
+
 }
 
 func testRead[
