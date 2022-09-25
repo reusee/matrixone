@@ -1,5 +1,8 @@
 service-type = "LOG"
 
+[clock]
+max-clock-offset = "3600s"
+
 [log]
 level = "debug"
 format = "json"
