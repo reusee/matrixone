@@ -15,6 +15,7 @@
 package memorystorage
 
 import (
+	"github.com/matrixorigin/matrixone/pkg/txn/client"
 	"github.com/matrixorigin/matrixone/pkg/txn/storage/memorystorage/memtable"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/memoryengine"
 )
@@ -29,6 +30,9 @@ type (
 	Uint            = memtable.Uint
 	Bool            = memtable.Bool
 	Time            = memtable.Time
+
+	TxnOperator = client.TxnOperator
+	TxnClient   = client.TxnClient
 )
 
 var (

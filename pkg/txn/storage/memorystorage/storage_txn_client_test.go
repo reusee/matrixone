@@ -150,6 +150,25 @@ func testStorageTxnClient(
 	_, err = session.AuthenticateUser("root")
 	assert.Nil(t, err)
 
+	// SQL tests
+	db, err := txnClient.SQL(engine)
+	assert.Nil(t, err)
+	assert.Nil(t, db.Ping())
+
+	var dbs []string
+	err = db.Select(&dbs, "show databases")
+	assert.Nil(t, err)
+	assert.True(t, len(dbs) > 0)
+
+	_, err = db.Exec(`create database foo`)
+	assert.Nil(t, err)
+	_, err = db.Exec(`use foo`)
+	assert.Nil(t, err)
+	_, err = db.Exec(`create table foo (a int)`)
+	assert.Nil(t, err)
+
+	assert.Nil(t, db.Close())
+
 }
 
 func TestStorageTxnClientSingleDN(t *testing.T) {
