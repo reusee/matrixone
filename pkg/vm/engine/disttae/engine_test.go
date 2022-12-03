@@ -14,6 +14,31 @@
 
 package disttae
 
+import (
+	"context"
+	"testing"
+
+	"github.com/matrixorigin/matrixone/pkg/common/mpool"
+	"github.com/matrixorigin/matrixone/pkg/testutil"
+	"github.com/matrixorigin/matrixone/pkg/vm/engine"
+	"github.com/matrixorigin/matrixone/pkg/vm/engine/enginetests"
+)
+
+func TestEngine(t *testing.T) {
+	ctx := context.Background()
+	enginetests.TestEngine(t, func() (engine.Engine, error) {
+		eng := New(
+			ctx,
+			mpool.MustNewZero(),
+			testutil.NewFS(),
+			nil, //TODO
+			nil, //TODO
+			nil, //TODO
+		)
+		return eng, nil
+	})
+}
+
 /*
 type testTxnOperator struct {
 	meta txn.TxnMeta
