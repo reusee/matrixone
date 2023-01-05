@@ -51,4 +51,13 @@ func TestIOEntriesReader(t *testing.T) {
 	}
 	assert.Nil(t, iotest.TestReader(newIOEntriesReader(entries), bytes.Repeat([]byte("a"), 1024)))
 
+	entries = []IOEntry{
+		{
+			Offset:         0,
+			Size:           -1,
+			ReaderForWrite: bytes.NewReader([]byte("a")),
+		},
+	}
+	assert.Nil(t, iotest.TestReader(newIOEntriesReader(entries), []byte("a")))
+
 }
