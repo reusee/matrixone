@@ -126,7 +126,7 @@ func (tbl *table) Rows(ctx context.Context) (int64, error) {
 		memtable.SnapshotIsolation,
 	)
 	for _, partition := range tbl.parts {
-		pRows, err := partition.Rows(tx, deletes, tbl.skipBlocks)
+		pRows, err := partition.NumRows(tx, deletes, tbl.skipBlocks)
 		if err != nil {
 			return 0, err
 		}

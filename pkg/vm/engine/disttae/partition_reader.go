@@ -24,28 +24,29 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/container/types"
 	"github.com/matrixorigin/matrixone/pkg/container/vector"
 	"github.com/matrixorigin/matrixone/pkg/pb/plan"
+	"github.com/matrixorigin/matrixone/pkg/pb/timestamp"
 	"github.com/matrixorigin/matrixone/pkg/txn/storage/memorystorage/memtable"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine"
 )
 
 type PartitionReader struct {
-	end         bool
-	typsMap     map[string]types.Type
-	firstCalled bool
-	readTime    memtable.Time
-	tx          *memtable.Transaction
-	index       memtable.Tuple
-	inserts     []*batch.Batch
-	deletes     map[types.Rowid]uint8
-	skipBlocks  map[uint64]uint8
-	iter        *memtable.TableIter[RowID, DataValue]
-	data        *memtable.Table[RowID, DataValue, *DataRow]
+	end           bool
+	typsMap       map[string]types.Type
+	firstCalled   bool
+	readTimestamp timestamp.Timestamp
+	readTime      memtable.Time
+	tx            *memtable.Transaction
+	index         memtable.Tuple
+	inserts       []*batch.Batch
+	deletes       map[types.Rowid]uint8
+	skipBlocks    map[uint64]uint8
+	iter          *PartitionIter
+	partition     *Partition
 }
 
 var _ engine.Reader = new(PartitionReader)
 
 func (p *PartitionReader) Close() error {
-	p.iter.Close()
 	return nil
 }
 
@@ -76,30 +77,23 @@ func (p *PartitionReader) Read(ctx context.Context, colNames []string, expr *pla
 	}
 	rows := 0
 	if len(p.index) > 0 {
-		p.iter.Close()
-		itr := p.data.NewIndexIter(p.tx, p.index, p.index)
+		itr := p.partition.NewIter(p.readTimestamp, p.index, p.index)
 		for ok := itr.First(); ok; ok = itr.Next() {
-			entry := itr.Item()
-			if _, ok := p.deletes[types.Rowid(entry.Key)]; ok {
+			rowID, dataValue := itr.Item()
+			if _, ok := p.deletes[rowID]; ok {
 				continue
 			}
 			if p.skipBlocks != nil {
-				if _, ok := p.skipBlocks[rowIDToBlockID(entry.Key)]; ok {
+				if _, ok := p.skipBlocks[rowIDToBlockID(rowID)]; ok {
 					continue
 				}
-			}
-			dataValue, err := p.data.Get(p.tx, entry.Key)
-			if err != nil {
-				itr.Close()
-				p.end = true
-				return nil, err
 			}
 			if dataValue.op == opDelete {
 				continue
 			}
 			for i, name := range b.Attrs {
 				if name == catalog.Row_ID {
-					if err := b.Vecs[i].Append(types.Rowid(entry.Key), false, mp); err != nil {
+					if err := b.Vecs[i].Append(rowID, false, mp); err != nil {
 						return nil, err
 					}
 					continue
@@ -133,12 +127,9 @@ func (p *PartitionReader) Read(ctx context.Context, colNames []string, expr *pla
 
 	maxRows := 8192 // i think 8192 is better than 4096
 	for ok := fn(); ok; ok = p.iter.Next() {
-		dataKey, dataValue, err := p.iter.Read()
-		if err != nil {
-			return nil, err
-		}
+		rowID, dataValue := p.iter.Item()
 
-		if _, ok := p.deletes[types.Rowid(dataKey)]; ok {
+		if _, ok := p.deletes[rowID]; ok {
 			continue
 		}
 
@@ -147,14 +138,14 @@ func (p *PartitionReader) Read(ctx context.Context, colNames []string, expr *pla
 		}
 
 		if p.skipBlocks != nil {
-			if _, ok := p.skipBlocks[rowIDToBlockID(dataKey)]; ok {
+			if _, ok := p.skipBlocks[rowIDToBlockID(rowID)]; ok {
 				continue
 			}
 		}
 
 		for i, name := range b.Attrs {
 			if name == catalog.Row_ID {
-				if err := b.Vecs[i].Append(types.Rowid(dataKey), false, mp); err != nil {
+				if err := b.Vecs[i].Append(rowID, false, mp); err != nil {
 					return nil, err
 				}
 				continue

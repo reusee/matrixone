@@ -567,7 +567,7 @@ func (e *Engine) gc(ctx context.Context) {
 			for i := range ps {
 				for j := range ps[i] {
 					ps[i][j].Lock()
-					ps[i][j].GC(ts)
+					ps[i][j].Truncate(ts)
 					ps[i][j].Unlock()
 				}
 			}

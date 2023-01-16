@@ -1130,15 +1130,19 @@ func genColumnPrimaryKey(tableId uint64, name string) string {
 	return fmt.Sprintf("%v-%v", tableId, name)
 }
 
-func inParttion(v types.Rowid, part *Partition,
-	ts timestamp.Timestamp, blocks []BlockMeta) bool {
-	if part.Get(v, ts) {
+func inParttion(
+	rowID types.Rowid,
+	part *Partition,
+	ts timestamp.Timestamp,
+	blocks []BlockMeta,
+) bool {
+	if part.Exists(ts, rowID) {
 		return true
 	}
 	if len(blocks) == 0 {
 		return false
 	}
-	blkId := rowIDToBlockID(RowID(v))
+	blkId := rowIDToBlockID(rowID)
 	for _, blk := range blocks {
 		if blk.Info.BlockID == blkId {
 			return true

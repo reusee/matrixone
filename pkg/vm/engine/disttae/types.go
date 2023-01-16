@@ -35,6 +35,7 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/vm/engine"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/cache"
 	"github.com/matrixorigin/matrixone/pkg/vm/process"
+	"github.com/tidwall/btree"
 )
 
 const (
@@ -106,11 +107,21 @@ type Partitions []*Partition
 // a partition corresponds to a dn
 type Partition struct {
 	sync.RWMutex
-	// multi-version data of logtail, implemented with reusee's memengine
-	data             *memtable.Table[RowID, DataValue, *DataRow]
+	index            *btree.BTreeG[PartitionIndexEntry]
 	columnsIndexDefs []ColumnsIndexDef
 	// last updated timestamp
 	ts timestamp.Timestamp
+}
+
+type PartitionIter struct {
+}
+
+type BatchID int64
+
+type PartitionIndexEntry struct {
+	Tuple  memorytable.Tuple
+	Batch  *batch.Batch
+	Offset int
 }
 
 // Transaction represents a transaction
