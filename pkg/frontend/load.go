@@ -1712,7 +1712,7 @@ func writeBatchToStorage(handler *WriteBatchHandler, proc *process.Process, forc
 		if !handler.skipWriteBatch {
 			if handler.oneTxnPerBatch {
 				txnHandler = tmpSes.GetTxnHandler()
-				txn, err = txnHandler.GetTxn()
+				txn, err = txnHandler.GetTxn(ctx)
 				if err != nil {
 					goto handleError
 				}
@@ -1870,7 +1870,7 @@ func writeBatchToStorage(handler *WriteBatchHandler, proc *process.Process, forc
 				if !handler.skipWriteBatch {
 					if handler.oneTxnPerBatch {
 						txnHandler = tmpSes.GetTxnHandler()
-						txn, err = txnHandler.GetTxn()
+						txn, err = txnHandler.GetTxn(ctx)
 						if err != nil {
 							goto handleError2
 						}

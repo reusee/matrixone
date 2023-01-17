@@ -16,6 +16,8 @@ package disttae
 
 import (
 	"context"
+	"fmt"
+	"runtime/trace"
 
 	"github.com/matrixorigin/matrixone/pkg/catalog"
 	"github.com/matrixorigin/matrixone/pkg/common/mpool"
@@ -294,6 +296,9 @@ func (db *DB) getPartitions(databaseId, tableId uint64) Partitions {
 
 func (db *DB) Update(ctx context.Context, dnList []DNStore, tbl *table, op client.TxnOperator,
 	primaryIdx int, databaseId, tableId uint64, ts timestamp.Timestamp) error {
+	region := trace.StartRegion(ctx, fmt.Sprintf("disttae.DB.Update %s", tbl.tableName))
+	defer region.End()
+	region = trace.StartRegion(ctx, fmt.Sprintf("disttae.DB.Update %s, create partitions", tbl.tableName))
 	db.Lock()
 	parts, ok := db.tables[[2]uint64{databaseId, tableId}]
 	if !ok { // create a new table
@@ -304,9 +309,12 @@ func (db *DB) Update(ctx context.Context, dnList []DNStore, tbl *table, op clien
 		db.tables[[2]uint64{databaseId, tableId}] = parts
 	}
 	db.Unlock()
+	region.End()
 	for i, dn := range dnList {
 		part := parts[db.dnMap[dn.UUID]]
+		region = trace.StartRegion(ctx, fmt.Sprintf("disttae.DB.Update %s, get partition lock", tbl.tableName))
 		part.Lock()
+		region.End()
 		if part.ts.Less(ts) {
 			if err := updatePartition(i, primaryIdx, tbl, ts, ctx, op, db, part, dn,
 				genSyncLogTailReq(part.ts, ts, databaseId, tableId)); err != nil {

@@ -16,6 +16,8 @@ package disttae
 
 import (
 	"context"
+	"fmt"
+	"runtime/trace"
 	"time"
 
 	"github.com/matrixorigin/matrixone/pkg/catalog"
@@ -35,6 +37,8 @@ import (
 func updatePartition(idx, primaryIdx int, tbl *table, ts timestamp.Timestamp,
 	ctx context.Context, op client.TxnOperator, db *DB,
 	mvcc MVCC, dn DNStore, req api.SyncLogTailReq) error {
+	region := trace.StartRegion(ctx, fmt.Sprintf("distate.updatePartition: %s", tbl.tableName))
+	defer region.End()
 	reqs, err := genLogTailReq(dn, req)
 	if err != nil {
 		return err
@@ -53,6 +57,8 @@ func updatePartition(idx, primaryIdx int, tbl *table, ts timestamp.Timestamp,
 }
 
 func getLogTail(ctx context.Context, op client.TxnOperator, reqs []txn.TxnRequest) ([]*api.SyncLogTailResp, error) {
+	region := trace.StartRegion(ctx, "disttae.getLogTail")
+	defer region.End()
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	result, err := op.Read(ctx, reqs)
@@ -71,6 +77,8 @@ func getLogTail(ctx context.Context, op client.TxnOperator, reqs []txn.TxnReques
 
 func consumeLogTail(idx, primaryIdx int, tbl *table, ts timestamp.Timestamp,
 	ctx context.Context, db *DB, mvcc MVCC, logTail *api.SyncLogTailResp) (err error) {
+	region := trace.StartRegion(ctx, "disttae.consumeLogTail")
+	defer region.End()
 	var entries []*api.Entry
 
 	if entries, err = logtail.LoadCheckpointEntries(

@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"runtime/trace"
 	"strings"
 	"sync"
 	"time"
@@ -1076,13 +1077,15 @@ When it is not in single statement transaction mode:
 
 	Starts a new transaction if there is none. Reuse the current transaction if there is one.
 */
-func (ses *Session) TxnStart() error {
+func (ses *Session) TxnStart(ctx context.Context) error {
+	region := trace.StartRegion(ctx, "TxnStart")
+	defer region.End()
 	var err error
 	if ses.InMultiStmtTransactionMode() {
 		ses.SetServerStatus(SERVER_STATUS_IN_TRANS)
 	}
 	if !ses.GetTxnHandler().IsValidTxn() {
-		err = ses.GetTxnHandler().NewTxn()
+		err = ses.GetTxnHandler().NewTxn(ctx)
 	}
 	return err
 }
@@ -1119,7 +1122,7 @@ func (ses *Session) TxnCommitSingleStatement(stmt tree.Statement) error {
 	*/
 	if !ses.InMultiStmtTransactionMode() ||
 		ses.InActiveTransaction() && NeedToBeCommittedInActiveTransaction(stmt) {
-		err = ses.GetTxnHandler().CommitTxn()
+		err = ses.GetTxnHandler().CommitTxn(ses.requestCtx)
 		ses.ClearServerStatus(SERVER_STATUS_IN_TRANS)
 		ses.ClearOptionBits(OPTION_BEGIN)
 	}
@@ -1173,7 +1176,7 @@ func (ses *Session) TxnBegin() error {
 	var err error
 	if ses.InMultiStmtTransactionMode() {
 		ses.ClearServerStatus(SERVER_STATUS_IN_TRANS)
-		err = ses.GetTxnHandler().CommitTxn()
+		err = ses.GetTxnHandler().CommitTxn(ses.requestCtx)
 	}
 	ses.ClearOptionBits(OPTION_BEGIN)
 	if err != nil {
@@ -1181,7 +1184,7 @@ func (ses *Session) TxnBegin() error {
 	}
 	ses.SetOptionBits(OPTION_BEGIN)
 	ses.SetServerStatus(SERVER_STATUS_IN_TRANS)
-	err = ses.GetTxnHandler().NewTxn()
+	err = ses.GetTxnHandler().NewTxn(ses.requestCtx)
 	return err
 }
 
@@ -1189,7 +1192,7 @@ func (ses *Session) TxnBegin() error {
 func (ses *Session) TxnCommit() error {
 	var err error
 	ses.ClearServerStatus(SERVER_STATUS_IN_TRANS | SERVER_STATUS_IN_TRANS_READONLY)
-	err = ses.GetTxnHandler().CommitTxn()
+	err = ses.GetTxnHandler().CommitTxn(ses.requestCtx)
 	ses.ClearServerStatus(SERVER_STATUS_IN_TRANS)
 	ses.ClearOptionBits(OPTION_BEGIN)
 	return err
@@ -1454,7 +1457,9 @@ func (th *TxnHandler) GetTxnClient() TxnClient {
 }
 
 // TxnClientNew creates a new txn
-func (th *TxnHandler) TxnClientNew() error {
+func (th *TxnHandler) TxnClientNew(ctx context.Context) error {
+	region := trace.StartRegion(ctx, "TxnHandler.TxnClientNew")
+	defer region.End()
 	var err error
 	th.mu.Lock()
 	defer th.mu.Unlock()
@@ -1482,10 +1487,12 @@ func (th *TxnHandler) TxnClientNew() error {
 
 // NewTxn commits the old transaction if it existed.
 // Then it creates the new transaction.
-func (th *TxnHandler) NewTxn() error {
+func (th *TxnHandler) NewTxn(ctx context.Context) error {
+	region := trace.StartRegion(ctx, "TxnHandler.NewTxn")
+	defer region.End()
 	var err error
 	if th.IsValidTxn() {
-		err = th.CommitTxn()
+		err = th.CommitTxn(ctx)
 		if err != nil {
 			return err
 		}
@@ -1497,16 +1504,12 @@ func (th *TxnHandler) NewTxn() error {
 			incTransactionErrorsCounter(tenant, metric.SQLTypeBegin)
 		}
 	}()
-	err = th.TxnClientNew()
+	err = th.TxnClientNew(ctx)
 	if err != nil {
 		return err
 	}
-	ctx := th.GetSession().GetRequestContext()
-	if ctx == nil {
-		panic("context should not be nil")
-	}
 	storage := th.GetStorage()
-	err = storage.New(ctx, th.GetTxnOperator())
+	err = storage.New(ctx, th.GetTxnOperator(ctx))
 	return err
 }
 
@@ -1523,7 +1526,9 @@ func (th *TxnHandler) SetInvalid() {
 	th.txn = nil
 }
 
-func (th *TxnHandler) GetTxnOperator() TxnOperator {
+func (th *TxnHandler) GetTxnOperator(ctx context.Context) TxnOperator {
+	region := trace.StartRegion(ctx, "GetTxnOperator")
+	defer region.End()
 	th.mu.Lock()
 	defer th.mu.Unlock()
 	return th.txn
@@ -1535,7 +1540,9 @@ func (th *TxnHandler) GetSession() *Session {
 	return th.ses
 }
 
-func (th *TxnHandler) CommitTxn() error {
+func (th *TxnHandler) CommitTxn(ctx context.Context) error {
+	region := trace.StartRegion(ctx, "CommitTxn")
+	defer region.End()
 	th.entryMu.Lock()
 	defer th.entryMu.Unlock()
 	if !th.IsValidTxn() {
@@ -1543,10 +1550,6 @@ func (th *TxnHandler) CommitTxn() error {
 	}
 	ses := th.GetSession()
 	sessionProfile := ses.GetConciseProfile()
-	ctx := ses.GetRequestContext()
-	if ctx == nil {
-		panic("context should not be nil")
-	}
 	if ses.tempTablestorage != nil {
 		ctx = context.WithValue(ctx, defines.TemporaryDN{}, ses.tempTablestorage)
 	}
@@ -1565,7 +1568,7 @@ func (th *TxnHandler) CommitTxn() error {
 			incTransactionErrorsCounter(tenant, metric.SQLTypeCommit)
 		}
 	}()
-	txnOp := th.GetTxnOperator()
+	txnOp := th.GetTxnOperator(ctx)
 	if txnOp == nil {
 		logErrorf(sessionProfile, "CommitTxn: txn operator is null")
 	}
@@ -1628,7 +1631,7 @@ func (th *TxnHandler) RollbackTxn() error {
 			incTransactionErrorsCounter(tenant, metric.SQLTypeRollback)
 		}
 	}()
-	txnOp := th.GetTxnOperator()
+	txnOp := th.GetTxnOperator(ctx)
 	if txnOp == nil {
 		logErrorf(sessionProfile, "RollbackTxn: txn operator is null")
 	}
@@ -1665,13 +1668,15 @@ func (th *TxnHandler) GetStorage() engine.Engine {
 	return th.storage
 }
 
-func (th *TxnHandler) GetTxn() (TxnOperator, error) {
-	err := th.GetSession().TxnStart()
+func (th *TxnHandler) GetTxn(ctx context.Context) (TxnOperator, error) {
+	region := trace.StartRegion(ctx, "TxnHandler.GetTxn")
+	defer region.End()
+	err := th.GetSession().TxnStart(ctx)
 	if err != nil {
 		logutil.Errorf("GetTxn. error:%v", err)
 		return nil, err
 	}
-	return th.GetTxnOperator(), nil
+	return th.GetTxnOperator(ctx), nil
 }
 
 func (th *TxnHandler) GetTxnOnly() TxnOperator {
@@ -1766,7 +1771,7 @@ func (tcc *TxnCompilerContext) GetContext() context.Context {
 func (tcc *TxnCompilerContext) DatabaseExists(name string) bool {
 	var err error
 	var txn TxnOperator
-	txn, err = tcc.GetTxnHandler().GetTxn()
+	txn, err = tcc.GetTxnHandler().GetTxn(tcc.GetContext())
 	if err != nil {
 		return false
 	}
@@ -1798,7 +1803,7 @@ func (tcc *TxnCompilerContext) getRelation(dbName string, tableName string) (con
 		}
 	}
 
-	txn, err := tcc.GetTxnHandler().GetTxn()
+	txn, err := tcc.GetTxnHandler().GetTxn(tcc.GetContext())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1832,7 +1837,7 @@ func (tcc *TxnCompilerContext) getRelation(dbName string, tableName string) (con
 
 func (tcc *TxnCompilerContext) getTmpRelation(ctx context.Context, tableName string) (engine.Relation, error) {
 	e := tcc.ses.storage
-	txn, err := tcc.txnHandler.GetTxn()
+	txn, err := tcc.txnHandler.GetTxn(tcc.GetContext())
 	if err != nil {
 		return nil, err
 	}
@@ -1858,7 +1863,7 @@ func (tcc *TxnCompilerContext) ensureDatabaseIsNotEmpty(dbName string) (string, 
 func (tcc *TxnCompilerContext) ResolveById(tableId uint64) (*plan2.ObjectRef, *plan2.TableDef) {
 	ses := tcc.GetSession()
 	ctx := ses.GetRequestContext()
-	txn, err := tcc.GetTxnHandler().GetTxn()
+	txn, err := tcc.GetTxnHandler().GetTxn(tcc.GetContext())
 	if err != nil {
 		return nil, nil
 	}

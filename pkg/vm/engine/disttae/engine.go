@@ -20,6 +20,7 @@ import (
 	"context"
 	"math"
 	"runtime"
+	"runtime/trace"
 	"sync"
 	"time"
 
@@ -334,7 +335,11 @@ func (e *Engine) hasDuplicate(ctx context.Context, txn *Transaction) bool {
 }
 
 func (e *Engine) New(ctx context.Context, op client.TxnOperator) error {
+	region := trace.StartRegion(ctx, "disttae.Engine.New")
+	defer region.End()
+	region = trace.StartRegion(ctx, "disttae.Engine.New.getclusterdetails")
 	cluster, err := e.getClusterDetails()
+	region.End()
 	if err != nil {
 		return err
 	}
@@ -363,7 +368,9 @@ func (e *Engine) New(ctx context.Context, op client.TxnOperator) error {
 		catalog:     e.catalog,
 	}
 	txn.writes = append(txn.writes, make([]Entry, 0, 1))
+	region = trace.StartRegion(ctx, "disttae.Engine.newTransaction")
 	e.newTransaction(op, txn)
+	region.End()
 	// update catalog's cache
 	table := &table{
 		db: &database{

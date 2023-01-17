@@ -74,11 +74,11 @@ func TestTxnHandler_NewTxn(t *testing.T) {
 		txn.ses = &Session{
 			requestCtx: ctx,
 		}
-		err := txn.NewTxn()
+		err := txn.NewTxn(ctx)
 		convey.So(err, convey.ShouldBeNil)
-		err = txn.NewTxn()
+		err = txn.NewTxn(ctx)
 		convey.So(err, convey.ShouldNotBeNil)
-		err = txn.NewTxn()
+		err = txn.NewTxn(ctx)
 		convey.So(err, convey.ShouldBeNil)
 	})
 }
@@ -117,13 +117,13 @@ func TestTxnHandler_CommitTxn(t *testing.T) {
 		txn.ses = &Session{
 			requestCtx: ctx,
 		}
-		err := txn.NewTxn()
+		err := txn.NewTxn(ctx)
 		convey.So(err, convey.ShouldBeNil)
-		err = txn.CommitTxn()
+		err = txn.CommitTxn(ctx)
 		convey.So(err, convey.ShouldBeNil)
-		err = txn.NewTxn()
+		err = txn.NewTxn(ctx)
 		convey.So(err, convey.ShouldBeNil)
-		err = txn.CommitTxn()
+		err = txn.CommitTxn(ctx)
 		convey.So(err, convey.ShouldNotBeNil)
 	})
 }
@@ -162,11 +162,11 @@ func TestTxnHandler_RollbackTxn(t *testing.T) {
 		txn.ses = &Session{
 			requestCtx: ctx,
 		}
-		err := txn.NewTxn()
+		err := txn.NewTxn(ctx)
 		convey.So(err, convey.ShouldBeNil)
 		err = txn.RollbackTxn()
 		convey.So(err, convey.ShouldBeNil)
-		err = txn.NewTxn()
+		err = txn.NewTxn(ctx)
 		convey.So(err, convey.ShouldBeNil)
 		err = txn.RollbackTxn()
 		convey.So(err, convey.ShouldNotBeNil)
@@ -202,6 +202,7 @@ func TestSession_TxnBegin(t *testing.T) {
 	convey.Convey("new session", t, func() {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
+		ctx := context.Background()
 
 		gSysVars := &GlobalSystemVariables{}
 		InitGlobalSystemVariables(gSysVars)
@@ -217,7 +218,7 @@ func TestSession_TxnBegin(t *testing.T) {
 		convey.So(err, convey.ShouldNotBeNil)
 		err = ses.TxnCommit()
 		convey.So(err, convey.ShouldBeNil)
-		_, _ = ses.GetTxnHandler().GetTxn()
+		_, _ = ses.GetTxnHandler().GetTxn(ctx)
 		convey.So(err, convey.ShouldBeNil)
 
 		err = ses.TxnCommit()

@@ -20,19 +20,21 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"github.com/fagongzi/goetty/v2"
-	"github.com/matrixorigin/matrixone/pkg/sql/colexec/external"
-	"github.com/matrixorigin/matrixone/pkg/sql/util"
-	"golang.org/x/sync/errgroup"
 	"io"
 	"math"
 	"os"
 	"reflect"
+	gotrace "runtime/trace"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/fagongzi/goetty/v2"
+	"github.com/matrixorigin/matrixone/pkg/sql/colexec/external"
+	"github.com/matrixorigin/matrixone/pkg/sql/util"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/matrixorigin/matrixone/pkg/common/mpool"
 	"github.com/matrixorigin/matrixone/pkg/common/runtime"
@@ -222,7 +224,7 @@ var RecordStatement = func(ctx context.Context, ses *Session, proc *process.Proc
 	var txn TxnOperator
 	var err error
 	if handler := ses.GetTxnHandler(); handler.IsValidTxn() {
-		txn, err = handler.GetTxn()
+		txn, err = handler.GetTxn(ctx)
 		if err != nil {
 			logutil.Errorf("RecordStatement. error:%v", err)
 		} else {
@@ -297,7 +299,7 @@ var RecordStatementTxnID = func(ctx context.Context, ses *Session) {
 	var txn TxnOperator
 	if stm := motrace.StatementFromContext(ctx); ses != nil && stm != nil && stm.IsZeroTxnID() {
 		if handler := ses.GetTxnHandler(); handler.IsValidTxn() {
-			txn, err = handler.GetTxn()
+			txn, err = handler.GetTxn(ctx)
 			if err != nil {
 				logutil.Errorf("RecordStatementTxnID. error:%v", err)
 			} else {
@@ -1013,22 +1015,35 @@ func extractRowFromVector(ses *Session, vec *vector.Vector, i int, row []interfa
 }
 
 func doUse(ctx context.Context, ses *Session, db string) error {
+	region := gotrace.StartRegion(ctx, "doUse")
+	defer region.End()
+	region = gotrace.StartRegion(ctx, "GetTxnHandler")
 	txnHandler := ses.GetTxnHandler()
+	region.End()
 	var txn TxnOperator
 	var err error
-	txn, err = txnHandler.GetTxn()
+	region = gotrace.StartRegion(ctx, "GetTxn")
+	txn, err = txnHandler.GetTxn(ctx)
+	region.End()
 	if err != nil {
 		return err
 	}
 	//TODO: check meta data
+	region = gotrace.StartRegion(ctx, "engine.Database")
 	if _, err = ses.GetParameterUnit().StorageEngine.Database(ctx, db, txn); err != nil {
 		//echo client. no such database
+		region.End()
 		return moerr.NewBadDB(ctx, db)
 	}
+	region.End()
+	region = gotrace.StartRegion(ctx, "set name")
 	oldDB := ses.GetDatabaseName()
 	ses.SetDatabaseName(db)
+	region.End()
 
+	region = gotrace.StartRegion(ctx, "log")
 	logInfof(ses.GetConciseProfile(), "User %s change database from [%s] to [%s]", ses.GetUserName(), oldDB, ses.GetDatabaseName())
+	region.End()
 
 	return nil
 }
@@ -1073,7 +1088,7 @@ func (mce *MysqlCmdExecutor) dumpData(requestCtx context.Context, dump *tree.MoD
 		tables    []string
 	)
 	var txn TxnOperator
-	txn, err = txnHandler.GetTxn()
+	txn, err = txnHandler.GetTxn(requestCtx)
 	if err != nil {
 		return err
 	}
@@ -1346,7 +1361,7 @@ func doLoadData(requestCtx context.Context, ses *Session, proc *process.Process,
 	if ses.InMultiStmtTransactionMode() {
 		return nil, moerr.NewInternalError(requestCtx, "do not support the Load in a transaction started by BEGIN/START TRANSACTION statement")
 	}
-	txn, err = txnHandler.GetTxn()
+	txn, err = txnHandler.GetTxn(requestCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -1371,7 +1386,7 @@ func doLoadData(requestCtx context.Context, ses *Session, proc *process.Process,
 	}
 	tableHandler, err = dbHandler.Relation(requestCtx, loadTable)
 	if err != nil {
-		txn, err = ses.txnHandler.GetTxn()
+		txn, err = ses.txnHandler.GetTxn(requestCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -2385,14 +2400,14 @@ func (cwft *TxnComputationWrapper) Compile(requestCtx context.Context, u interfa
 
 	txnHandler := cwft.ses.GetTxnHandler()
 	if cacheHit && cwft.plan.NeedImplicitTxn() {
-		cwft.proc.TxnOperator, err = txnHandler.GetTxn()
+		cwft.proc.TxnOperator, err = txnHandler.GetTxn(requestCtx)
 		if err != nil {
 			return nil, err
 		}
 	} else if cwft.plan.GetQuery().GetLoadTag() {
 		cwft.proc.TxnOperator = txnHandler.GetTxnOnly()
 	} else if cwft.plan.NeedImplicitTxn() {
-		cwft.proc.TxnOperator, err = txnHandler.GetTxn()
+		cwft.proc.TxnOperator, err = txnHandler.GetTxn(requestCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -3334,6 +3349,10 @@ func (mce *MysqlCmdExecutor) processLoadLocal(ctx context.Context, param *tree.E
 
 // execute query
 func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) (retErr error) {
+	requestCtx, task := gotrace.NewTask(requestCtx, "doComQuery")
+	defer task.End()
+
+	region := gotrace.StartRegion(requestCtx, "setup")
 	beginInstant := time.Now()
 	ses := mce.GetSession()
 	ses.getSqlType(sql)
@@ -3346,7 +3365,7 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 		requestCtx,
 		ses.GetMemPool(),
 		ses.GetTxnHandler().GetTxnClient(),
-		ses.GetTxnHandler().GetTxnOperator(),
+		ses.GetTxnHandler().GetTxnOperator(requestCtx),
 		pu.FileService,
 		pu.GetClusterDetails,
 	)
@@ -3393,6 +3412,7 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 		logStatementStringStatus(requestCtx, ses, sql, fail, retErr)
 		return retErr
 	}
+	region.End()
 
 	defer func() {
 		ses.SetMysqlResultSet(nil)
@@ -3488,6 +3508,7 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 		selfHandle = false
 		ses.GetTxnCompileCtx().SetQueryType(TXN_DEFAULT)
 
+		region = gotrace.StartRegion(requestCtx, fmt.Sprintf("execute %T", stmt))
 		switch st := stmt.(type) {
 		case *tree.BeginTransaction, *tree.CommitTransaction, *tree.RollbackTransaction:
 			selfHandle = true
@@ -3715,6 +3736,7 @@ func (mce *MysqlCmdExecutor) doComQuery(requestCtx context.Context, sql string) 
 				proc.LoadLocalReader, loadLocalWriter = io.Pipe()
 			}
 		}
+		region.End()
 
 		if selfHandle {
 			goto handleSucceeded
@@ -4178,7 +4200,7 @@ func (mce *MysqlCmdExecutor) doComQueryInProgress(requestCtx context.Context, sq
 		requestCtx,
 		ses.GetMemPool(),
 		pu.TxnClient,
-		ses.GetTxnHandler().GetTxnOperator(),
+		ses.GetTxnHandler().GetTxnOperator(requestCtx),
 		pu.FileService,
 		pu.GetClusterDetails,
 	)
