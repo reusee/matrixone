@@ -2,8 +2,6 @@ package mometric
 
 import (
 	"context"
-	"github.com/matrixorigin/matrixone/pkg/common/log"
-	"github.com/matrixorigin/matrixone/pkg/common/runtime"
 	"github.com/matrixorigin/matrixone/pkg/logutil"
 	"github.com/matrixorigin/matrixone/pkg/util/metric"
 	"sync"
@@ -16,14 +14,14 @@ type StatsLogExporter struct {
 	cancel    context.CancelFunc
 	stopWg    sync.WaitGroup
 
-	registry *metric.StatsRegistry
-	logger   *log.MOLogger
+	registry       *metric.StatsRegistry
+	gatherInterval time.Duration
 }
 
-func newStatsLogExporter(registry *metric.StatsRegistry) *StatsLogExporter {
+func newStatsLogExporter(registry *metric.StatsRegistry, gatherInterval time.Duration) *StatsLogExporter {
 	return &StatsLogExporter{
-		registry: registry,
-		logger:   runtime.ProcessLevelRuntime().Logger().Named("MetricLog"),
+		registry:       registry,
+		gatherInterval: gatherInterval,
 	}
 }
 
@@ -36,7 +34,7 @@ func (e *StatsLogExporter) Start(inputCtx context.Context) bool {
 	e.stopWg.Add(1)
 	go func() {
 		defer e.stopWg.Done()
-		ticker := time.NewTicker(metric.GetGatherInterval())
+		ticker := time.NewTicker(e.gatherInterval)
 		defer ticker.Stop()
 		for {
 			select {

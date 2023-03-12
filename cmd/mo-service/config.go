@@ -24,7 +24,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -38,7 +37,6 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/logutil"
 	"github.com/matrixorigin/matrixone/pkg/pb/metadata"
 	tomlutil "github.com/matrixorigin/matrixone/pkg/util/toml"
-	"go.uber.org/zap"
 )
 
 var (
@@ -181,34 +179,6 @@ func (c *Config) createFileService(defaultName string) (*fileservice.FileService
 		}
 
 	}
-
-	// cache stats
-	go func() {
-		for range time.NewTicker(time.Second * 10).C {
-			for _, fs := range cachingFS {
-				counter := fs.CacheCounter()
-
-				reads := atomic.LoadInt64(&counter.CacheRead)
-				hits := atomic.LoadInt64(&counter.CacheHit)
-				memReads := atomic.LoadInt64(&counter.MemCacheRead)
-				memHits := atomic.LoadInt64(&counter.MemCacheHit)
-				diskReads := atomic.LoadInt64(&counter.DiskCacheRead)
-				diskHits := atomic.LoadInt64(&counter.DiskCacheHit)
-
-				logutil.Info("cache stats of "+fs.Name(),
-					zap.Any("reads", reads),
-					zap.Any("hits", hits),
-					zap.Any("hit rate", float64(hits)/float64(reads)),
-					zap.Any("mem reads", memReads),
-					zap.Any("mem hits", memHits),
-					zap.Any("mem hit rate", float64(memHits)/float64(memReads)),
-					zap.Any("disk reads", diskReads),
-					zap.Any("disk hits", diskHits),
-					zap.Any("disk hit rate", float64(diskHits)/float64(diskReads)),
-				)
-			}
-		}
-	}()
 
 	// create FileServices
 	fs, err := fileservice.NewFileServices(
