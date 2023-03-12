@@ -75,6 +75,7 @@ func (e *StatsLogExporter) Stop(_ bool) (<-chan struct{}, bool) {
 func (e *StatsLogExporter) gatherAndExport() {
 	statsCollection := e.registry.Gather()
 	for statsFName, stats := range statsCollection {
+		//TODO: Print as JSON
 		logutil.Info("cache stats of "+statsFName, stats...)
 	}
 }
