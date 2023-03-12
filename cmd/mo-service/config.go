@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/matrixorigin/matrixone/pkg/util/metric"
 	"hash/fnv"
 	"math"
 	"net"
@@ -173,6 +174,10 @@ func (c *Config) createFileService(defaultName string) (*fileservice.FileService
 
 		if fs, ok := service.(fileservice.CachingFileService); ok {
 			cachingFS = append(cachingFS, fs)
+
+			// Register "Stats Collector" for Caching File Service
+			statsCollector := fileservice.NewCachingFsStatsCollector(&fs)
+			metric.DefaultStatsRegistry.Register(fs.Name(), &statsCollector)
 		}
 
 	}
