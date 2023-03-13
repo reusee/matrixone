@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/matrixorigin/matrixone/pkg/util/metric/stats"
 	"io"
 	"os"
 	"path/filepath"
@@ -72,6 +73,11 @@ func (d *DiskCache) Read(
 			atomic.AddInt64(&c.CacheHit, numHit)
 			atomic.AddInt64(&c.DiskCacheRead, numRead)
 			atomic.AddInt64(&c.DiskCacheHit, numHit)
+
+			stats.CacheRead.Add(numRead)
+			stats.CacheHit.Add(numHit)
+			stats.MemCacheRead.Add(numRead)
+			stats.MemCacheHit.Add(numHit)
 		}, d.counter)
 	}()
 
