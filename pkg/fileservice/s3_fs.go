@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/matrixorigin/matrixone/pkg/util/metric/stats"
 	"io"
 	"math"
 	stdhttp "net/http"
@@ -986,6 +987,7 @@ func (s *S3FS) s3ListObjects(ctx context.Context, params *s3.ListObjectsV2Input,
 	FSProfileHandler.AddSample()
 	updateCounters(ctx, func(counter *Counter) {
 		atomic.AddInt64(&counter.S3ListObjects, 1)
+		stats.S3ListObjects.Add(1)
 	}, s.counter)
 	return s.s3Client.ListObjectsV2(ctx, params, optFns...)
 }
@@ -994,6 +996,7 @@ func (s *S3FS) s3HeadObject(ctx context.Context, params *s3.HeadObjectInput, opt
 	FSProfileHandler.AddSample()
 	updateCounters(ctx, func(counter *Counter) {
 		atomic.AddInt64(&counter.S3HeadObject, 1)
+		stats.S3HeadObject.Add(1)
 	}, s.counter)
 	return s.s3Client.HeadObject(ctx, params, optFns...)
 }
@@ -1002,6 +1005,8 @@ func (s *S3FS) s3PutObject(ctx context.Context, params *s3.PutObjectInput, optFn
 	FSProfileHandler.AddSample()
 	updateCounters(ctx, func(counter *Counter) {
 		atomic.AddInt64(&counter.S3PutObject, 1)
+		stats.S3PutObject.Add(1)
+
 	}, s.counter)
 	return s.s3Client.PutObject(ctx, params, optFns...)
 }
@@ -1010,6 +1015,8 @@ func (s *S3FS) s3GetObject(ctx context.Context, params *s3.GetObjectInput, optFn
 	FSProfileHandler.AddSample()
 	updateCounters(ctx, func(counter *Counter) {
 		atomic.AddInt64(&counter.S3GetObject, 1)
+		stats.S3GetObject.Add(1)
+
 	}, s.counter)
 	return s.s3Client.GetObject(ctx, params, optFns...)
 }
@@ -1018,6 +1025,8 @@ func (s *S3FS) s3DeleteObjects(ctx context.Context, params *s3.DeleteObjectsInpu
 	FSProfileHandler.AddSample()
 	updateCounters(ctx, func(counter *Counter) {
 		atomic.AddInt64(&counter.S3DeleteObjects, 1)
+		stats.S3DeleteObjects.Add(1)
+
 	}, s.counter)
 	return s.s3Client.DeleteObjects(ctx, params, optFns...)
 }
@@ -1026,6 +1035,8 @@ func (s *S3FS) s3DeleteObject(ctx context.Context, params *s3.DeleteObjectInput,
 	FSProfileHandler.AddSample()
 	updateCounters(ctx, func(counter *Counter) {
 		atomic.AddInt64(&counter.S3DeleteObject, 1)
+		stats.S3DeleteObject.Add(1)
+
 	}, s.counter)
 	return s.s3Client.DeleteObject(ctx, params, optFns...)
 }

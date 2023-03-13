@@ -16,6 +16,7 @@ package fileservice
 
 import (
 	"context"
+	"github.com/matrixorigin/matrixone/pkg/util/metric/stats"
 	"sync/atomic"
 
 	"github.com/matrixorigin/matrixone/pkg/fileservice/memcachepolicy"
@@ -97,6 +98,12 @@ func (m *MemCache) Read(
 			atomic.AddInt64(&c.CacheHit, numHit)
 			atomic.AddInt64(&c.MemCacheRead, numRead)
 			atomic.AddInt64(&c.MemCacheHit, numHit)
+
+			stats.CacheRead.Add(numRead)
+			stats.CacheHit.Add(numHit)
+			stats.MemCacheRead.Add(numRead)
+			stats.MemCacheHit.Add(numHit)
+
 		}, m.counters...)
 	}()
 

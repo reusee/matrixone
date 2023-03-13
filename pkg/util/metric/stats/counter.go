@@ -16,8 +16,8 @@ func NewStatsCounter(fName, name string) *Counter {
 	}
 }
 
-func (c *Counter) Incr() {
-	c.currCounter.Add(1)
+func (c *Counter) Add(delta int64) {
+	c.currCounter.Add(delta)
 }
 
 func (c *Counter) Load() int64 {
