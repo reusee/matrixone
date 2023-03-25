@@ -44,10 +44,7 @@ func (b *btreeIter[T]) Next() bool {
 			// from start
 			b.tree.Ascend(func(entry T) bool {
 				b.entries = append(b.entries, entry)
-				if len(b.entries) >= maxBTreeCachedEntries {
-					return false
-				}
-				return true
+				return len(b.entries) < maxBTreeCachedEntries
 			})
 
 		} else {
@@ -59,10 +56,7 @@ func (b *btreeIter[T]) Next() bool {
 					return true
 				}
 				b.entries = append(b.entries, entry)
-				if len(b.entries) >= maxBTreeCachedEntries {
-					return false
-				}
-				return true
+				return len(b.entries) < maxBTreeCachedEntries
 			})
 		}
 
