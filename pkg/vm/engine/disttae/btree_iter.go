@@ -36,22 +36,19 @@ func newBTreeIter[T any](tree *btree.BTreeG[T], lessFunc btree.LessFunc[T]) *btr
 
 func (b *btreeIter[T]) Next() bool {
 	if b.i >= len(b.entries) {
-		// load
-		b.i = 0
-		b.entries = b.entries[:0]
 
-		if b.pivot == nil {
-			// from start
-			b.tree.Ascend(func(entry T) bool {
-				b.entries = append(b.entries, entry)
-				return len(b.entries) < maxBTreeCachedEntries
-			})
-
-		} else {
-			// from pivot
+		// load from pivot
+		if b.pivot != nil {
 			return b.Seek(*b.pivot)
 		}
 
+		// load from start
+		b.i = 0
+		b.entries = b.entries[:0]
+		b.tree.Ascend(func(entry T) bool {
+			b.entries = append(b.entries, entry)
+			return len(b.entries) < maxBTreeCachedEntries
+		})
 		if len(b.entries) > 0 {
 			lastEntry := b.entries[len(b.entries)-1]
 			b.pivot = &lastEntry
