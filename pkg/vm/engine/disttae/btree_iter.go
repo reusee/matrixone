@@ -43,7 +43,7 @@ func (b *btreeIter[T]) Next() bool {
 
 		// load from pivot
 		if b.pivot != nil {
-			return b.Seek(*b.pivot)
+			return b.seek(*b.pivot, true)
 		}
 
 		// load from start
@@ -63,14 +63,16 @@ func (b *btreeIter[T]) Next() bool {
 	return b.i < len(b.entries)
 }
 
-func (b *btreeIter[T]) Seek(pivot T) bool {
+func (b *btreeIter[T]) seek(pivot T, above bool) bool {
 	b.i = 0
 	b.entries = b.entries[:0]
 	b.tree.AscendGreaterOrEqual(pivot, func(entry T) bool {
-		if !b.lessFunc(entry, pivot) &&
-			!b.lessFunc(pivot, entry) {
-			// equal to pivot, skip
-			return true
+		if above {
+			if !b.lessFunc(entry, pivot) &&
+				!b.lessFunc(pivot, entry) {
+				// equal to pivot, skip
+				return true
+			}
 		}
 		b.entries = append(b.entries, entry)
 		return len(b.entries) < maxBTreeCachedEntries
@@ -80,6 +82,10 @@ func (b *btreeIter[T]) Seek(pivot T) bool {
 		b.pivot = &lastEntry
 	}
 	return b.i < len(b.entries)
+}
+
+func (b *btreeIter[T]) Seek(pivot T) bool {
+	return b.seek(pivot, false)
 }
 
 func (b *btreeIter[T]) Entry() T {
