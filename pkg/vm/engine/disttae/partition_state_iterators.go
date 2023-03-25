@@ -38,6 +38,8 @@ type partitionStateRowsIter struct {
 }
 
 func (p *PartitionState) NewRowsIter(ts types.TS, blockID *types.Blockid, iterDeleted bool) *partitionStateRowsIter {
+	p.Lock()
+	defer p.Unlock()
 	iter := newBTreeIter(p.Rows, RowEntry.Less)
 	ret := &partitionStateRowsIter{
 		ts:          ts,

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime/trace"
+	"sync"
 	"sync/atomic"
 
 	"github.com/google/btree"
@@ -40,6 +41,8 @@ func init() {
 }
 
 type PartitionState struct {
+	sync.Mutex
+
 	// also modify the Copy method if adding fields
 	Rows         *btree.BTreeG[RowEntry] // use value type to avoid locking on elements
 	Blocks       *btree.BTreeG[BlockEntry]
@@ -134,6 +137,8 @@ func NewPartitionState(noData bool) *PartitionState {
 }
 
 func (p *PartitionState) Copy() *PartitionState {
+	p.Lock()
+	defer p.Unlock()
 	checkpoints := make([]string, len(p.Checkpoints))
 	copy(checkpoints, p.Checkpoints)
 	return &PartitionState{
