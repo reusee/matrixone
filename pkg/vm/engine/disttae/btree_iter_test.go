@@ -37,6 +37,18 @@ func TestBTreeIter(t *testing.T) {
 		assert.Equal(t, last+1, entry)
 		last = entry
 	}
+	assert.Equal(t, 1023, last)
+
+	for i := 0; i < 1024; i++ {
+		last := i
+		for ok := iter.Seek(i); ok; ok = iter.Next() {
+			entry := iter.Entry()
+			assert.Equal(t, last+1, entry)
+			last = entry
+		}
+		assert.Equal(t, 1023, last)
+	}
+
 }
 
 func BenchmarkBTreeIter(b *testing.B) {

@@ -22,6 +22,7 @@ import (
 	"runtime/trace"
 	"sync/atomic"
 
+	"github.com/google/btree"
 	"github.com/matrixorigin/matrixone/pkg/catalog"
 	"github.com/matrixorigin/matrixone/pkg/container/batch"
 	"github.com/matrixorigin/matrixone/pkg/container/types"
@@ -30,7 +31,6 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/pb/api"
 	"github.com/matrixorigin/matrixone/pkg/perfcounter"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/common"
-	"github.com/tidwall/btree"
 )
 
 var partitionStateProfileHandler = fileservice.NewProfileHandler()
@@ -125,14 +125,11 @@ func (p *PrimaryIndexEntry) Less(than *PrimaryIndexEntry) bool {
 }
 
 func NewPartitionState(noData bool) *PartitionState {
-	opts := btree.Options{
-		Degree: 4,
-	}
 	return &PartitionState{
 		noData:       noData,
-		Rows:         btree.NewBTreeGOptions((RowEntry).Less, opts),
-		Blocks:       btree.NewBTreeGOptions((BlockEntry).Less, opts),
-		PrimaryIndex: btree.NewBTreeGOptions((*PrimaryIndexEntry).Less, opts),
+		Rows:         btree.NewG(2, (RowEntry).Less),
+		Blocks:       btree.NewG(2, (BlockEntry).Less),
+		PrimaryIndex: btree.NewG(2, (*PrimaryIndexEntry).Less),
 	}
 }
 
@@ -140,17 +137,16 @@ func (p *PartitionState) Copy() *PartitionState {
 	checkpoints := make([]string, len(p.Checkpoints))
 	copy(checkpoints, p.Checkpoints)
 	return &PartitionState{
-		Rows:         p.Rows.Copy(),
-		Blocks:       p.Blocks.Copy(),
-		PrimaryIndex: p.PrimaryIndex.Copy(),
+		Rows:         p.Rows.Clone(),
+		Blocks:       p.Blocks.Clone(),
+		PrimaryIndex: p.PrimaryIndex.Clone(),
 		Checkpoints:  checkpoints,
 		noData:       p.noData,
 	}
 }
 
 func (p *PartitionState) RowExists(rowID types.Rowid, ts types.TS) bool {
-	iter := p.Rows.Iter()
-	defer iter.Release()
+	iter := newBTreeIter(p.Rows, RowEntry.Less)
 
 	blockID := rowID.GetBlockid()
 	for ok := iter.Seek(RowEntry{
@@ -158,7 +154,7 @@ func (p *PartitionState) RowExists(rowID types.Rowid, ts types.TS) bool {
 		RowID:   rowID,
 		Time:    ts,
 	}); ok; ok = iter.Next() {
-		entry := iter.Item()
+		entry := iter.Entry()
 		if entry.BlockID != blockID {
 			break
 		}
@@ -254,7 +250,7 @@ func (p *PartitionState) HandleRowsInsert(
 				entry.PrimaryIndexBytes = primaryKeys[i]
 			}
 
-			p.Rows.Set(entry)
+			p.Rows.ReplaceOrInsert(entry)
 
 			if i < len(primaryKeys) && len(primaryKeys[i]) > 0 {
 				entry := &PrimaryIndexEntry{
@@ -263,7 +259,7 @@ func (p *PartitionState) HandleRowsInsert(
 					BlockID:    blockID,
 					RowID:      rowID,
 				}
-				p.PrimaryIndex.Set(entry)
+				p.PrimaryIndex.ReplaceOrInsert(entry)
 			}
 
 		})
@@ -312,7 +308,7 @@ func (p *PartitionState) HandleRowsDelete(ctx context.Context, input *api.Batch)
 				entry.Offset = int64(i)
 			}
 
-			p.Rows.Set(entry)
+			p.Rows.ReplaceOrInsert(entry)
 		})
 	}
 
@@ -369,15 +365,15 @@ func (p *PartitionState) HandleMetadataInsert(ctx context.Context, input *api.Ba
 			}
 			entry.EntryState = entryStateVector[i]
 
-			p.Blocks.Set(entry)
+			p.Blocks.ReplaceOrInsert(entry)
 
 			if entryStateVector[i] {
-				iter := p.Rows.Copy().Iter()
+				iter := newBTreeIter(p.Rows, RowEntry.Less)
 				pivot := RowEntry{
 					BlockID: blockID,
 				}
 				for ok := iter.Seek(pivot); ok; ok = iter.Next() {
-					entry := iter.Item()
+					entry := iter.Entry()
 					if entry.BlockID != blockID {
 						break
 					}
@@ -392,7 +388,6 @@ func (p *PartitionState) HandleMetadataInsert(ctx context.Context, input *api.Ba
 						})
 					}
 				}
-				iter.Release()
 			}
 
 		})
@@ -430,7 +425,7 @@ func (p *PartitionState) HandleMetadataDelete(ctx context.Context, input *api.Ba
 
 			entry.DeleteTime = deleteTimeVector[i]
 
-			p.Blocks.Set(entry)
+			p.Blocks.ReplaceOrInsert(entry)
 		})
 	}
 

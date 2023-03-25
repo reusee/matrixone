@@ -17,8 +17,8 @@ package disttae
 import (
 	"bytes"
 
+	"github.com/google/btree"
 	"github.com/matrixorigin/matrixone/pkg/container/types"
-	"github.com/tidwall/btree"
 )
 
 type partitionStateIter interface {
@@ -29,7 +29,7 @@ type partitionStateIter interface {
 
 type partitionStateRowsIter struct {
 	ts           types.TS
-	iter         btree.IterG[RowEntry]
+	iter         *btreeIter[RowEntry]
 	firstCalled  bool
 	lastRowID    types.Rowid
 	checkBlockID bool
@@ -38,7 +38,7 @@ type partitionStateRowsIter struct {
 }
 
 func (p *PartitionState) NewRowsIter(ts types.TS, blockID *types.Blockid, iterDeleted bool) *partitionStateRowsIter {
-	iter := p.Rows.Copy().Iter()
+	iter := newBTreeIter(p.Rows, RowEntry.Less)
 	ret := &partitionStateRowsIter{
 		ts:          ts,
 		iter:        iter,
@@ -62,7 +62,7 @@ func (p *partitionStateRowsIter) Next() bool {
 					return false
 				}
 			} else {
-				if !p.iter.First() {
+				if !p.iter.Next() {
 					return false
 				}
 			}
@@ -73,7 +73,7 @@ func (p *partitionStateRowsIter) Next() bool {
 			}
 		}
 
-		entry := p.iter.Item()
+		entry := p.iter.Entry()
 
 		if p.checkBlockID && entry.BlockID != p.blockID {
 			// no more
@@ -99,30 +99,29 @@ func (p *partitionStateRowsIter) Next() bool {
 }
 
 func (p *partitionStateRowsIter) Entry() RowEntry {
-	return p.iter.Item()
+	return p.iter.Entry()
 }
 
 func (p *partitionStateRowsIter) Close() error {
-	p.iter.Release()
 	return nil
 }
 
 type partitionStatePrimaryKeyIter struct {
 	ts          types.TS
 	key         []byte
-	iter        btree.IterG[*PrimaryIndexEntry]
+	iter        *btreeIter[*PrimaryIndexEntry]
 	firstCalled bool
 	rows        *btree.BTreeG[RowEntry]
 	curRow      RowEntry
 }
 
 func (p *PartitionState) NewPrimaryKeyIter(ts types.TS, key []byte) *partitionStatePrimaryKeyIter {
-	iter := p.PrimaryIndex.Copy().Iter()
+	iter := newBTreeIter(p.PrimaryIndex, (*PrimaryIndexEntry).Less)
 	return &partitionStatePrimaryKeyIter{
 		ts:   ts,
 		key:  key,
 		iter: iter,
-		rows: p.Rows.Copy(),
+		rows: p.Rows.Clone(),
 	}
 }
 
@@ -142,7 +141,7 @@ func (p *partitionStatePrimaryKeyIter) Next() bool {
 			}
 		}
 
-		entry := p.iter.Item()
+		entry := p.iter.Entry()
 
 		if !bytes.Equal(entry.Bytes, p.key) {
 			// no more
@@ -151,13 +150,13 @@ func (p *partitionStatePrimaryKeyIter) Next() bool {
 
 		// validate
 		valid := false
-		rowsIter := p.rows.Iter()
+		rowsIter := newBTreeIter(p.rows, RowEntry.Less)
 		for ok := rowsIter.Seek(RowEntry{
 			BlockID: entry.BlockID,
 			RowID:   entry.RowID,
 			Time:    p.ts,
 		}); ok; ok = rowsIter.Next() {
-			row := rowsIter.Item()
+			row := rowsIter.Entry()
 			if row.BlockID != entry.BlockID {
 				// no more
 				break
@@ -176,7 +175,6 @@ func (p *partitionStatePrimaryKeyIter) Next() bool {
 			}
 			break
 		}
-		rowsIter.Release()
 
 		if !valid {
 			continue
@@ -191,6 +189,5 @@ func (p *partitionStatePrimaryKeyIter) Entry() RowEntry {
 }
 
 func (p *partitionStatePrimaryKeyIter) Close() error {
-	p.iter.Release()
 	return nil
 }

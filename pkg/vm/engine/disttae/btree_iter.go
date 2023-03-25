@@ -14,7 +14,9 @@
 
 package disttae
 
-import "github.com/google/btree"
+import (
+	"github.com/google/btree"
+)
 
 type btreeIter[T any] struct {
 	tree     *btree.BTreeG[T]
@@ -35,6 +37,8 @@ func newBTreeIter[T any](tree *btree.BTreeG[T], lessFunc btree.LessFunc[T]) *btr
 }
 
 func (b *btreeIter[T]) Next() bool {
+	b.i++
+
 	if b.i >= len(b.entries) {
 
 		// load from pivot
@@ -54,8 +58,6 @@ func (b *btreeIter[T]) Next() bool {
 			b.pivot = &lastEntry
 		}
 
-	} else {
-		b.i++
 	}
 
 	return b.i < len(b.entries)

@@ -50,15 +50,14 @@ func (txn *Transaction) getTableMeta(
 			}
 			var blockInfos []catalog.BlockInfo
 			state := states[i]
-			iter := state.Blocks.Iter()
-			for ok := iter.First(); ok; ok = iter.Next() {
-				entry := iter.Item()
+			iter := newBTreeIter(state.Blocks, BlockEntry.Less)
+			for iter.Next() {
+				entry := iter.Entry()
 				if !entry.Visible(ts) {
 					continue
 				}
 				blockInfos = append(blockInfos, entry.BlockInfo)
 			}
-			iter.Release()
 			var err error
 			blocks[i], err = genBlockMetas(ctx, blockInfos, columnLength, txn.proc.FileService,
 				txn.proc.GetMPool(), prefetch)
