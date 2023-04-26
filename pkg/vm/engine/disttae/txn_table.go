@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"sync"
 
 	"github.com/matrixorigin/matrixone/pkg/catalog"
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
@@ -48,12 +47,6 @@ func (tbl *txnTable) Stats(ctx context.Context, expr *plan.Expr, statsInfoMap an
 	s, ok := statsInfoMap.(*plan2.StatsInfoMap)
 	if !ok {
 		return plan2.DefaultStats(), nil
-	}
-	if len(tbl.blockMetas) == 0 || !tbl.blockMetasUpdated {
-		err := tbl.updateBlockMetas(ctx, expr)
-		if err != nil {
-			return plan2.DefaultStats(), err
-		}
 	}
 	if len(tbl.blockMetas) > 0 {
 		return CalcStats(ctx, &tbl.blockMetas, expr, tbl.getTableDef(), tbl.db.txn.proc, tbl.getCbName(), s)
@@ -92,11 +85,7 @@ func (tbl *txnTable) Rows(ctx context.Context) (rows int64, err error) {
 	}
 
 	ts := types.TimestampToTS(tbl.db.txn.meta.SnapshotTS)
-	parts, err := tbl.getParts(ctx)
-	if err != nil {
-		return 0, err
-	}
-	for _, part := range parts {
+	for _, part := range tbl.parts {
 		iter := part.NewRowsIter(ts, nil, false)
 		for iter.Next() {
 			entry := iter.Entry()
@@ -218,15 +207,17 @@ func (tbl *txnTable) GetEngineType() engine.EngineType {
 	return engine.Disttae
 }
 
-func (tbl *txnTable) reset(newId uint64) {
+func (tbl *txnTable) reset(ctx context.Context, newId uint64) error {
 	tbl.tableId = newId
-	tbl.setPartsOnce = sync.Once{}
-	tbl._parts = nil
-	tbl._partsErr = nil
+	tbl.parts = nil
 	tbl.blockMetas = nil
 	tbl.modifiedBlocks = nil
-	tbl.blockMetasUpdated = false
 	tbl.localState = NewPartitionState(true)
+
+	if err := tbl.init(ctx); err != nil {
+		return err
+	}
+	return nil
 }
 
 // return all unmodified blocks
@@ -247,15 +238,6 @@ func (tbl *txnTable) Ranges(ctx context.Context, expr *plan.Expr) ([][]byte, err
 		tbl.writes = append(tbl.writes, tbl.db.txn.writes[i])
 	}
 	tbl.db.txn.Unlock()
-
-	err := tbl.updateBlockMetas(ctx, expr)
-	if err != nil {
-		return nil, err
-	}
-	parts, err := tbl.getParts(ctx)
-	if err != nil {
-		return nil, err
-	}
 
 	ranges := make([][]byte, 0, 1)
 	ranges = append(ranges, []byte{})
@@ -287,7 +269,7 @@ func (tbl *txnTable) Ranges(ctx context.Context, expr *plan.Expr) ([][]byte, err
 
 			for _, blockID := range ids {
 				ts := types.TimestampToTS(ts)
-				iter := parts[i].NewRowsIter(ts, &blockID, true)
+				iter := tbl.parts[i].NewRowsIter(ts, &blockID, true)
 				for iter.Next() {
 					entry := iter.Entry()
 					id, offset := entry.RowID.Decode()
@@ -295,7 +277,7 @@ func (tbl *txnTable) Ranges(ctx context.Context, expr *plan.Expr) ([][]byte, err
 				}
 				iter.Close()
 				// DN flush deletes rowids block
-				if err = tbl.LoadDeletesForBlock(string(blockID[:]), deletes, nil); err != nil {
+				if err := tbl.LoadDeletesForBlock(string(blockID[:]), deletes, nil); err != nil {
 					return nil, err
 				}
 			}
@@ -923,19 +905,14 @@ func (tbl *txnTable) newReader(
 		mp[attr.Attr.Name] = attr.Attr.Type
 	}
 
-	parts, err := tbl.getParts(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	var iter partitionStateIter
 	if len(encodedPrimaryKey) > 0 {
-		iter = parts[partitionIndex].NewPrimaryKeyIter(
+		iter = tbl.parts[partitionIndex].NewPrimaryKeyIter(
 			types.TimestampToTS(ts),
 			encodedPrimaryKey,
 		)
 	} else {
-		iter = parts[partitionIndex].NewRowsIter(
+		iter = tbl.parts[partitionIndex].NewRowsIter(
 			types.TimestampToTS(ts),
 			nil,
 			false,
@@ -1114,37 +1091,36 @@ func (tbl *txnTable) nextLocalTS() timestamp.Timestamp {
 	return tbl.localTS
 }
 
-func (tbl *txnTable) getParts(ctx context.Context) ([]*PartitionState, error) {
-	tbl.setPartsOnce.Do(func() {
-		tbl._parts = tbl.db.txn.engine.getPartitions(tbl.db.databaseId, tbl.tableId).Snapshot()
-	})
-	return tbl._parts, tbl._partsErr
-}
+func (tbl *txnTable) init(ctx context.Context) error {
 
-func (tbl *txnTable) updateBlockMetas(ctx context.Context, expr *plan.Expr) error {
-	tbl.dnList = []int{0}
-	_, created := tbl.db.txn.createMap.Load(genTableKey(ctx, tbl.tableName, tbl.db.databaseId))
-	if !created && !tbl.blockMetasUpdated {
-		if tbl.db.txn.engine.UsePushModelOrNot() {
-			if err := tbl.db.txn.engine.UpdateOfPush(ctx, tbl.db.databaseId, tbl.tableId, tbl.db.txn.meta.SnapshotTS); err != nil {
-				return err
-			}
-			err := tbl.db.txn.engine.lazyLoad(ctx, tbl)
-			if err != nil {
-				return err
-			}
-		} else {
-			if err := tbl.db.txn.engine.UpdateOfPull(ctx, tbl.db.txn.dnStores[:1], tbl, tbl.db.txn.op, tbl.primaryIdx,
-				tbl.db.databaseId, tbl.tableId, tbl.db.txn.meta.SnapshotTS); err != nil {
-				return err
-			}
+	// sync logtail
+	if tbl.db.txn.engine.UsePushModelOrNot() {
+		if err := tbl.db.txn.engine.UpdateOfPush(ctx, tbl.db.databaseId, tbl.tableId, tbl.db.txn.meta.SnapshotTS); err != nil {
+			return err
 		}
-		metas, err := tbl.db.txn.getBlockMetas(ctx, tbl, false)
+		err := tbl.db.txn.engine.lazyLoad(ctx, tbl)
 		if err != nil {
 			return err
 		}
-		tbl.blockMetas = metas
-		tbl.blockMetasUpdated = true
+	} else {
+		if err := tbl.db.txn.engine.UpdateOfPull(ctx, tbl.db.txn.dnStores[:1], tbl, tbl.db.txn.op, tbl.primaryIdx,
+			tbl.db.databaseId, tbl.tableId, tbl.db.txn.meta.SnapshotTS); err != nil {
+			return err
+		}
 	}
+
+	// set partition state snapshot
+	tbl.parts = tbl.db.txn.engine.getPartitions(tbl.db.databaseId, tbl.tableId).Snapshot()
+
+	// dn list
+	tbl.dnList = []int{0}
+
+	// set block metas
+	metas, err := tbl.db.txn.getBlockMetas(ctx, tbl, false)
+	if err != nil {
+		return err
+	}
+	tbl.blockMetas = metas
+
 	return nil
 }

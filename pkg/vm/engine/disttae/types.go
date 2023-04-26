@@ -229,15 +229,12 @@ type txnTable struct {
 	dnList    []int
 	db        *txnDatabase
 	//	insertExpr *plan.Expr
-	defs              []engine.TableDef
-	tableDef          *plan.TableDef
-	idxs              []uint16
-	setPartsOnce      sync.Once
-	_parts            []*PartitionState
-	_partsErr         error
-	modifiedBlocks    [][]ModifyBlockMeta
-	blockMetas        [][]BlockMeta
-	blockMetasUpdated bool
+	defs           []engine.TableDef
+	tableDef       *plan.TableDef
+	idxs           []uint16
+	parts          []*PartitionState
+	modifiedBlocks [][]ModifyBlockMeta
+	blockMetas     [][]BlockMeta
 
 	primaryIdx   int // -1 means no primary key
 	clusterByIdx int // -1 means no clusterBy key
