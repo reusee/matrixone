@@ -50,7 +50,6 @@ func (tbl *txnTable) Stats(ctx context.Context, expr *plan.Expr, statsInfoMap an
 	if !ok {
 		return plan2.DefaultStats(), nil
 	}
-
 	if len(tbl.blockInfos) == 0 || !tbl.blockInfosUpdated {
 		err := tbl.updateBlockInfos(ctx, expr)
 		if err != nil {
