@@ -76,31 +76,28 @@ func (db *txnDatabase) getRelationById(ctx context.Context, id uint64) (string, 
 
 func (db *txnDatabase) Relation(ctx context.Context, name string) (engine.Relation, error) {
 	logDebugf(db.txn.meta, "txnDatabase.Relation table %s", name)
-
 	if v, ok := db.txn.tableMap.Load(genTableKey(ctx, name, db.databaseId)); ok {
 		return v.(*txnTable), nil
 	}
 	if v, ok := db.txn.createMap.Load(genTableKey(ctx, name, db.databaseId)); ok {
 		return v.(*txnTable), nil
 	}
-
 	if db.databaseName == catalog.MO_CATALOG {
 		switch name {
 		case catalog.MO_DATABASE:
 			id := uint64(catalog.MO_DATABASE_ID)
 			defs := catalog.MoDatabaseTableDefs
-			return db.openSysTable(ctx, genTableKey(ctx, name, db.databaseId), id, name, defs)
+			return db.openSysTable(genTableKey(ctx, name, db.databaseId), id, name, defs), nil
 		case catalog.MO_TABLES:
 			id := uint64(catalog.MO_TABLES_ID)
 			defs := catalog.MoTablesTableDefs
-			return db.openSysTable(ctx, genTableKey(ctx, name, db.databaseId), id, name, defs)
+			return db.openSysTable(genTableKey(ctx, name, db.databaseId), id, name, defs), nil
 		case catalog.MO_COLUMNS:
 			id := uint64(catalog.MO_COLUMNS_ID)
 			defs := catalog.MoColumnsTableDefs
-			return db.openSysTable(ctx, genTableKey(ctx, name, db.databaseId), id, name, defs)
+			return db.openSysTable(genTableKey(ctx, name, db.databaseId), id, name, defs), nil
 		}
 	}
-
 	item := &cache.TableItem{
 		Name:       name,
 		DatabaseId: db.databaseId,
@@ -110,7 +107,6 @@ func (db *txnDatabase) Relation(ctx context.Context, name string) (engine.Relati
 	if ok := db.txn.engine.catalog.GetTable(item); !ok {
 		return nil, moerr.NewParseError(ctx, "table %q does not exist", name)
 	}
-
 	tbl := &txnTable{
 		db:           db,
 		tableId:      item.Id,
@@ -127,7 +123,6 @@ func (db *txnDatabase) Relation(ctx context.Context, name string) (engine.Relati
 		createSql:    item.CreateSql,
 		constraint:   item.Constraint,
 	}
-
 	db.txn.tableMap.Store(genTableKey(ctx, name, db.databaseId), tbl)
 	return tbl, nil
 }
@@ -309,7 +304,7 @@ func (db *txnDatabase) Create(ctx context.Context, name string, defs []engine.Ta
 	return nil
 }
 
-func (db *txnDatabase) openSysTable(ctx context.Context, key tableKey, id uint64, name string, defs []engine.TableDef) (engine.Relation, error) {
+func (db *txnDatabase) openSysTable(key tableKey, id uint64, name string, defs []engine.TableDef) engine.Relation {
 	tbl := &txnTable{
 		db:           db,
 		tableId:      id,
@@ -319,5 +314,5 @@ func (db *txnDatabase) openSysTable(ctx context.Context, key tableKey, id uint64
 		clusterByIdx: -1,
 	}
 	tbl.getTableDef()
-	return tbl, nil
+	return tbl
 }
