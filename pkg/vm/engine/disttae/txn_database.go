@@ -304,7 +304,8 @@ func (db *txnDatabase) Create(ctx context.Context, name string, defs []engine.Ta
 	return nil
 }
 
-func (db *txnDatabase) openSysTable(key tableKey, id uint64, name string, defs []engine.TableDef) engine.Relation {
+func (db *txnDatabase) openSysTable(key tableKey, id uint64, name string,
+	defs []engine.TableDef) engine.Relation {
 	tbl := &txnTable{
 		db:           db,
 		tableId:      id,
