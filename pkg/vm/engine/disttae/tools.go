@@ -17,7 +17,6 @@ package disttae
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"time"
 
 	"github.com/matrixorigin/matrixone/pkg/fileservice"
@@ -1045,16 +1044,6 @@ func genTableKey(ctx context.Context, name string, databaseId uint64) tableKey {
 
 func genMetaTableName(id uint64) string {
 	return fmt.Sprintf("_%v_meta", id)
-}
-
-var metaTableMatchRegexp *regexp.Regexp
-
-func init() {
-	metaTableMatchRegexp, _ = regexp.Compile(`\_\d+\_meta`)
-}
-
-func isMetaTable(name string) bool {
-	return metaTableMatchRegexp.MatchString(name)
 }
 
 func inBlockMap(blk catalog.BlockInfo, blockMap map[types.Blockid]bool) bool {
