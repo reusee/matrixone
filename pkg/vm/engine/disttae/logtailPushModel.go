@@ -29,6 +29,7 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/pb/logtail"
 	"github.com/matrixorigin/matrixone/pkg/pb/timestamp"
 	"github.com/matrixorigin/matrixone/pkg/txn/client"
+	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/logtailreplay"
 	taeLogtail "github.com/matrixorigin/matrixone/pkg/vm/engine/tae/logtail"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/logtail/service"
 )
@@ -830,10 +831,8 @@ func updatePartitionOfPush(
 	partition := partitions[dnId]
 
 	select {
-	case <-partition.lock:
-		defer func() {
-			partition.lock <- struct{}{}
-		}()
+	case <-partition.Lock():
+		defer partition.Unlock()
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -861,7 +860,7 @@ func updatePartitionOfPush(
 		return err
 	}
 
-	partition.ts = *tl.Ts
+	partition.TS = *tl.Ts
 
 	doneMutate()
 
@@ -872,7 +871,7 @@ func consumeLogTailOfPushWithLazyLoad(
 	ctx context.Context,
 	primaryIdx int,
 	engine *Engine,
-	state *PartitionState,
+	state *logtailreplay.PartitionState,
 	lt *logtail.TableLogtail,
 ) (err error) {
 	for i := 0; i < len(lt.Commands); i++ {
@@ -888,7 +887,7 @@ func consumeLogTailOfPushWithoutLazyLoad(
 	ctx context.Context,
 	primaryIdx int,
 	engine *Engine,
-	state *PartitionState,
+	state *logtailreplay.PartitionState,
 	lt *logtail.TableLogtail,
 	databaseId uint64,
 	tableId uint64,

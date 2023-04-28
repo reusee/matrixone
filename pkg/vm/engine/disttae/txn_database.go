@@ -128,10 +128,6 @@ func (db *txnDatabase) Relation(ctx context.Context, name string) (engine.Relati
 		constraint:   item.Constraint,
 	}
 
-	if err := tbl.init(ctx); err != nil {
-		return nil, err
-	}
-
 	db.txn.tableMap.Store(genTableKey(ctx, name, db.databaseId), tbl)
 	return tbl, nil
 }
@@ -190,7 +186,7 @@ func (db *txnDatabase) Truncate(ctx context.Context, name string) (uint64, error
 	if ok {
 		txnTable := v.(*txnTable)
 		oldId = txnTable.tableId
-		txnTable.reset(ctx, newId)
+		txnTable.reset(newId)
 
 	} else {
 		item := &cache.TableItem{
@@ -323,8 +319,5 @@ func (db *txnDatabase) openSysTable(ctx context.Context, key tableKey, id uint64
 		clusterByIdx: -1,
 	}
 	tbl.getTableDef()
-	if err := tbl.init(ctx); err != nil {
-		return nil, err
-	}
 	return tbl, nil
 }
