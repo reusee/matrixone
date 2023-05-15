@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"os"
 	"sync"
 	"time"
@@ -34,7 +35,7 @@ import (
 )
 
 type RoutineManager struct {
-	mu             sync.Mutex
+	mu             deadlock.Mutex
 	ctx            context.Context
 	clients        map[goetty.IOSession]*Routine
 	pu             *config.ParameterUnit
@@ -344,7 +345,7 @@ func NewRoutineManager(ctx context.Context, pu *config.ParameterUnit) (*RoutineM
 
 	// Initialize auto incre cache.
 	rm.autoIncrCaches.AutoIncrCaches = make(map[string]defines.AutoIncrCache)
-	rm.autoIncrCaches.Mu = &rm.mu
+	rm.autoIncrCaches.Mu = &sync.Mutex{}
 
 	if pu.SV.EnableTls {
 		err := initTlsConfig(rm, pu.SV)

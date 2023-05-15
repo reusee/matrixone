@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"math"
 	"net"
 	"sync"
@@ -188,7 +189,7 @@ type Protocol interface {
 }
 
 type ProtocolImpl struct {
-	m sync.Mutex
+	m deadlock.Mutex
 
 	io IOPackage
 
@@ -301,8 +302,6 @@ func (pi *ProtocolImpl) SetTlsEstablished() {
 }
 
 func (pi *ProtocolImpl) ConnectionID() uint32 {
-	pi.m.Lock()
-	defer pi.m.Unlock()
 	return pi.connectionID
 }
 
@@ -332,8 +331,6 @@ func (pi *ProtocolImpl) GetLock() sync.Locker {
 }
 
 func (pi *ProtocolImpl) GetTcpConnection() goetty.IOSession {
-	pi.m.Lock()
-	defer pi.m.Unlock()
 	return pi.tcpConn
 }
 

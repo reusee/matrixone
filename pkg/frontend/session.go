@@ -18,9 +18,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -69,8 +69,8 @@ type TxnHandler struct {
 	txnClient TxnClient
 	ses       *Session
 	txn       TxnOperator
-	mu        sync.Mutex
-	entryMu   sync.Mutex
+	mu        deadlock.Mutex
+	entryMu   deadlock.Mutex
 }
 
 func InitTxnHandler(storage engine.Engine, txnClient TxnClient) *TxnHandler {
@@ -170,7 +170,7 @@ type Session struct {
 
 	profiles [8]string
 
-	mu sync.Mutex
+	mu deadlock.Mutex
 
 	flag         bool
 	lastInsertID uint64
@@ -1731,7 +1731,7 @@ type TxnCompilerContext struct {
 	proc                 *process.Process
 	buildAlterView       bool
 	dbOfView, nameOfView string
-	mu                   sync.Mutex
+	mu                   deadlock.Mutex
 }
 
 func (tcc *TxnCompilerContext) SetBuildingAlterView(yesOrNo bool, dbName, viewName string) {

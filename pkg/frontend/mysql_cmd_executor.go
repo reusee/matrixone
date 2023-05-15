@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"io"
 	"math"
 	"os"
@@ -27,7 +28,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -138,7 +138,7 @@ type MysqlCmdExecutor struct {
 
 	doQueryFunc doComQueryFunc
 
-	mu sync.Mutex
+	mu deadlock.Mutex
 }
 
 func (mce *MysqlCmdExecutor) CancelRequest() {

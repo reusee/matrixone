@@ -20,11 +20,11 @@ import (
 	"crypto/sha1"
 	"encoding/binary"
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"math"
 	"math/rand"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 	"unicode"
@@ -298,7 +298,7 @@ type MysqlProtocolImpl struct {
 
 	SV *config.FrontendParameters
 
-	m sync.Mutex
+	m deadlock.Mutex
 
 	ses *Session
 
