@@ -565,7 +565,9 @@ func (e *Engine) gc(ctx context.Context) {
 			}
 			e.db.Unlock()
 			for i := range ps {
+				i := i
 				for j := range ps[i] {
+					j := j
 					if err := func() error {
 						select {
 						case <-ps[i][j].lock:
