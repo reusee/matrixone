@@ -23,9 +23,11 @@ import (
 	"os"
 	"path"
 	"runtime"
+	"runtime/metrics"
 	"runtime/pprof"
 	"sort"
 	"strings"
+	"time"
 	"unsafe"
 
 	"github.com/felixge/fgprof"
@@ -389,4 +391,35 @@ func _formatBytes(n int64, unitIndex int) string {
 		str = fmt.Sprintf(" %d%s", rem, units[unitIndex])
 	}
 	return _formatBytes(next, unitIndex+1) + str
+}
+
+func init() {
+	// save profile when number of goroutines is too high
+	go func() {
+		ticker := time.NewTicker(time.Millisecond * 100)
+		samples := []metrics.Sample{
+			{
+				Name: "/sched/goroutines:goroutines",
+			},
+		}
+		for range ticker.C {
+			metrics.Read(samples)
+			gs := samples[0].Value.Uint64()
+			if gs > 5000 {
+				profile := pprof.Lookup("goroutine")
+				if profile != nil {
+					out, err := os.Create(
+						time.Now().Format("2006-01-02-15-04-05.000000-goroutines"),
+					)
+					if err != nil {
+						panic(err)
+					}
+					if err := profile.WriteTo(out, 0); err != nil {
+						panic(err)
+					}
+					time.Sleep(time.Second * 3) // don't write too much
+				}
+			}
+		}
+	}()
 }
