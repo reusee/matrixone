@@ -22,10 +22,13 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path"
+	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"runtime/pprof"
 	"sort"
 	"strings"
+	"time"
 	"unsafe"
 
 	"github.com/felixge/fgprof"
@@ -389,4 +392,38 @@ func _formatBytes(n int64, unitIndex int) string {
 		str = fmt.Sprintf(" %d%s", rem, units[unitIndex])
 	}
 	return _formatBytes(next, unitIndex+1) + str
+}
+
+// memory
+func init() {
+	//TODO
+
+	runtime.MemProfileRate = 1
+
+	http.HandleFunc("/debug/heapdump/", func(w http.ResponseWriter, _ *http.Request) {
+		runtime.GC()
+
+		fileName := time.Now().Format("heapdump-2006-01-02-15-04-05.000000000")
+		execPath, err := os.Executable()
+		if err != nil {
+			panic(err)
+		}
+		execDir := filepath.Dir(execPath)
+		filePath := filepath.Join(execDir, fileName)
+
+		f, err := os.Create(filePath)
+		if err != nil {
+			panic(err)
+		}
+		defer f.Close()
+
+		debug.WriteHeapDump(f.Fd())
+
+		w.Write([]byte(filePath))
+	})
+
+	http.HandleFunc("/debug/gc", func(_ http.ResponseWriter, _ *http.Request) {
+		runtime.GC()
+	})
+
 }
