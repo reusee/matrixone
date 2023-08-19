@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"runtime"
 	"strings"
 	"sync"
@@ -376,6 +377,18 @@ func (e *errInfo) length() int {
 	return len(e.codes)
 }
 
+var allSessions sync.Map // *Session -> true
+
+func init() {
+	http.HandleFunc("/debug/sessions/", func(w http.ResponseWriter, _ *http.Request) {
+		allSessions.Range(func(k, _ any) bool {
+			session := k.(*Session)
+			fmt.Fprintf(w, "<p> pointer %p </p>", session)
+			return true
+		})
+	})
+}
+
 func NewSession(proto Protocol, mp *mpool.MPool, pu *config.ParameterUnit,
 	gSysVars *GlobalSystemVariables, isNotBackgroundSession bool,
 	aicm *defines.AutoIncrCacheManager, sharedTxnHandler *TxnHandler) *Session {
@@ -426,6 +439,8 @@ func NewSession(proto Protocol, mp *mpool.MPool, pu *config.ParameterUnit,
 		ses.seqLastValue = new(string)
 	}
 
+	allSessions.Store(ses, true)
+
 	ses.isNotBackgroundSession = isNotBackgroundSession
 	ses.sqlHelper = &SqlHelper{ses: ses}
 	ses.uuid, _ = uuid.NewUUID()
@@ -460,6 +475,7 @@ func NewSession(proto Protocol, mp *mpool.MPool, pu *config.ParameterUnit,
 
 	runtime.SetFinalizer(ses, func(ss *Session) {
 		ss.Close()
+		allSessions.Delete(ss)
 	})
 	return ses
 }
