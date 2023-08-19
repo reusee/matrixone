@@ -383,7 +383,7 @@ func init() {
 	http.HandleFunc("/debug/sessions/", func(w http.ResponseWriter, _ *http.Request) {
 		allSessions.Range(func(k, _ any) bool {
 			session := k.(*Session)
-			fmt.Fprintf(w, "<p> pointer %p </p>", session)
+			fmt.Fprintf(w, "<p> pointer %p </p>\n", session)
 			return true
 		})
 	})
