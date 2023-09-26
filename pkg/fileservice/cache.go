@@ -38,7 +38,6 @@ type CacheConfig struct {
 	CacheClient      client.CacheClient `json:"-"`
 	KeyRouterFactory KeyRouterFactory   `json:"-"`
 	KeyRouter        KeyRouter          `json:"-"`
-	InitKeyRouter    *sync.Once         `json:"-"`
 	CacheCallbacks   `json:"-"`
 
 	enableDiskCacheForLocalFS bool // for testing only
@@ -77,10 +76,10 @@ func (c *CacheConfig) SetRemoteCacheCallback() {
 	if !c.RemoteCacheEnabled || c.KeyRouterFactory == nil {
 		return
 	}
-	c.InitKeyRouter = &sync.Once{}
-	c.CacheCallbacks.PostSet = append(c.CacheCallbacks.PostSet,
-		func(key CacheKey, data CacheData) {
-			c.InitKeyRouter.Do(func() {
+	var setKeyRouterOnce sync.Once
+	c.PostSet = append(c.PostSet,
+		func(key CacheKey, _ CacheData) {
+			setKeyRouterOnce.Do(func() {
 				c.KeyRouter = c.KeyRouterFactory()
 			})
 			if c.KeyRouter == nil {
@@ -89,9 +88,9 @@ func (c *CacheConfig) SetRemoteCacheCallback() {
 			c.KeyRouter.AddItem(key, gossip.Operation_Set)
 		},
 	)
-	c.CacheCallbacks.PostEvict = append(c.CacheCallbacks.PostEvict,
-		func(key CacheKey, data CacheData) {
-			c.InitKeyRouter.Do(func() {
+	c.PostEvict = append(c.PostEvict,
+		func(key CacheKey, _ CacheData) {
+			setKeyRouterOnce.Do(func() {
 				c.KeyRouter = c.KeyRouterFactory()
 			})
 			if c.KeyRouter == nil {
