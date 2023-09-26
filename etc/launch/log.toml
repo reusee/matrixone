@@ -4,3 +4,12 @@ data-dir = "./mo-data"
 
 [log]
 level = "info"
+
+[[fileservice]]
+backend = "MINIO"
+name = "SHARED"
+
+[fileservice.s3]
+bucket = "bucket"
+endpoint = "http://localhost:9000"
+
