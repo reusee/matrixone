@@ -36,6 +36,7 @@ type FileServiceCounterSet struct {
 		Get         stats.Counter
 		Delete      stats.Counter
 		DeleteMulti stats.Counter
+		ReadAgain   stats.Counter
 	}
 
 	Cache struct {

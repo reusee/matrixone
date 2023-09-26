@@ -22,6 +22,7 @@ import (
 	pathpkg "path"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
@@ -46,6 +47,11 @@ type S3FS struct {
 	perfCounterSets []*perfcounter.CounterSet
 
 	ioLocks IOLocks
+
+	readAgain struct {
+		sync.Mutex
+		paths map[string]bool
+	}
 }
 
 // key mapping scheme:
@@ -67,6 +73,8 @@ func NewS3FS(
 		asyncUpdate:     true,
 		perfCounterSets: perfCounterSets,
 	}
+
+	fs.readAgain.paths = make(map[string]bool)
 
 	var err error
 	switch {
@@ -441,6 +449,16 @@ func (s *S3FS) read(ctx context.Context, vector *IOVector) (err error) {
 		// all cache hit
 		return nil
 	}
+
+	s.readAgain.Lock()
+	if _, ok := s.readAgain.paths[vector.FilePath]; ok {
+		perfcounter.Update(ctx, func(set *perfcounter.CounterSet) {
+			set.FileService.S3.ReadAgain.Add(1)
+		})
+	} else {
+		s.readAgain.paths[vector.FilePath] = true
+	}
+	s.readAgain.Unlock()
 
 	// collect read info only when cache missing
 	size := vector.EntriesSize()
