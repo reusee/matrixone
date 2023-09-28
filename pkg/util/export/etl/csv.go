@@ -154,7 +154,7 @@ func (w *FSWriter) Write(p []byte) (n int, err error) {
 	n = len(p)
 	mkdirTried := false
 mkdirRetry:
-	if err = w.fs.Write(w.ctx, fileservice.IOVector{
+	if err = w.fs.Write(w.ctx, &fileservice.IOVector{
 		// like: etl:store/system/filename.csv
 		FilePath: w.filepath,
 		Entries: []fileservice.IOEntry{

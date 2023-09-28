@@ -56,7 +56,7 @@ func (s *subPathFS) toUpstreamPath(p string) (string, error) {
 	return parsed.String(), nil
 }
 
-func (s *subPathFS) Write(ctx context.Context, vector IOVector) error {
+func (s *subPathFS) Write(ctx context.Context, vector *IOVector) error {
 	p, err := s.toUpstreamPath(vector.FilePath)
 	if err != nil {
 		return err
@@ -66,23 +66,29 @@ func (s *subPathFS) Write(ctx context.Context, vector IOVector) error {
 }
 
 func (s *subPathFS) Read(ctx context.Context, vector *IOVector) error {
-	subVector := *vector
-	p, err := s.toUpstreamPath(subVector.FilePath)
+	p, err := s.toUpstreamPath(vector.FilePath)
 	if err != nil {
 		return err
 	}
-	subVector.FilePath = p
-	return s.upstream.Read(ctx, &subVector)
+	originPath := vector.FilePath
+	vector.FilePath = p
+	defer func() {
+		vector.FilePath = originPath
+	}()
+	return s.upstream.Read(ctx, vector)
 }
 
 func (s *subPathFS) ReadCache(ctx context.Context, vector *IOVector) error {
-	subVector := *vector
-	p, err := s.toUpstreamPath(subVector.FilePath)
+	p, err := s.toUpstreamPath(vector.FilePath)
 	if err != nil {
 		return err
 	}
-	subVector.FilePath = p
-	return s.upstream.ReadCache(ctx, &subVector)
+	originPath := vector.FilePath
+	vector.FilePath = p
+	defer func() {
+		vector.FilePath = originPath
+	}()
+	return s.upstream.ReadCache(ctx, vector)
 }
 
 func (s *subPathFS) List(ctx context.Context, dirPath string) ([]DirEntry, error) {

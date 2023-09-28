@@ -219,7 +219,7 @@ func CopyFile(ctx context.Context, srcFs, dstFs fileservice.FileService, dentry 
 	if err != nil {
 		return nil, err
 	}
-	dstIoVec := fileservice.IOVector{
+	dstIoVec := &fileservice.IOVector{
 		FilePath:    name,
 		Entries:     make([]fileservice.IOEntry, 1),
 		CachePolicy: fileservice.SkipAll,

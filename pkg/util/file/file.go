@@ -50,7 +50,7 @@ func WriteFile(fs fileservice.ReplaceableFileService, file string, data []byte) 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	vec := fileservice.IOVector{
+	vec := &fileservice.IOVector{
 		FilePath: file,
 		Entries: []fileservice.IOEntry{
 			{

@@ -48,7 +48,7 @@ type cacheFs struct {
 func TestRemoteCache(t *testing.T) {
 	runTestWithTwoFileServices(t, func(sf1 *cacheFs, sf2 *cacheFs) {
 		ctx := context.Background()
-		err := sf1.fs.Write(ctx, IOVector{
+		err := sf1.fs.Write(ctx, &IOVector{
 			FilePath: "foo",
 			Entries: []IOEntry{
 				{

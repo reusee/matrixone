@@ -158,7 +158,7 @@ var openNewFile = func(ctx context.Context, ep *ExportConfig, mrs *MysqlResultSe
 		filePath := getExportFilePath(ep.userConfig.FilePath, ep.FileCnt)
 
 		asyncWriteFunc := func() error {
-			vec := fileservice.IOVector{
+			vec := &fileservice.IOVector{
 				FilePath: filePath,
 				Entries: []fileservice.IOEntry{
 					{

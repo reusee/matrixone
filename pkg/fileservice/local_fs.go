@@ -151,7 +151,7 @@ func (l *LocalFS) Name() string {
 	return l.name
 }
 
-func (l *LocalFS) Write(ctx context.Context, vector IOVector) error {
+func (l *LocalFS) Write(ctx context.Context, vector *IOVector) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -183,7 +183,7 @@ func (l *LocalFS) Write(ctx context.Context, vector IOVector) error {
 	return err
 }
 
-func (l *LocalFS) write(ctx context.Context, vector IOVector) error {
+func (l *LocalFS) write(ctx context.Context, vector *IOVector) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -888,7 +888,7 @@ func (l *LocalFSMutator) Close() error {
 
 var _ ReplaceableFileService = new(LocalFS)
 
-func (l *LocalFS) Replace(ctx context.Context, vector IOVector) error {
+func (l *LocalFS) Replace(ctx context.Context, vector *IOVector) error {
 	ctx, span := trace.Start(ctx, "LocalFS.Replace")
 	defer span.End()
 	return l.write(ctx, vector)

@@ -39,7 +39,7 @@ func TestCacheExample(t *testing.T) {
 	assert.Nil(t, err)
 
 	// write
-	err = fs.Write(ctx, IOVector{
+	err = fs.Write(ctx, &IOVector{
 		FilePath: "foo",
 		Entries: []IOEntry{
 			{

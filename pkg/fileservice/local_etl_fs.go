@@ -60,7 +60,7 @@ func (l *LocalETLFS) ensureTempDir() (err error) {
 	return
 }
 
-func (l *LocalETLFS) Write(ctx context.Context, vector IOVector) error {
+func (l *LocalETLFS) Write(ctx context.Context, vector *IOVector) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -83,7 +83,7 @@ func (l *LocalETLFS) Write(ctx context.Context, vector IOVector) error {
 	return l.write(ctx, vector)
 }
 
-func (l *LocalETLFS) write(ctx context.Context, vector IOVector) error {
+func (l *LocalETLFS) write(ctx context.Context, vector *IOVector) error {
 	path, err := ParsePathAtService(vector.FilePath, l.name)
 	if err != nil {
 		return err

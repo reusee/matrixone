@@ -128,7 +128,7 @@ func TestLocalFSWithDiskCache(t *testing.T) {
 	// write
 	for i := 0; i < n; i++ {
 		data := datas[i]
-		vec := IOVector{
+		vec := &IOVector{
 			FilePath: fmt.Sprintf("%d", i),
 			Entries: []IOEntry{
 				{

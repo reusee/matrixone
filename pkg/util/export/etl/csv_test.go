@@ -49,7 +49,7 @@ func TestLocalFSWriter(t *testing.T) {
 	// csv_test.go:50: write span file error: file existed
 	// file result: (has checksum)
 	// 9a80 8760 3132 3334 3536 3738 0a         ...`12345678.
-	err = fs.Write(ctx, fileservice.IOVector{ // write-once-read-multi
+	err = fs.Write(ctx, &fileservice.IOVector{ // write-once-read-multi
 		FilePath: "statement_node_uuid_20220818_000000_123456",
 		Entries: []fileservice.IOEntry{
 			{
@@ -65,7 +65,7 @@ func TestLocalFSWriter(t *testing.T) {
 	})
 	t.Logf("write statement file error: %v", err)
 	require.Equal(t, nil, err)
-	err = fs.Write(ctx, fileservice.IOVector{
+	err = fs.Write(ctx, &fileservice.IOVector{
 		FilePath: "statement_node_uuid_20220818_000000_123456",
 		Entries: []fileservice.IOEntry{
 			{
@@ -79,7 +79,7 @@ func TestLocalFSWriter(t *testing.T) {
 	require.True(t, moerr.IsMoErrCode(err, moerr.ErrFileAlreadyExists))
 	// file result: (has checksum)
 	// 3f3f 3a3f 3132 3334 0a                   ??:?1234.
-	err = fs.Write(ctx, fileservice.IOVector{
+	err = fs.Write(ctx, &fileservice.IOVector{
 		FilePath: "span_node_uuid_20220818_000000_123456", // each file is only can open-write for one time.
 		Entries: []fileservice.IOEntry{
 			{
@@ -98,7 +98,7 @@ func TestLocalETLFSWriter(t *testing.T) {
 
 	// file result: (without checksum)
 	ctx := context.Background()
-	err = fs.Write(ctx, fileservice.IOVector{ // write-once-read-multi
+	err = fs.Write(ctx, &fileservice.IOVector{ // write-once-read-multi
 		FilePath: "statement_node_uuid_20220818_000000_123456",
 		Entries: []fileservice.IOEntry{
 			{
@@ -115,7 +115,7 @@ func TestLocalETLFSWriter(t *testing.T) {
 	t.Logf("write statement file error: %v", err)
 	require.Equal(t, nil, err)
 
-	err = fs.Write(ctx, fileservice.IOVector{
+	err = fs.Write(ctx, &fileservice.IOVector{
 		FilePath: "statement_node_uuid_20220818_000000_123456",
 		Entries: []fileservice.IOEntry{
 			{
@@ -128,7 +128,7 @@ func TestLocalETLFSWriter(t *testing.T) {
 	t.Logf("write statement file error: %v", err)
 	require.True(t, moerr.IsMoErrCode(err, moerr.ErrFileAlreadyExists))
 
-	err = fs.Write(ctx, fileservice.IOVector{
+	err = fs.Write(ctx, &fileservice.IOVector{
 		FilePath: "span_node_uuid_20220818_000000_123456", // each file is only can open-write for one time.
 		Entries: []fileservice.IOEntry{
 			{

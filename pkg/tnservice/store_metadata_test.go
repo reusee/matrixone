@@ -56,7 +56,7 @@ func TestInitMetadataWithExistData(t *testing.T) {
 			},
 		},
 	}
-	assert.NoError(t, fs.Write(context.Background(), fileservice.IOVector{
+	assert.NoError(t, fs.Write(context.Background(), &fileservice.IOVector{
 		FilePath: getMetadataFile(value.UUID),
 		Entries: []fileservice.IOEntry{
 			{
@@ -87,7 +87,7 @@ func TestInitMetadataWithInvalidUUIDWillPanic(t *testing.T) {
 	value := metadata.TNStore{
 		UUID: "dn1",
 	}
-	assert.NoError(t, fs.Write(context.Background(), fileservice.IOVector{
+	assert.NoError(t, fs.Write(context.Background(), &fileservice.IOVector{
 		FilePath: getMetadataFile(value.UUID),
 		Entries: []fileservice.IOEntry{
 			{

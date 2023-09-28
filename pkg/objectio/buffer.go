@@ -61,8 +61,8 @@ func (b *ObjectBuffer) Length() int {
 	return b.buf.Len()
 }
 
-func (b *ObjectBuffer) GetData() fileservice.IOVector {
-	return b.vector
+func (b *ObjectBuffer) GetData() *fileservice.IOVector {
+	return &b.vector
 }
 
 func (b *ObjectBuffer) SetDataOptions(items ...WriteOptions) {

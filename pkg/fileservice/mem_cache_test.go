@@ -32,7 +32,7 @@ func TestMemCacheLeak(t *testing.T) {
 
 	fs, err := NewMemoryFS("test", DisabledCacheConfig, nil)
 	assert.Nil(t, err)
-	err = fs.Write(ctx, IOVector{
+	err = fs.Write(ctx, &IOVector{
 		FilePath: "foo",
 		Entries: []IOEntry{
 			{

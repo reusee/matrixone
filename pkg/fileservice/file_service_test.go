@@ -58,7 +58,7 @@ func testFileService(
 		assert.Equal(t, 0, len(entries))
 
 		var hashSum []byte
-		err = fs.Write(ctx, IOVector{
+		err = fs.Write(ctx, &IOVector{
 			FilePath: "foo",
 			Entries: []IOEntry{
 				{
@@ -164,7 +164,7 @@ func testFileService(
 		assert.Equal(t, []byte("8"), vec.Entries[0].Data)
 
 		// sub path
-		err = fs.Write(ctx, IOVector{
+		err = fs.Write(ctx, &IOVector{
 			FilePath: "sub/sub2/sub3",
 			Entries: []IOEntry{
 				{
@@ -182,7 +182,7 @@ func testFileService(
 		fs := newFS(fsName)
 		ctx := context.Background()
 
-		err := fs.Write(ctx, IOVector{
+		err := fs.Write(ctx, &IOVector{
 			FilePath: "foo",
 			Entries: []IOEntry{
 				{
@@ -229,7 +229,7 @@ func testFileService(
 	t.Run("ReadCloserForRead", func(t *testing.T) {
 		fs := newFS(fsName)
 		ctx := context.Background()
-		err := fs.Write(ctx, IOVector{
+		err := fs.Write(ctx, &IOVector{
 			FilePath: "foo",
 			Entries: []IOEntry{
 				{
@@ -313,7 +313,7 @@ func testFileService(
 			parts := randomSplit(content, 32)
 
 			// write
-			writeVector := IOVector{
+			writeVector := &IOVector{
 				FilePath: filePath,
 			}
 			offset := int64(0)
@@ -437,7 +437,7 @@ func testFileService(
 			"qux/quux",
 		} {
 			for i := int64(0); i < 8; i++ {
-				err := fs.Write(ctx, IOVector{
+				err := fs.Write(ctx, &IOVector{
 					FilePath: path.Join(dir, fmt.Sprintf("%d", i)),
 					Entries: []IOEntry{
 						{
@@ -563,7 +563,7 @@ func testFileService(
 		})
 		assert.True(t, moerr.IsMoErrCode(err, moerr.ErrFileNotFound))
 
-		err = fs.Write(ctx, IOVector{
+		err = fs.Write(ctx, &IOVector{
 			FilePath: "foo",
 			Entries: []IOEntry{
 				{
@@ -573,7 +573,7 @@ func testFileService(
 			},
 		})
 		assert.Nil(t, err)
-		err = fs.Write(ctx, IOVector{
+		err = fs.Write(ctx, &IOVector{
 			FilePath: "foo",
 		})
 		assert.True(t, moerr.IsMoErrCode(err, moerr.ErrFileAlreadyExists))
@@ -600,7 +600,7 @@ func testFileService(
 		})
 		assert.True(t, moerr.IsMoErrCode(err, moerr.ErrEmptyRange))
 
-		err = fs.Write(ctx, IOVector{
+		err = fs.Write(ctx, &IOVector{
 			FilePath: "bar",
 			Entries: []IOEntry{
 				{
@@ -610,7 +610,7 @@ func testFileService(
 		})
 		assert.True(t, moerr.IsMoErrCode(err, moerr.ErrSizeNotMatch))
 
-		err = fs.Write(ctx, IOVector{
+		err = fs.Write(ctx, &IOVector{
 			FilePath: "foo",
 			Entries: []IOEntry{
 				{
@@ -623,7 +623,7 @@ func testFileService(
 		// assert.True(t, moerr.IsMoErrCode(moerr.ConvertGoError(err), moerr.ErrInternal))
 		assert.True(t, moerr.IsMoErrCode(err, moerr.ErrFileAlreadyExists))
 
-		vector := IOVector{
+		vector := &IOVector{
 			FilePath: JoinPath(fsName, "a#b#c"),
 			Entries: []IOEntry{
 				{Size: 1, Data: []byte("a")},
@@ -631,7 +631,7 @@ func testFileService(
 		}
 		err = fs.Write(ctx, vector)
 		assert.True(t, moerr.IsMoErrCode(err, moerr.ErrInvalidPath))
-		err = fs.Read(ctx, &vector)
+		err = fs.Read(ctx, vector)
 		assert.True(t, moerr.IsMoErrCode(err, moerr.ErrInvalidPath))
 		_, err = fs.List(ctx, vector.FilePath)
 		assert.True(t, moerr.IsMoErrCode(err, moerr.ErrInvalidPath))
@@ -652,7 +652,7 @@ func testFileService(
 		}
 		data, err := m.Marshal()
 		assert.Nil(t, err)
-		err = fs.Write(ctx, IOVector{
+		err = fs.Write(ctx, &IOVector{
 			FilePath: "foo",
 			Entries: []IOEntry{
 				{
@@ -716,7 +716,7 @@ func testFileService(
 		ctx := context.Background()
 
 		data := []byte("foo")
-		err := fs.Write(ctx, IOVector{
+		err := fs.Write(ctx, &IOVector{
 			FilePath: "foo",
 			Entries: []IOEntry{
 				{
@@ -752,7 +752,7 @@ func testFileService(
 		fs := newFS(fsName)
 
 		// write
-		err := fs.Write(ctx, IOVector{
+		err := fs.Write(ctx, &IOVector{
 			FilePath: JoinPath(fs.Name(), "foo"),
 			Entries: []IOEntry{
 				{
@@ -764,7 +764,7 @@ func testFileService(
 		assert.Nil(t, err)
 
 		// read
-		vec := IOVector{
+		vec := &IOVector{
 			FilePath: "foo",
 			Entries: []IOEntry{
 				{
@@ -772,12 +772,12 @@ func testFileService(
 				},
 			},
 		}
-		err = fs.Read(ctx, &vec)
+		err = fs.Read(ctx, vec)
 		assert.Nil(t, err)
 		assert.Equal(t, []byte("1234"), vec.Entries[0].Data)
 
 		// read with lower named path
-		vec = IOVector{
+		vec = &IOVector{
 			FilePath: JoinPath(strings.ToLower(fs.Name()), "foo"),
 			Entries: []IOEntry{
 				{
@@ -785,12 +785,12 @@ func testFileService(
 				},
 			},
 		}
-		err = fs.Read(ctx, &vec)
+		err = fs.Read(ctx, vec)
 		assert.Nil(t, err)
 		assert.Equal(t, []byte("1234"), vec.Entries[0].Data)
 
 		// read with upper named path
-		vec = IOVector{
+		vec = &IOVector{
 			FilePath: JoinPath(strings.ToUpper(fs.Name()), "foo"),
 			Entries: []IOEntry{
 				{
@@ -798,13 +798,13 @@ func testFileService(
 				},
 			},
 		}
-		err = fs.Read(ctx, &vec)
+		err = fs.Read(ctx, vec)
 		assert.Nil(t, err)
 		assert.Equal(t, []byte("1234"), vec.Entries[0].Data)
 
 		// bad name
 		vec.FilePath = JoinPath(fs.Name()+"abc", "foo")
-		err = fs.Read(ctx, &vec)
+		err = fs.Read(ctx, vec)
 		assert.True(t, moerr.IsMoErrCode(err, moerr.ErrNoService) || moerr.IsMoErrCode(err, moerr.ErrWrongService))
 		err = fs.Write(ctx, vec)
 		assert.True(t, moerr.IsMoErrCode(err, moerr.ErrNoService) || moerr.IsMoErrCode(err, moerr.ErrWrongService))
@@ -815,7 +815,7 @@ func testFileService(
 	t.Run("issue6110", func(t *testing.T) {
 		ctx := context.Background()
 		fs := newFS(fsName)
-		err := fs.Write(ctx, IOVector{
+		err := fs.Write(ctx, &IOVector{
 			FilePath: "path/to/file/foo",
 			Entries: []IOEntry{
 				{
@@ -859,7 +859,7 @@ func testFileService(
 		}()
 
 		filePath := "foo"
-		vec := IOVector{
+		vec := &IOVector{
 			FilePath: filePath,
 			Entries: []IOEntry{
 				{
@@ -874,7 +874,7 @@ func testFileService(
 		assert.Nil(t, err)
 
 		// read
-		vec = IOVector{
+		vec = &IOVector{
 			FilePath: filePath,
 			Entries: []IOEntry{
 				{
@@ -882,7 +882,7 @@ func testFileService(
 				},
 			},
 		}
-		err = fs.Read(ctx, &vec)
+		err = fs.Read(ctx, vec)
 		assert.Nil(t, err)
 
 		// validate
@@ -898,7 +898,7 @@ func testFileService(
 		assert.Equal(t, buf.Bytes(), vec.Entries[0].Data)
 
 		// write to existed
-		vec = IOVector{
+		vec = &IOVector{
 			FilePath: filePath,
 			Entries: []IOEntry{
 				{
@@ -914,7 +914,7 @@ func testFileService(
 		reader, writer = io.Pipe()
 		defer reader.Close()
 		defer writer.Close()
-		vec = IOVector{
+		vec = &IOVector{
 			FilePath: "bar",
 			Entries: []IOEntry{
 				{
@@ -944,7 +944,7 @@ func testFileService(
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		err := fs.Write(ctx, IOVector{})
+		err := fs.Write(ctx, &IOVector{})
 		assert.ErrorIs(t, err, context.Canceled)
 
 		err = fs.Read(ctx, &IOVector{})

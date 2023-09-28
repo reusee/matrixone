@@ -93,7 +93,7 @@ func TestCacheServerMain(t *testing.T) {
 			writeEntry1.Data = []byte{30, 40, 50}
 			writeEntry1.ToCacheData = nil
 
-			err = fs.Write(ctx, fileservice.IOVector{
+			err = fs.Write(ctx, &fileservice.IOVector{
 				FilePath: "foo",
 				Entries:  []fileservice.IOEntry{writeEntry0, writeEntry1},
 			})

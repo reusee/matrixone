@@ -29,7 +29,7 @@ func benchmarkFileService(ctx context.Context, b *testing.B, newFS func() FileSe
 
 		content := bytes.Repeat([]byte("x"), 16*1024*1024)
 		parts := fixedSplit(content, 512*1024)
-		writeVector := IOVector{
+		writeVector := &IOVector{
 			FilePath: "foo",
 		}
 		offset := int64(0)

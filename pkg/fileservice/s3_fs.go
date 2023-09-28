@@ -241,7 +241,7 @@ func (s *S3FS) StatFile(ctx context.Context, filePath string) (*DirEntry, error)
 	}, nil
 }
 
-func (s *S3FS) Write(ctx context.Context, vector IOVector) error {
+func (s *S3FS) Write(ctx context.Context, vector *IOVector) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -274,7 +274,7 @@ func (s *S3FS) Write(ctx context.Context, vector IOVector) error {
 	return err
 }
 
-func (s *S3FS) write(ctx context.Context, vector IOVector) (err error) {
+func (s *S3FS) write(ctx context.Context, vector *IOVector) (err error) {
 	ctx, span := trace.Start(ctx, "S3FS.write")
 	defer span.End()
 

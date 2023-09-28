@@ -18,6 +18,7 @@ import (
 	"context"
 	"hash"
 	"io"
+	"sync/atomic"
 	"time"
 )
 
@@ -31,7 +32,7 @@ type FileService interface {
 	// returns ErrFileExisted if file already existed
 	// returns ErrSizeNotMatch if provided size does not match data
 	// entries in vector should be written atomically. if write failed, following reads must not succeed.
-	Write(ctx context.Context, vector IOVector) error
+	Write(ctx context.Context, vector *IOVector) error
 
 	// Read reads a file to fill IOEntries
 	// returns ErrFileNotFound if requested file not found
@@ -80,6 +81,12 @@ type IOVector struct {
 	// Hash stores hash sum of written file if both Sum and New is not null
 	// Hash.Sum may be incorrect if Write fails
 	Hash Hash
+
+	Stats IOVectorStats
+}
+
+type IOVectorStats struct {
+	BytesRead atomic.Int64
 }
 
 func (i *IOVector) EntriesSize() int64 {

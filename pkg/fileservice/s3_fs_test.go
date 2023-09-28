@@ -602,7 +602,7 @@ func BenchmarkS3ConcurrentRead(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	vector := IOVector{
+	vector := &IOVector{
 		FilePath: "foo",
 		Entries: []IOEntry{
 			{
@@ -728,7 +728,7 @@ func TestSequentialS3Read(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	vector := IOVector{
+	vector := &IOVector{
 		FilePath: "foo",
 		Entries: []IOEntry{
 			{

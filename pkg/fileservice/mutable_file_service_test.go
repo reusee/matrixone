@@ -28,7 +28,7 @@ func testMutableFileService(
 
 	ctx := context.Background()
 	fs := newFS()
-	err := fs.Write(ctx, IOVector{
+	err := fs.Write(ctx, &IOVector{
 		FilePath: "foo",
 		Entries: []IOEntry{
 			{

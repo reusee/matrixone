@@ -41,7 +41,7 @@ func testCachingFileService(
 	data, err := m.Marshal()
 	assert.Nil(t, err)
 
-	err = fs.Write(ctx, IOVector{
+	err = fs.Write(ctx, &IOVector{
 		FilePath: "foo",
 		Entries: []IOEntry{
 			{

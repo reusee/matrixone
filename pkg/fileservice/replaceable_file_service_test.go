@@ -28,7 +28,7 @@ func testReplaceableFileService(
 
 	ctx := context.Background()
 	fs := newFS()
-	err := fs.Write(ctx, IOVector{
+	err := fs.Write(ctx, &IOVector{
 		FilePath: "foo",
 		Entries: []IOEntry{
 			{
@@ -39,7 +39,7 @@ func testReplaceableFileService(
 	})
 	assert.Nil(t, err)
 
-	err = fs.Replace(ctx, IOVector{
+	err = fs.Replace(ctx, &IOVector{
 		FilePath: "foo",
 		Entries: []IOEntry{
 			{
@@ -65,7 +65,7 @@ func testReplaceableFileService(
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err = fs.Replace(ctx, IOVector{})
+	err = fs.Replace(ctx, &IOVector{})
 	assert.ErrorIs(t, err, context.Canceled)
 
 }

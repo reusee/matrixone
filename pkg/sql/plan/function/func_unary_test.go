@@ -787,7 +787,7 @@ func TestLoadFile(t *testing.T) {
 	filepath := dir + "test"
 	fs, readPath, err := fileservice.GetForETL(ctx, proc.FileService, filepath)
 	assert.Nil(t, err)
-	err = fs.Write(ctx, fileservice.IOVector{
+	err = fs.Write(ctx, &fileservice.IOVector{
 		FilePath: readPath,
 		Entries: []fileservice.IOEntry{
 			{

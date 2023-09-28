@@ -20,5 +20,5 @@ import "context"
 type ReplaceableFileService interface {
 	FileService
 
-	Replace(ctx context.Context, vector IOVector) error
+	Replace(ctx context.Context, vector *IOVector) error
 }

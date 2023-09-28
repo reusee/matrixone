@@ -45,7 +45,7 @@ func TestGetBackupData(t *testing.T) {
 	assert.Nil(t, err)
 	assert.NotNil(t, fs)
 
-	ioVec := fileservice.IOVector{
+	ioVec := &fileservice.IOVector{
 		FilePath: path.Join(dir, name),
 		Entries:  make([]fileservice.IOEntry, 1),
 	}

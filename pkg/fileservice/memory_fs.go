@@ -106,7 +106,7 @@ func (m *MemoryFS) List(ctx context.Context, dirPath string) (entries []DirEntry
 	return
 }
 
-func (m *MemoryFS) Write(ctx context.Context, vector IOVector) error {
+func (m *MemoryFS) Write(ctx context.Context, vector *IOVector) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -132,7 +132,7 @@ func (m *MemoryFS) Write(ctx context.Context, vector IOVector) error {
 	return m.write(ctx, vector)
 }
 
-func (m *MemoryFS) write(ctx context.Context, vector IOVector) error {
+func (m *MemoryFS) write(ctx context.Context, vector *IOVector) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -349,7 +349,7 @@ type _MemFSEntry struct {
 
 var _ ReplaceableFileService = new(MemoryFS)
 
-func (m *MemoryFS) Replace(ctx context.Context, vector IOVector) error {
+func (m *MemoryFS) Replace(ctx context.Context, vector *IOVector) error {
 	m.Lock()
 	defer m.Unlock()
 	return m.write(ctx, vector)
