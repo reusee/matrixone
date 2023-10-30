@@ -63,7 +63,7 @@ type ExParamConst struct {
 type ExParam struct {
 	prevStr     string
 	reader      io.ReadCloser
-	plh         *ParseLineHandler
+	lineReader  *LineReader
 	Fileparam   *ExFileparam
 	Zoneparam   *ZonemapFileparam
 	Filter      *FilterParam
@@ -96,12 +96,10 @@ type Argument struct {
 
 func (arg *Argument) Free(*process.Process, bool, error) {}
 
-type ParseLineHandler struct {
+type LineReader struct {
 	csvReader *csv.Reader
-	//batch
 	batchSize int
-	//mo csv
-	linesBuffer [][]string
+	buffer    [][]string
 }
 
 // NewReader returns a new Reader with options that reads from r.

@@ -141,7 +141,7 @@ func Call(idx int, proc *process.Process, arg any, isFirst bool, isLast bool) (p
 		proc.SetInputBatch(nil)
 		return process.ExecStop, nil
 	}
-	if param.plh == nil && param.Extern.ScanType != tree.INLINE {
+	if param.lineReader == nil && param.Extern.ScanType != tree.INLINE {
 		if param.Fileparam.FileIndex >= len(param.FileList) {
 			proc.SetInputBatch(nil)
 			return process.ExecStop, nil
@@ -429,13 +429,13 @@ func makeBatch(param *ExternalParam, batchSize int, proc *process.Process) *batc
 	return bat
 }
 
-func deleteEnclosed(param *ExternalParam, plh *ParseLineHandler) {
+func deleteEnclosed(param *ExternalParam, lineReader *LineReader) {
 	close := param.Close
 	if close == '"' || close == 0 {
 		return
 	}
-	for rowIdx := 0; rowIdx < plh.batchSize; rowIdx++ {
-		line := plh.linesBuffer[rowIdx]
+	for rowIdx := 0; rowIdx < lineReader.batchSize; rowIdx++ {
+		line := lineReader.buffer[rowIdx]
 		for i := 0; i < len(line); i++ {
 			len := len(line[i])
 			if len < 2 {
@@ -458,14 +458,14 @@ func getExpectedColumnNumber(attrs []string, cols []*plan.ColDef) (ret int) {
 	return
 }
 
-func getBatchData(param *ExternalParam, plh *ParseLineHandler, proc *process.Process) (*batch.Batch, error) {
-	bat := makeBatch(param, plh.batchSize, proc)
+func getBatchData(param *ExternalParam, lineReader *LineReader, proc *process.Process) (*batch.Batch, error) {
+	bat := makeBatch(param, lineReader.batchSize, proc)
 	var err error
-	deleteEnclosed(param, plh)
+	deleteEnclosed(param, lineReader)
 	unexpectEOF := false
 	expectedColumnNumber := getExpectedColumnNumber(param.Attrs, param.Cols)
-	for rowIdx := 0; rowIdx < plh.batchSize; rowIdx++ {
-		line := plh.linesBuffer[rowIdx]
+	for rowIdx := 0; rowIdx < lineReader.batchSize; rowIdx++ {
+		line := lineReader.buffer[rowIdx]
 		if param.Extern.Format == tree.JSONLINE {
 			line, err = transJson2Lines(proc.Ctx, line[0], expectedColumnNumber, param.Attrs, param.Cols, param.Extern.JsonData, param)
 			if err != nil {
@@ -476,7 +476,7 @@ func getBatchData(param *ExternalParam, plh *ParseLineHandler, proc *process.Pro
 				}
 				return nil, err
 			}
-			plh.linesBuffer[rowIdx] = line
+			lineReader.buffer[rowIdx] = line
 		}
 		if param.ClusterTable != nil && param.ClusterTable.GetIsClusterTable() {
 			//the column account_id of the cluster table do need to be filled here
@@ -515,7 +515,7 @@ func getBatchData(param *ExternalParam, plh *ParseLineHandler, proc *process.Pro
 }
 
 // getMOCSVReader get file reader from external file
-func getMOCSVReader(param *ExternalParam, proc *process.Process) (*ParseLineHandler, error) {
+func newLineReader(param *ExternalParam, proc *process.Process) (*LineReader, error) {
 	var err error
 	param.reader, err = readFile(param, proc)
 	if err != nil || param.reader == nil {
@@ -537,11 +537,11 @@ func getMOCSVReader(param *ExternalParam, proc *process.Process) (*ParseLineHand
 	if param.Extern.Format == tree.JSONLINE {
 		cma = '\t'
 	}
-	plh := &ParseLineHandler{
-		csvReader:   newReaderWithOptions(param.reader, rune(cma), '#', true, false),
-		linesBuffer: param.LinesBuffer,
+	lineReader := &LineReader{
+		csvReader: newReaderWithOptions(param.reader, rune(cma), '#', true, false),
+		buffer:    param.LinesBuffer,
 	}
-	return plh, nil
+	return lineReader, nil
 }
 
 func scanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Process) (*batch.Batch, error) {
@@ -550,16 +550,16 @@ func scanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Proces
 	var cnt int
 	_, span := trace.Start(ctx, "scanCsvFile")
 	defer span.End()
-	if param.plh == nil {
+	if param.lineReader == nil {
 		param.IgnoreLine = param.IgnoreLineTag
-		param.plh, err = getMOCSVReader(param, proc)
-		if err != nil || param.plh == nil {
+		param.lineReader, err = newLineReader(param, proc)
+		if err != nil || param.lineReader == nil {
 			return nil, err
 		}
 	}
-	plh := param.plh
+	lineReader := param.lineReader
 	finish := false
-	cnt, finish, err = readCountStringLimitSize(plh.csvReader, proc.Ctx, param.maxBatchSize, plh.linesBuffer)
+	cnt, finish, err = readCountStringLimitSize(lineReader.csvReader, proc.Ctx, param.maxBatchSize, lineReader.buffer)
 	if err != nil {
 		logutil.Errorf("read external file meet error: %s", err.Error())
 		return nil, err
@@ -570,7 +570,7 @@ func scanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Proces
 		if err != nil {
 			logutil.Errorf("close file failed. err:%v", err)
 		}
-		param.plh = nil
+		param.lineReader = nil
 		param.Fileparam.FileFin++
 		if param.Fileparam.FileFin >= param.Fileparam.FileCnt {
 			param.Fileparam.End = true
@@ -579,18 +579,18 @@ func scanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Proces
 	if param.IgnoreLine != 0 {
 		if !param.Extern.Parallel || param.FileOffset[0] == 0 {
 			if cnt >= param.IgnoreLine {
-				plh.linesBuffer = plh.linesBuffer[param.IgnoreLine:cnt]
+				lineReader.buffer = lineReader.buffer[param.IgnoreLine:cnt]
 				cnt -= param.IgnoreLine
-				plh.linesBuffer = append(plh.linesBuffer, make([]string, param.IgnoreLine))
+				lineReader.buffer = append(lineReader.buffer, make([]string, param.IgnoreLine))
 			} else {
-				plh.linesBuffer = nil
+				lineReader.buffer = nil
 				cnt = 0
 			}
 			param.IgnoreLine = 0
 		}
 	}
-	plh.batchSize = cnt
-	bat, err = getBatchData(param, plh, proc)
+	lineReader.batchSize = cnt
+	bat, err = getBatchData(param, lineReader, proc)
 	if err != nil {
 		return nil, err
 	}
@@ -734,7 +734,7 @@ func scanZonemapFile(ctx context.Context, param *ExternalParam, proc *process.Pr
 	if param.Zoneparam.offset >= len(param.Zoneparam.bs) {
 		param.Filter.blockReader = nil
 		param.Zoneparam.bs = nil
-		param.plh = nil
+		param.lineReader = nil
 		param.Fileparam.FileFin++
 		if param.Fileparam.FileFin >= param.Fileparam.FileCnt {
 			param.Fileparam.End = true
