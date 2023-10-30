@@ -55,6 +55,7 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/options"
 	"github.com/matrixorigin/matrixone/pkg/vm/process"
 	"github.com/pierrec/lz4/v4"
+	"go.uber.org/zap"
 )
 
 var (
@@ -480,10 +481,18 @@ func getBatchData(param *ExternalParam, plh *ParseLineHandler, proc *process.Pro
 		if param.ClusterTable != nil && param.ClusterTable.GetIsClusterTable() {
 			//the column account_id of the cluster table do need to be filled here
 			if len(line)+1 < expectedColumnNumber {
+				logutil.Error("column number mismatch",
+					zap.Any("expected", expectedColumnNumber),
+					zap.Any("got", len(line)+1),
+				)
 				return nil, moerr.NewInternalError(proc.Ctx, ColumnCntLargerErrorInfo)
 			}
 		} else {
 			if !param.Extern.SysTable && len(line) < expectedColumnNumber {
+				logutil.Error("column number mismatch",
+					zap.Any("expected", expectedColumnNumber),
+					zap.Any("got", len(line)),
+				)
 				return nil, moerr.NewInternalError(proc.Ctx, ColumnCntLargerErrorInfo)
 			}
 		}
@@ -774,6 +783,10 @@ func transJsonObject2Lines(ctx context.Context, str string, expectedColumnNumber
 		return nil, err
 	}
 	if len(jsonMap) < expectedColumnNumber {
+		logutil.Error("column number mismatch",
+			zap.Any("expected", expectedColumnNumber),
+			zap.Any("got", len(jsonMap)),
+		)
 		return nil, moerr.NewInternalError(ctx, ColumnCntLargerErrorInfo)
 	}
 	for idx, attr := range attrs {
@@ -825,6 +838,10 @@ func transJsonArray2Lines(ctx context.Context, str string, expectedColumnNumber 
 		return nil, err
 	}
 	if len(jsonArray) < expectedColumnNumber {
+		logutil.Error("column number mismatch",
+			zap.Any("expected", expectedColumnNumber),
+			zap.Any("got", len(jsonArray)),
+		)
 		return nil, moerr.NewInternalError(ctx, ColumnCntLargerErrorInfo)
 	}
 	for idx, val := range jsonArray {
