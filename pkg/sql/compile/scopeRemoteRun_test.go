@@ -512,7 +512,7 @@ func Test_convertToPipelineInstruction(t *testing.T) {
 		},
 		{
 			Arg: &external.Argument{
-				Es: &external.ExternalParam{
+				ExternalParam: &external.ExternalParam{
 					ExParam: exParam,
 				},
 			},

@@ -1675,7 +1675,7 @@ func (c *Compile) compileExternScanParallel(n *plan.Node, param *tree.ExternPara
 		fileOffsetTmp[i].Offset = append(fileOffsetTmp[i].Offset, []int64{0, -1}...)
 	}
 	extern := constructExternal(n, param, c.ctx, fileList, fileSize, fileOffsetTmp)
-	extern.Es.ParallelLoad = true
+	extern.ExternalParam.ParallelLoad = true
 	scope := c.constructScopeForExternal("", false)
 	scope.appendInstruction(vm.Instruction{
 		Op:      vm.External,

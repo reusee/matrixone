@@ -1027,21 +1027,21 @@ func convertToPipelineInstruction(opr *vm.Instruction, ctx *scopeContext, ctxId 
 			NeedMergedBatch: t.NeedMergedBatch,
 		}
 	case *external.Argument:
-		name2ColIndexSlice := make([]*pipeline.ExternalName2ColIndex, len(t.Es.Name2ColIndex))
+		name2ColIndexSlice := make([]*pipeline.ExternalName2ColIndex, len(t.ExternalParam.Name2ColIndex))
 		i := 0
-		for k, v := range t.Es.Name2ColIndex {
+		for k, v := range t.ExternalParam.Name2ColIndex {
 			name2ColIndexSlice[i] = &pipeline.ExternalName2ColIndex{Name: k, Index: v}
 			i++
 		}
 		in.ExternalScan = &pipeline.ExternalScan{
-			Attrs:           t.Es.Attrs,
-			Cols:            t.Es.Cols,
-			FileSize:        t.Es.FileSize,
-			FileOffsetTotal: t.Es.FileOffsetTotal,
+			Attrs:           t.ExternalParam.Attrs,
+			Cols:            t.ExternalParam.Cols,
+			FileSize:        t.ExternalParam.FileSize,
+			FileOffsetTotal: t.ExternalParam.FileOffsetTotal,
 			Name2ColIndex:   name2ColIndexSlice,
-			CreateSql:       t.Es.CreateSql,
-			FileList:        t.Es.FileList,
-			Filter:          t.Es.Filter.FilterExpr,
+			CreateSql:       t.ExternalParam.CreateSql,
+			FileList:        t.ExternalParam.FileList,
+			Filter:          t.ExternalParam.Filter.FilterExpr,
 		}
 	case *stream.Argument:
 		in.StreamScan = &pipeline.StreamScan{
@@ -1443,7 +1443,7 @@ func convertToVmInstruction(opr *pipeline.Instruction, ctx *scopeContext, eng en
 			name2ColIndex[n2i.Name] = n2i.Index
 		}
 		v.Arg = &external.Argument{
-			Es: &external.ExternalParam{
+			ExternalParam: &external.ExternalParam{
 				ExParamConst: external.ExParamConst{
 					Attrs:           t.Attrs,
 					FileSize:        t.FileSize,

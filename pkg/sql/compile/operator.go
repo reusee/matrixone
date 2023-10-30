@@ -372,27 +372,27 @@ func dupInstruction(sourceIns *vm.Instruction, regMap map[*process.WaitRegister]
 	case vm.External:
 		t := sourceIns.Arg.(*external.Argument)
 		res.Arg = &external.Argument{
-			Es: &external.ExternalParam{
+			ExternalParam: &external.ExternalParam{
 				ExParamConst: external.ExParamConst{
-					Attrs:           t.Es.Attrs,
-					Cols:            t.Es.Cols,
+					Attrs:           t.ExternalParam.Attrs,
+					Cols:            t.ExternalParam.Cols,
 					Idx:             index,
-					Name2ColIndex:   t.Es.Name2ColIndex,
-					CreateSql:       t.Es.CreateSql,
-					FileList:        t.Es.FileList,
-					FileSize:        t.Es.FileSize,
-					FileOffsetTotal: t.Es.FileOffsetTotal,
-					Extern:          t.Es.Extern,
+					Name2ColIndex:   t.ExternalParam.Name2ColIndex,
+					CreateSql:       t.ExternalParam.CreateSql,
+					FileList:        t.ExternalParam.FileList,
+					FileSize:        t.ExternalParam.FileSize,
+					FileOffsetTotal: t.ExternalParam.FileOffsetTotal,
+					Extern:          t.ExternalParam.Extern,
 				},
 				ExParam: external.ExParam{
 					Filter: &external.FilterParam{
-						FilterExpr: t.Es.Filter.FilterExpr,
+						FilterExpr: t.ExternalParam.Filter.FilterExpr,
 					},
 					Fileparam: &external.ExFileparam{
-						End:       t.Es.Fileparam.End,
-						FileCnt:   t.Es.Fileparam.FileCnt,
-						FileFin:   t.Es.Fileparam.FileFin,
-						FileIndex: t.Es.Fileparam.FileIndex,
+						End:       t.ExternalParam.Fileparam.End,
+						FileCnt:   t.ExternalParam.Fileparam.FileCnt,
+						FileFin:   t.ExternalParam.Fileparam.FileFin,
+						FileIndex: t.ExternalParam.Fileparam.FileIndex,
 					},
 				},
 			},
@@ -673,7 +673,7 @@ func constructExternal(n *plan.Node, param *tree.ExternParam, ctx context.Contex
 		attrs[j] = col.Name
 	}
 	return &external.Argument{
-		Es: &external.ExternalParam{
+		ExternalParam: &external.ExternalParam{
 			ExParamConst: external.ExParamConst{
 				Attrs:           attrs,
 				Cols:            n.TableDef.Cols,

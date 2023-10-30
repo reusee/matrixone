@@ -91,7 +91,7 @@ type FilterParam struct {
 }
 
 type Argument struct {
-	Es *ExternalParam
+	ExternalParam *ExternalParam
 }
 
 func (arg *Argument) Free(*process.Process, bool, error) {}

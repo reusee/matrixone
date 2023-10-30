@@ -64,7 +64,7 @@ func newTestCase(all bool, format, jsondata string) externalTestCase {
 		proc:  proc,
 		types: []types.Type{types.T_int8.ToType()},
 		arg: &Argument{
-			Es: &ExternalParam{
+			ExternalParam: &ExternalParam{
 				ExParamConst: ExParamConst{
 					Ctx: ctx,
 				},
@@ -96,7 +96,7 @@ func Test_String(t *testing.T) {
 func Test_Prepare(t *testing.T) {
 	convey.Convey("external Prepare", t, func() {
 		for _, tcs := range cases {
-			param := tcs.arg.Es
+			param := tcs.arg.ExternalParam
 			extern := &tree.ExternParam{
 				ExParamConst: tree.ExParamConst{
 					Filepath: "",
@@ -117,7 +117,7 @@ func Test_Prepare(t *testing.T) {
 				panic(err)
 			}
 			param.CreateSql = string(json_byte)
-			tcs.arg.Es.Extern = extern
+			tcs.arg.ExternalParam.Extern = extern
 			err = Prepare(tcs.proc, tcs.arg)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(param.FileList, convey.ShouldBeNil)
@@ -165,7 +165,7 @@ func Test_Prepare(t *testing.T) {
 func Test_Call(t *testing.T) {
 	convey.Convey("external Call", t, func() {
 		for _, tcs := range cases {
-			param := tcs.arg.Es
+			param := tcs.arg.ExternalParam
 			extern := &tree.ExternParam{
 				ExParamConst: tree.ExParamConst{
 					Filepath: "",

@@ -74,7 +74,7 @@ func String(_ any, buf *bytes.Buffer) {
 func Prepare(proc *process.Process, arg any) error {
 	_, span := trace.Start(proc.Ctx, "ExternalPrepare")
 	defer span.End()
-	param := arg.(*Argument).Es
+	param := arg.(*Argument).ExternalParam
 	if proc.Lim.MaxMsgSize == 0 {
 		param.maxBatchSize = uint64(morpc.GetMessageSize())
 	} else {
@@ -136,7 +136,7 @@ func Call(idx int, proc *process.Process, arg any, isFirst bool, isLast bool) (p
 		anal.AddScanTime(t1)
 	}()
 	anal.Input(nil, isFirst)
-	param := arg.(*Argument).Es
+	param := arg.(*Argument).ExternalParam
 	if param.Fileparam.End {
 		proc.SetInputBatch(nil)
 		return process.ExecStop, nil
