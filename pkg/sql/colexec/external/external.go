@@ -514,36 +514,6 @@ func getBatchData(param *ExternalParam, lineReader *LineReader, proc *process.Pr
 	return bat, nil
 }
 
-// getMOCSVReader get file reader from external file
-func newLineReader(param *ExternalParam, proc *process.Process) (*LineReader, error) {
-	var err error
-	param.reader, err = readFile(param, proc)
-	if err != nil || param.reader == nil {
-		return nil, err
-	}
-	param.reader, err = getUnCompressReader(param.Extern, param.Fileparam.Filepath, param.reader)
-	if err != nil {
-		return nil, err
-	}
-
-	var cma byte
-	if param.Extern.Tail.Fields == nil {
-		cma = ','
-		param.Close = 0
-	} else {
-		cma = param.Extern.Tail.Fields.Terminated[0]
-		param.Close = param.Extern.Tail.Fields.EnclosedBy
-	}
-	if param.Extern.Format == tree.JSONLINE {
-		cma = '\t'
-	}
-	lineReader := &LineReader{
-		csvReader: newReaderWithOptions(param.reader, rune(cma), '#', true, false),
-		buffer:    param.LinesBuffer,
-	}
-	return lineReader, nil
-}
-
 func scanCsvFile(ctx context.Context, param *ExternalParam, proc *process.Process) (*batch.Batch, error) {
 	var bat *batch.Batch
 	var err error

@@ -96,12 +96,6 @@ type Argument struct {
 
 func (arg *Argument) Free(*process.Process, bool, error) {}
 
-type LineReader struct {
-	csvReader *csv.Reader
-	batchSize int
-	buffer    [][]string
-}
-
 // NewReader returns a new Reader with options that reads from r.
 func newReaderWithOptions(r io.Reader, cma, cmnt rune, lazyQt, tls bool) *csv.Reader {
 	rCsv := csv.NewReader(bufio.NewReader(r))
