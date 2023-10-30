@@ -447,14 +447,14 @@ func deleteEnclosed(param *ExternalParam, plh *ParseLineHandler) {
 	}
 }
 
-func getRealAttrCnt(attrs []string, cols []*plan.ColDef) int {
-	cnt := 0
+func getExpectedColumnNumber(attrs []string, cols []*plan.ColDef) (ret int) {
+	ret = len(attrs)
 	for i := 0; i < len(attrs); i++ {
 		if catalog.ContainExternalHidenCol(attrs[i]) || cols[i].Hidden {
-			cnt++
+			ret--
 		}
 	}
-	return len(attrs) - cnt
+	return
 }
 
 func getBatchData(param *ExternalParam, plh *ParseLineHandler, proc *process.Process) (*batch.Batch, error) {
@@ -462,10 +462,11 @@ func getBatchData(param *ExternalParam, plh *ParseLineHandler, proc *process.Pro
 	var err error
 	deleteEnclosed(param, plh)
 	unexpectEOF := false
+	expectedColumnNumber := getExpectedColumnNumber(param.Attrs, param.Cols)
 	for rowIdx := 0; rowIdx < plh.batchSize; rowIdx++ {
 		line := plh.moCsvLineArray[rowIdx]
 		if param.Extern.Format == tree.JSONLINE {
-			line, err = transJson2Lines(proc.Ctx, line[0], param.Attrs, param.Cols, param.Extern.JsonData, param)
+			line, err = transJson2Lines(proc.Ctx, line[0], expectedColumnNumber, param.Attrs, param.Cols, param.Extern.JsonData, param)
 			if err != nil {
 				if errors.Is(err, io.ErrUnexpectedEOF) {
 					logutil.Infof("unexpected EOF, wait for next batch")
@@ -478,11 +479,11 @@ func getBatchData(param *ExternalParam, plh *ParseLineHandler, proc *process.Pro
 		}
 		if param.ClusterTable != nil && param.ClusterTable.GetIsClusterTable() {
 			//the column account_id of the cluster table do need to be filled here
-			if len(line)+1 < getRealAttrCnt(param.Attrs, param.Cols) {
+			if len(line)+1 < expectedColumnNumber {
 				return nil, moerr.NewInternalError(proc.Ctx, ColumnCntLargerErrorInfo)
 			}
 		} else {
-			if !param.Extern.SysTable && len(line) < getRealAttrCnt(param.Attrs, param.Cols) {
+			if !param.Extern.SysTable && len(line) < expectedColumnNumber {
 				return nil, moerr.NewInternalError(proc.Ctx, ColumnCntLargerErrorInfo)
 			}
 		}
@@ -743,18 +744,18 @@ func scanFileData(ctx context.Context, param *ExternalParam, proc *process.Proce
 	}
 }
 
-func transJson2Lines(ctx context.Context, str string, attrs []string, cols []*plan.ColDef, jsonData string, param *ExternalParam) ([]string, error) {
+func transJson2Lines(ctx context.Context, str string, expectedColumnNumber int, attrs []string, cols []*plan.ColDef, jsonData string, param *ExternalParam) ([]string, error) {
 	switch jsonData {
 	case tree.OBJECT:
-		return transJsonObject2Lines(ctx, str, attrs, cols, param)
+		return transJsonObject2Lines(ctx, str, expectedColumnNumber, attrs, cols, param)
 	case tree.ARRAY:
-		return transJsonArray2Lines(ctx, str, attrs, cols, param)
+		return transJsonArray2Lines(ctx, str, expectedColumnNumber, attrs, cols, param)
 	default:
 		return nil, moerr.NewNotSupported(ctx, "the jsonline format '%s' is not support now", jsonData)
 	}
 }
 
-func transJsonObject2Lines(ctx context.Context, str string, attrs []string, cols []*plan.ColDef, param *ExternalParam) ([]string, error) {
+func transJsonObject2Lines(ctx context.Context, str string, expectedColumnNumber int, attrs []string, cols []*plan.ColDef, param *ExternalParam) ([]string, error) {
 	var (
 		err error
 		res = make([]string, 0, len(attrs))
@@ -772,7 +773,7 @@ func transJsonObject2Lines(ctx context.Context, str string, attrs []string, cols
 		param.prevStr = str
 		return nil, err
 	}
-	if len(jsonMap) < getRealAttrCnt(attrs, cols) {
+	if len(jsonMap) < expectedColumnNumber {
 		return nil, moerr.NewInternalError(ctx, ColumnCntLargerErrorInfo)
 	}
 	for idx, attr := range attrs {
@@ -806,7 +807,7 @@ func transJsonObject2Lines(ctx context.Context, str string, attrs []string, cols
 	return res, nil
 }
 
-func transJsonArray2Lines(ctx context.Context, str string, attrs []string, cols []*plan.ColDef, param *ExternalParam) ([]string, error) {
+func transJsonArray2Lines(ctx context.Context, str string, expectedColumnNumber int, attrs []string, cols []*plan.ColDef, param *ExternalParam) ([]string, error) {
 	var (
 		err error
 		res = make([]string, 0, len(attrs))
@@ -823,7 +824,7 @@ func transJsonArray2Lines(ctx context.Context, str string, attrs []string, cols 
 		param.prevStr = str
 		return nil, err
 	}
-	if len(jsonArray) < getRealAttrCnt(attrs, cols) {
+	if len(jsonArray) < expectedColumnNumber {
 		return nil, moerr.NewInternalError(ctx, ColumnCntLargerErrorInfo)
 	}
 	for idx, val := range jsonArray {
