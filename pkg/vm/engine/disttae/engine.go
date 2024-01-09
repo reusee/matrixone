@@ -99,8 +99,10 @@ func New(
 			},
 			func(packer *types.Packer) {
 				packer.Reset()
+				packer.FreeMem()
 			},
 			func(packer *types.Packer) {
+				packer.Reset()
 				packer.FreeMem()
 			},
 		),
