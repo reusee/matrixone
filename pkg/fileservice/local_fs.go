@@ -49,7 +49,7 @@ type LocalFS struct {
 	dirFiles map[string]*os.File
 
 	allocator   CacheDataAllocator
-	memCache    *MemCache
+	memCache    IOVectorCache
 	diskCache   *DiskCache
 	remoteCache *RemoteCache
 	asyncUpdate bool
@@ -109,11 +109,7 @@ func NewLocalFS(
 		return nil, err
 	}
 
-	if fs.memCache != nil {
-		fs.allocator = fs.memCache
-	} else {
-		fs.allocator = DefaultCacheDataAllocator
-	}
+	fs.allocator = DefaultCacheDataAllocator
 
 	return fs, nil
 }
@@ -132,8 +128,8 @@ func (l *LocalFS) initCaches(ctx context.Context, config CacheConfig) error {
 	}
 
 	if *config.MemoryCapacity > DisableCacheCapacity { // 1 means disable
-		l.memCache = NewMemCache(
-			NewMemoryCache(int64(*config.MemoryCapacity), true, &config.CacheCallbacks),
+		l.memCache = NewFIFOMemoryCache(
+			int(*config.MemoryCapacity),
 			l.perfCounterSets,
 		)
 		logutil.Info("fileservice: memory cache initialized",
