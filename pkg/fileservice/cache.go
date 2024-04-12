@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/trace"
 	"sync"
 	"time"
 
@@ -149,6 +150,9 @@ type IOVectorCache interface {
 var slowCacheReadThreshold = time.Second * 0
 
 func readCache(ctx context.Context, cache IOVectorCache, vector *IOVector) error {
+	ctx, task := trace.NewTask(ctx, "fileservice.readCache")
+	defer task.End()
+
 	if slowCacheReadThreshold > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, slowCacheReadThreshold)
