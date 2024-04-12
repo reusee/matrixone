@@ -308,7 +308,7 @@ func (l *LocalFS) Read(ctx context.Context, vector *IOVector) (err error) {
 
 	startLock := time.Now()
 	_, task := gotrace.NewTask(ctx, "LocalFS.Read: wait io lock")
-	unlock, wait := l.ioLocks.Lock(vector.ioLockKey())
+	unlock, wait := l.ioLocks.Lock(ctx, vector.ioLockKey())
 	if unlock != nil {
 		defer unlock()
 	} else {
@@ -394,7 +394,7 @@ func (l *LocalFS) ReadCache(ctx context.Context, vector *IOVector) (err error) {
 	}
 
 	startLock := time.Now()
-	unlock, wait := l.ioLocks.Lock(vector.ioLockKey())
+	unlock, wait := l.ioLocks.Lock(ctx, vector.ioLockKey())
 	if unlock != nil {
 		defer unlock()
 	} else {

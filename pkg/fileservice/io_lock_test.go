@@ -15,11 +15,14 @@
 package fileservice
 
 import (
+	"context"
 	"sync"
 	"testing"
 )
 
 func TestIOLock(t *testing.T) {
+	ctx := context.Background()
+
 	locks := NewIOLocks()
 	n := 1024
 	key := IOLockKey{
@@ -34,7 +37,7 @@ func TestIOLock(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for {
-				unlock, wait := locks.Lock(key)
+				unlock, wait := locks.Lock(ctx, key)
 				if unlock != nil {
 					cs = append(cs, c)
 					c++
@@ -61,13 +64,14 @@ func TestIOLock(t *testing.T) {
 }
 
 func BenchmarkIOLockNoContention(b *testing.B) {
+	ctx := context.Background()
 	locks := NewIOLocks()
 	key := IOLockKey{
 		Path: "foo",
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		unlock, wait := locks.Lock(key)
+		unlock, wait := locks.Lock(ctx, key)
 		if unlock != nil {
 			unlock()
 		} else {
@@ -77,6 +81,7 @@ func BenchmarkIOLockNoContention(b *testing.B) {
 }
 
 func BenchmarkIOLockParallel(b *testing.B) {
+	ctx := context.Background()
 	locks := NewIOLocks()
 	key := IOLockKey{
 		Path: "foo",
@@ -84,7 +89,7 @@ func BenchmarkIOLockParallel(b *testing.B) {
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			unlock, wait := locks.Lock(key)
+			unlock, wait := locks.Lock(ctx, key)
 			if unlock != nil {
 				unlock()
 			} else {

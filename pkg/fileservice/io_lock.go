@@ -15,6 +15,8 @@
 package fileservice
 
 import (
+	"context"
+	"runtime/trace"
 	"sync"
 	"time"
 
@@ -38,8 +40,11 @@ func NewIOLocks() *IOLocks {
 
 var slowIOWaitDuration = time.Second * 10
 
-func (i *IOLocks) waitFunc(key IOLockKey, ch chan struct{}) func() {
+func (i *IOLocks) waitFunc(ctx context.Context, key IOLockKey, ch chan struct{}) func() {
 	return func() {
+		_, task := trace.NewTask(ctx, "IOLocks.wait")
+		defer task.End()
+
 		t0 := time.Now()
 		for {
 			timer := time.NewTimer(slowIOWaitDuration)
@@ -57,10 +62,13 @@ func (i *IOLocks) waitFunc(key IOLockKey, ch chan struct{}) func() {
 	}
 }
 
-func (i *IOLocks) Lock(key IOLockKey) (unlock func(), wait func()) {
+func (i *IOLocks) Lock(ctx context.Context, key IOLockKey) (unlock func(), wait func()) {
+	ctx, task := trace.NewTask(ctx, "IOLocks.Lock")
+	defer task.End()
+
 	if v, ok := i.locks.Load(key); ok {
 		// wait
-		return nil, i.waitFunc(key, v.(chan struct{}))
+		return nil, i.waitFunc(ctx, key, v.(chan struct{}))
 	}
 
 	// try lock
@@ -68,7 +76,7 @@ func (i *IOLocks) Lock(key IOLockKey) (unlock func(), wait func()) {
 	v, loaded := i.locks.LoadOrStore(key, ch)
 	if loaded {
 		// lock failed, wait
-		return nil, i.waitFunc(key, v.(chan struct{}))
+		return nil, i.waitFunc(ctx, key, v.(chan struct{}))
 	}
 
 	// locked

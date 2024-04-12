@@ -256,7 +256,7 @@ func (s *S3FS) PrefetchFile(ctx context.Context, filePath string) error {
 	}
 
 	startLock := time.Now()
-	unlock, wait := s.ioLocks.Lock(IOLockKey{
+	unlock, wait := s.ioLocks.Lock(ctx, IOLockKey{
 		Path: filePath,
 	})
 	if unlock != nil {
@@ -403,7 +403,7 @@ func (s *S3FS) Read(ctx context.Context, vector *IOVector) (err error) {
 	}
 
 	startLock := time.Now()
-	unlock, wait := s.ioLocks.Lock(vector.ioLockKey())
+	unlock, wait := s.ioLocks.Lock(ctx, vector.ioLockKey())
 	if unlock != nil {
 		defer unlock()
 	} else {
@@ -484,7 +484,7 @@ func (s *S3FS) ReadCache(ctx context.Context, vector *IOVector) (err error) {
 	}
 
 	startLock := time.Now()
-	unlock, wait := s.ioLocks.Lock(vector.ioLockKey())
+	unlock, wait := s.ioLocks.Lock(ctx, vector.ioLockKey())
 	if unlock != nil {
 		defer unlock()
 	} else {
