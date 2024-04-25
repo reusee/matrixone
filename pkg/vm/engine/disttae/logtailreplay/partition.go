@@ -30,7 +30,7 @@ import (
 type Partition struct {
 	//lock is used to protect pointer of PartitionState from concurrent mutation
 	lock  chan struct{}
-	state atomic.Pointer[PartitionState]
+	state *PartitionState
 
 	// assuming checkpoints will be consumed once
 	checkpointConsumed atomic.Bool
@@ -40,6 +40,13 @@ type Partition struct {
 		sync.Mutex
 		start types.TS
 		end   types.TS
+	}
+
+	// update
+	update struct {
+		mutex    sync.Mutex
+		cond     *sync.Cond
+		updating bool
 	}
 }
 
@@ -56,7 +63,8 @@ func NewPartition() *Partition {
 		lock: lock,
 	}
 	ret.mu.start = types.MaxTs()
-	ret.state.Store(NewPartitionState(false))
+	ret.state = NewPartitionState(false)
+	ret.update.cond = sync.NewCond(&ret.update.mutex)
 	return ret
 }
 
@@ -67,7 +75,12 @@ func (r RowID) Less(than RowID) bool {
 }
 
 func (p *Partition) Snapshot() *PartitionState {
-	return p.state.Load()
+	p.update.mutex.Lock()
+	defer p.update.mutex.Unlock()
+	for p.update.updating {
+		p.update.cond.Wait()
+	}
+	return p.state.Copy()
 }
 
 func (*Partition) CheckPoint(ctx context.Context, ts timestamp.Timestamp) error {
@@ -75,12 +88,14 @@ func (*Partition) CheckPoint(ctx context.Context, ts timestamp.Timestamp) error 
 }
 
 func (p *Partition) MutateState() (*PartitionState, func()) {
-	curState := p.state.Load()
-	state := curState.Copy()
-	return state, func() {
-		if !p.state.CompareAndSwap(curState, state) {
-			panic("concurrent mutation")
-		}
+	p.update.mutex.Lock()
+	p.update.updating = true
+	p.update.mutex.Unlock()
+	return p.state, func() {
+		p.update.mutex.Lock()
+		p.update.updating = false
+		p.update.mutex.Unlock()
+		p.update.cond.Broadcast()
 	}
 }
 
@@ -129,13 +144,22 @@ func (p *Partition) ConsumeSnapCkps(
 ) (
 	err error,
 ) {
+
+	p.update.mutex.Lock()
+	p.update.updating = true
+	p.update.mutex.Unlock()
+	defer func() {
+		p.update.mutex.Lock()
+		p.update.updating = false
+		p.update.mutex.Unlock()
+	}()
+
 	//Notice that checkpoints must contain only one or zero global checkpoint
 	//followed by zero or multi continuous incremental checkpoints.
-	state := p.state.Load()
 	start := types.MaxTs()
 	end := types.TS{}
 	for _, ckp := range ckps {
-		if err = fn(ckp, state); err != nil {
+		if err = fn(ckp, p.state); err != nil {
 			return
 		}
 		if ckp.GetType() == checkpoint.ET_Global {
@@ -174,11 +198,19 @@ func (p *Partition) ConsumeCheckpoints(
 	err error,
 ) {
 
+	p.update.mutex.Lock()
+	p.update.updating = true
+	p.update.mutex.Unlock()
+	defer func() {
+		p.update.mutex.Lock()
+		p.update.updating = false
+		p.update.mutex.Unlock()
+	}()
+
 	if p.checkpointConsumed.Load() {
 		return nil
 	}
-	curState := p.state.Load()
-	if len(curState.checkpoints) == 0 {
+	if len(p.state.checkpoints) == 0 {
 		p.UpdateDuration(types.TS{}, types.MaxTs())
 		return nil
 	}
@@ -189,24 +221,17 @@ func (p *Partition) ConsumeCheckpoints(
 	}
 	defer p.Unlock()
 
-	curState = p.state.Load()
-	if len(curState.checkpoints) == 0 {
+	if len(p.state.checkpoints) == 0 {
 		logutil.Infof("xxxx impossible path")
 		p.UpdateDuration(types.TS{}, types.MaxTs())
 		return nil
 	}
 
-	state := curState.Copy()
-
-	if err := state.consumeCheckpoints(fn); err != nil {
+	if err := p.state.consumeCheckpoints(fn); err != nil {
 		return err
 	}
 
-	p.UpdateDuration(state.start, types.MaxTs())
-
-	if !p.state.CompareAndSwap(curState, state) {
-		panic("concurrent mutation")
-	}
+	p.UpdateDuration(p.state.start, types.MaxTs())
 
 	p.checkpointConsumed.Store(true)
 
@@ -219,17 +244,19 @@ func (p *Partition) Truncate(ctx context.Context, ids [2]uint64, ts types.TS) er
 		return err
 	}
 	defer p.Unlock()
-	curState := p.state.Load()
 
-	state := curState.Copy()
+	p.update.mutex.Lock()
+	p.update.updating = true
+	p.update.mutex.Unlock()
+	defer func() {
+		p.update.mutex.Lock()
+		p.update.updating = false
+		p.update.mutex.Unlock()
+	}()
 
-	state.truncate(ids, ts)
+	p.state.truncate(ids, ts)
 
 	//TODO::update partition's start and end
-
-	if !p.state.CompareAndSwap(curState, state) {
-		panic("concurrent mutation")
-	}
 
 	return nil
 }
