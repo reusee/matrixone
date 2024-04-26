@@ -95,13 +95,5 @@ func (p *Pool[T]) Put(idx int, ptr *T) {
 	}
 }
 
-var bytesPoolDefaultBlockSize = NewPool(
-	1024,
-	func() []byte {
-		return make([]byte, _DefaultBlockSize)
-	},
-	nil, nil,
-)
-
 //go:linkname fastrand runtime.fastrand
 func fastrand() uint32

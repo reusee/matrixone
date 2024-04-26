@@ -27,6 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/matrixorigin/matrixone/pkg/common/malloc"
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 	"github.com/matrixorigin/matrixone/pkg/common/reuse"
 	"github.com/matrixorigin/matrixone/pkg/logutil"
@@ -657,8 +658,8 @@ func (s *S3FS) read(ctx context.Context, vector *IOVector) (err error) {
 				}
 				defer reader.Close()
 				var buf []byte
-				put := ioBufferPool.Get(&buf)
-				defer put.Put()
+				handle := malloc.Alloc(ioBufferSize, &buf)
+				defer handle.Free()
 				_, err = io.CopyBuffer(w, reader, buf)
 				if err != nil {
 					return err

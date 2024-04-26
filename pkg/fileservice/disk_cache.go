@@ -27,6 +27,7 @@ import (
 	"syscall"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/matrixorigin/matrixone/pkg/common/malloc"
 	"github.com/matrixorigin/matrixone/pkg/fileservice/fifocache"
 	"github.com/matrixorigin/matrixone/pkg/logutil"
 	"github.com/matrixorigin/matrixone/pkg/perfcounter"
@@ -360,8 +361,8 @@ func (d *DiskCache) writeFile(
 	}
 	defer from.Close()
 	var buf []byte
-	put := ioBufferPool.Get(&buf)
-	defer put.Put()
+	handle := malloc.Alloc(ioBufferSize, &buf)
+	defer handle.Free()
 	_, err = io.CopyBuffer(f, from, buf)
 	if err != nil {
 		f.Close()

@@ -236,14 +236,14 @@ func (l *LocalFS) write(ctx context.Context, vector IOVector) (bytesWritten int,
 	if err != nil {
 		return 0, err
 	}
-	fileWithChecksum, put := NewFileWithChecksumOSFile(ctx, f, _BlockContentSize, l.perfCounterSets)
-	defer put.Put()
+	fileWithChecksum, handle := NewFileWithChecksumOSFile(ctx, f, _BlockContentSize, l.perfCounterSets)
+	defer handle.Free()
 
 	r := newIOEntriesReader(ctx, vector.Entries)
 
 	var buf []byte
-	putBuf := ioBufferPool.Get(&buf)
-	defer putBuf.Put()
+	handle = malloc.Alloc(ioBufferSize, &buf)
+	defer handle.Free()
 	n, err := io.CopyBuffer(fileWithChecksum, r, buf)
 	if err != nil {
 		return 0, err
@@ -456,8 +456,8 @@ func (l *LocalFS) read(ctx context.Context, vector *IOVector, bytesCounter *atom
 		}
 
 		if entry.WriterForRead != nil {
-			fileWithChecksum, put := NewFileWithChecksumOSFile(ctx, file, _BlockContentSize, l.perfCounterSets)
-			defer put.Put()
+			fileWithChecksum, handle := NewFileWithChecksumOSFile(ctx, file, _BlockContentSize, l.perfCounterSets)
+			defer handle.Free()
 
 			if entry.Offset > 0 {
 				_, err = fileWithChecksum.Seek(int64(entry.Offset), io.SeekStart)
@@ -493,8 +493,8 @@ func (l *LocalFS) read(ctx context.Context, vector *IOVector, bytesCounter *atom
 
 			} else {
 				var buf []byte
-				put := ioBufferPool.Get(&buf)
-				defer put.Put()
+				handle := malloc.Alloc(ioBufferSize, &buf)
+				defer handle.Free()
 				n, err := io.CopyBuffer(entry.WriterForRead, r, buf)
 				if err != nil {
 					return err
@@ -553,8 +553,8 @@ func (l *LocalFS) read(ctx context.Context, vector *IOVector, bytesCounter *atom
 			}
 
 		} else {
-			fileWithChecksum, put := NewFileWithChecksumOSFile(ctx, file, _BlockContentSize, l.perfCounterSets)
-			defer put.Put()
+			fileWithChecksum, handle := NewFileWithChecksumOSFile(ctx, file, _BlockContentSize, l.perfCounterSets)
+			defer handle.Free()
 
 			if entry.Offset > 0 {
 				_, err = fileWithChecksum.Seek(int64(entry.Offset), io.SeekStart)
@@ -912,8 +912,8 @@ func (l *LocalFSMutator) mutate(ctx context.Context, baseOffset int64, entries .
 				return err
 			}
 			var buf []byte
-			put := ioBufferPool.Get(&buf)
-			defer put.Put()
+			handle := malloc.Alloc(ioBufferSize, &buf)
+			defer handle.Free()
 			n, err := io.CopyBuffer(l.fileWithChecksum, entry.ReaderForWrite, buf)
 			if err != nil {
 				return err

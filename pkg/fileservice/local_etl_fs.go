@@ -26,6 +26,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/matrixorigin/matrixone/pkg/common/malloc"
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 )
 
@@ -136,8 +137,8 @@ func (l *LocalETLFS) write(ctx context.Context, vector IOVector) error {
 		return err
 	}
 	var buf []byte
-	put := ioBufferPool.Get(&buf)
-	defer put.Put()
+	handle := malloc.Alloc(ioBufferSize, &buf)
+	defer handle.Free()
 	n, err := io.CopyBuffer(f, r, buf)
 	if err != nil {
 		return err
@@ -248,8 +249,8 @@ func (l *LocalETLFS) Read(ctx context.Context, vector *IOVector) error {
 
 			} else {
 				var buf []byte
-				put := ioBufferPool.Get(&buf)
-				defer put.Put()
+				handle := malloc.Alloc(ioBufferSize, &buf)
+				defer handle.Free()
 				n, err := io.CopyBuffer(entry.WriterForRead, r, buf)
 				if err != nil {
 					return err
@@ -623,8 +624,8 @@ func (l *LocalETLFSMutator) mutate(ctx context.Context, baseOffset int64, entrie
 				return err
 			}
 			var buf []byte
-			put := ioBufferPool.Get(&buf)
-			defer put.Put()
+			handle := malloc.Alloc(ioBufferSize, &buf)
+			defer handle.Free()
 			n, err := io.CopyBuffer(l.osFile, entry.ReaderForWrite, buf)
 			if err != nil {
 				return err

@@ -16,6 +16,7 @@ package malloc
 
 import (
 	"runtime"
+	"slices"
 	"time"
 	"unsafe"
 
@@ -95,10 +96,9 @@ func init() {
 }
 
 func requestSizeToClass(size int) int {
-	for class, classSize := range classSizes {
-		if classSize >= size {
-			return class
-		}
+	i, _ := slices.BinarySearch(classSizes, size)
+	if i < len(classSizes) {
+		return i
 	}
 	return -1
 }

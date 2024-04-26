@@ -19,6 +19,10 @@ import (
 	"sync/atomic"
 )
 
+const (
+	ioBufferSize = 32 * 1024
+)
+
 type readCloser struct {
 	r         io.Reader
 	closeFunc func() error
@@ -61,12 +65,3 @@ func (r *writeCloser) Write(data []byte) (int, error) {
 func (r *writeCloser) Close() error {
 	return r.closeFunc()
 }
-
-var ioBufferPool = NewPool(
-	256,
-	func() []byte {
-		return make([]byte, 32*1024)
-	},
-	nil,
-	nil,
-)
