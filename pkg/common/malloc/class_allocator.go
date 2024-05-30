@@ -17,6 +17,7 @@ package malloc
 import (
 	"fmt"
 	"math/bits"
+	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -35,11 +36,9 @@ const (
 	// A large class size will not consume more memory unless we actually allocate on that class
 	// Classes with size larger than smallClassCap will always buffering MADV_DONTNEED-advised objects.
 	// MADV_DONTNEED-advised objects consume no memory.
-	maxClassSize = 32 * GB
+	maxClassSize = 4 * GB
 
 	maxBuffer1Cap = 256
-	// objects in buffer2 will be MADV_DONTNEED-advised and will not occupy RSS, so it's safe to use a large number
-	buffer2Cap = 1024
 )
 
 type ClassAllocator struct {
@@ -93,26 +92,52 @@ type fixedSizeMmapAllocator struct {
 	checkFraction uint32
 	// buffer1 buffers objects
 	buffer1 chan unsafe.Pointer
-	// buffer2 buffers MADV_DONTNEED objects
-	buffer2 chan unsafe.Pointer
+	bump    uint64
+	mem     atomic.Pointer[mappedMemory]
+}
+
+type mappedMemory struct {
+	mem  []byte
+	next atomic.Uint64
 }
 
 func newFixedSizedAllocator(
 	size uint64,
 	checkFraction uint32,
 ) *fixedSizeMmapAllocator {
+
 	// if size is larger than smallClassCap, num1 will be zero, buffer1 will be empty
 	num1 := smallClassCap / size
 	if num1 > maxBuffer1Cap {
 		// don't buffer too much, since chans with larger buffer consume more memory
 		num1 = maxBuffer1Cap
 	}
+
+	bump := size
+	if bump < 4096 {
+		// align to page to allow madvise
+		bump = 4096
+	}
 	ret := &fixedSizeMmapAllocator{
 		size:          size,
 		checkFraction: checkFraction,
 		buffer1:       make(chan unsafe.Pointer, num1),
-		buffer2:       make(chan unsafe.Pointer, buffer2Cap),
+		bump:          bump,
 	}
+
+	mem, err := unix.Mmap(
+		-1, 0,
+		maxClassSize,
+		unix.PROT_READ|unix.PROT_WRITE,
+		unix.MAP_PRIVATE|unix.MAP_ANONYMOUS,
+	)
+	if err != nil {
+		panic(err)
+	}
+	ret.mem.Store(&mappedMemory{
+		mem: mem,
+	})
+
 	return ret
 }
 
@@ -135,29 +160,33 @@ func (f *fixedSizeMmapAllocator) Allocate(_ uint64) (ptr unsafe.Pointer, dec Dea
 		return ptr, f
 
 	default:
+		for {
 
-		select {
+			// bump
+			mapped := f.mem.Load()
+			offset := mapped.next.Add(f.bump)
+			if offset+f.size < uint64(len(mapped.mem)) {
+				return unsafe.Pointer(unsafe.SliceData(mapped.mem[offset:])), f
+			}
 
-		case ptr := <-f.buffer2:
-			// from buffer2
-			f.reuseMem(ptr)
-			return ptr, f
-
-		default:
-			// allocate new
-			data, err := unix.Mmap(
+			// no more space
+			mem, err := unix.Mmap(
 				-1, 0,
-				int(f.size),
+				maxClassSize,
 				unix.PROT_READ|unix.PROT_WRITE,
 				unix.MAP_PRIVATE|unix.MAP_ANONYMOUS,
 			)
 			if err != nil {
-				panic(fmt.Sprintf("error %v, size %v",
-					err, f.size,
-				))
+				panic(err)
 			}
-			return unsafe.Pointer(unsafe.SliceData(data)), f
-
+			swapped := f.mem.CompareAndSwap(mapped, &mappedMemory{
+				mem: mem,
+			})
+			if !swapped {
+				if err := unix.Munmap(mem); err != nil {
+					panic(err)
+				}
+			}
 		}
 
 	}
@@ -171,7 +200,7 @@ func (f *fixedSizeMmapAllocator) Deallocate(ptr unsafe.Pointer) {
 		fastrand()%f.checkFraction == 0 {
 		// do not reuse to detect use-after-free
 		if err := unix.Munmap(
-			unsafe.Slice((*byte)(ptr), f.size),
+			unsafe.Slice((*byte)(ptr), f.bump),
 		); err != nil {
 			panic(err)
 		}
@@ -184,22 +213,7 @@ func (f *fixedSizeMmapAllocator) Deallocate(ptr unsafe.Pointer) {
 		// buffer in buffer1
 
 	default:
-
 		f.freeMem(ptr)
-
-		select {
-
-		case f.buffer2 <- ptr:
-
-		default:
-			// unmap
-			if err := unix.Munmap(
-				unsafe.Slice((*byte)(ptr), f.size),
-			); err != nil {
-				panic(err)
-			}
-
-		}
 
 	}
 
