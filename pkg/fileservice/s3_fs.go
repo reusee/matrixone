@@ -93,6 +93,12 @@ func NewS3FS(
 			return nil, err
 		}
 
+	case strings.EqualFold(args.Endpoint, "disk"):
+		fs.storage, err = newDiskObjectStorage(ctx, args, perfCounterSets)
+		if err != nil {
+			return nil, err
+		}
+
 	default:
 		fs.storage, err = NewAwsSDKv2(ctx, args, perfCounterSets)
 		if err != nil {
@@ -132,7 +138,11 @@ func (s *S3FS) initCaches(ctx context.Context, config CacheConfig) error {
 	// memory cache
 	if *config.MemoryCapacity > DisableCacheCapacity {
 		s.memCache = NewMemCache(
-			NewMemoryCache(int64(*config.MemoryCapacity), true, &config.CacheCallbacks),
+			NewMemoryCache(
+				int64(*config.MemoryCapacity),
+				config.CheckOverlaps,
+				&config.CacheCallbacks,
+			),
 			s.perfCounterSets,
 		)
 		logutil.Info("fileservice: memory cache initialized",
