@@ -50,7 +50,7 @@ func fuzzAllocator(
 			}
 		}
 
-		time.Sleep(time.Duration(i) % (time.Millisecond * 50))
+		time.Sleep(time.Duration(i) % (time.Microsecond * 50))
 
 	})
 }
