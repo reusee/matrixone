@@ -121,7 +121,6 @@ func (s *MPoolStats) RecordManyFrees(tag string, nfree, sz int64) int64 {
 
 const (
 	NumFixedPool = 5
-	kMemHdrSz    = 16
 	kStripeSize  = 128
 	B            = 1
 	KB           = 1024
@@ -142,12 +141,6 @@ type memHdr struct {
 	guard        [3]uint8
 }
 
-func init() {
-	if unsafe.Sizeof(memHdr{}) != kMemHdrSz {
-		panic("memory header size assertion failed")
-	}
-}
-
 func (pHdr *memHdr) SetGuard() {
 	pHdr.guard[0] = 0xDE
 	pHdr.guard[1] = 0xAD
@@ -156,105 +149,6 @@ func (pHdr *memHdr) SetGuard() {
 
 func (pHdr *memHdr) CheckGuard() bool {
 	return pHdr.guard[0] == 0xDE && pHdr.guard[1] == 0xAD && pHdr.guard[2] == 0xBF
-}
-
-func (pHdr *memHdr) ToSlice(sz, cap int) []byte {
-	ptr := unsafe.Add(unsafe.Pointer(pHdr), kMemHdrSz)
-	bs := unsafe.Slice((*byte)(ptr), cap)
-	return bs[:sz]
-}
-
-// pool for fixed elements.  Note that we preconfigure the pool size.
-// We should consider implement some kind of growing logic.
-type fixedPool struct {
-	m      sync.Mutex
-	noLock bool
-	fpIdx  int8
-	poolId int64
-	eleSz  int32
-	// holds buffers allocated, it is not really used in alloc/free
-	// but hold here for bookkeeping.
-	buf   [][]byte
-	flist unsafe.Pointer
-}
-
-// Initaialze a fixed pool
-func (fp *fixedPool) initPool(tag string, poolid int64, idx int, noLock bool) {
-	eleSz := PoolElemSize[idx]
-	fp.poolId = poolid
-	fp.fpIdx = int8(idx)
-	fp.noLock = noLock
-	fp.eleSz = eleSz
-}
-
-func (fp *fixedPool) nextPtr(ptr unsafe.Pointer) unsafe.Pointer {
-	iptr := *(*unsafe.Pointer)(unsafe.Add(ptr, kMemHdrSz))
-	return iptr
-}
-func (fp *fixedPool) setNextPtr(ptr unsafe.Pointer, next unsafe.Pointer) {
-	iptr := (*unsafe.Pointer)(unsafe.Add(ptr, kMemHdrSz))
-	*iptr = next
-}
-
-func (fp *fixedPool) alloc(sz int32) *memHdr {
-	if !fp.noLock {
-		fp.m.Lock()
-		defer fp.m.Unlock()
-	}
-
-	if fp.flist == nil {
-		buf := make([]byte, kStripeSize*(fp.eleSz+kMemHdrSz))
-		fp.buf = append(fp.buf, buf)
-		// return the first one
-		ret := (unsafe.Pointer)(&buf[0])
-		pHdr := (*memHdr)(ret)
-		pHdr.poolId = fp.poolId
-		pHdr.allocSz = sz
-		pHdr.fixedPoolIdx = fp.fpIdx
-		pHdr.SetGuard()
-
-		ptr := unsafe.Add(ret, fp.eleSz+kMemHdrSz)
-		// and thread the rest
-		for i := 1; i < kStripeSize; i++ {
-			pHdr := (*memHdr)(ptr)
-			pHdr.poolId = fp.poolId
-			pHdr.allocSz = -1
-			pHdr.fixedPoolIdx = fp.fpIdx
-			pHdr.SetGuard()
-			fp.setNextPtr(ptr, fp.flist)
-			fp.flist = ptr
-			ptr = unsafe.Add(ptr, fp.eleSz+kMemHdrSz)
-		}
-		return (*memHdr)(ret)
-	} else {
-		ret := fp.flist
-		fp.flist = fp.nextPtr(fp.flist)
-		pHdr := (*memHdr)(ret)
-		pHdr.allocSz = sz
-		// Zero slice.  Go requires slice to be zeroed.
-		bs := unsafe.Slice((*byte)(unsafe.Add(ret, kMemHdrSz)), fp.eleSz)
-		// the compiler will optimize this loop to memclr
-		for i := range bs {
-			bs[i] = 0
-		}
-		return pHdr
-	}
-}
-
-func (fp *fixedPool) free(hdr *memHdr) {
-	if hdr.poolId != fp.poolId || hdr.fixedPoolIdx != fp.fpIdx ||
-		hdr.allocSz < 0 || hdr.allocSz > fp.eleSz ||
-		!hdr.CheckGuard() {
-		panic(moerr.NewInternalErrorNoCtx("mpool fixed pool hdr corruption.   Possible double free"))
-	}
-
-	if !fp.noLock {
-		fp.m.Lock()
-		defer fp.m.Unlock()
-	}
-	ptr := unsafe.Pointer(hdr)
-	fp.setNextPtr(ptr, fp.flist)
-	fp.flist = ptr
 }
 
 type detailInfo struct {
@@ -325,11 +219,9 @@ type MPool struct {
 	tag        string     // user supplied, for debug/inspect
 	cap        int64      // pool capacity
 	stats      MPoolStats // stats
-	noFixed    bool
 	noLock     bool
 	available  int32 // 0: available, 1: unavailable
 	inUseCount int32 // number of in use call
-	pools      [NumFixedPool]fixedPool
 	details    *mpoolDetails
 
 	// To remove: this thing is highly unlikely to be of any good use.
@@ -423,14 +315,7 @@ func NewMPool(tag string, cap int64, flag int) (*MPool, error) {
 	mp.tag = tag
 	mp.cap = cap
 
-	mp.noFixed = (flag & NoFixed) != 0
 	mp.noLock = (flag & NoFixed) != 0
-
-	if !mp.noFixed {
-		for i := 0; i < NumFixedPool; i++ {
-			mp.pools[i].initPool(mp.tag, mp.id, i, mp.noLock)
-		}
-	}
 
 	mp.sels = &sync.Pool{
 		New: func() any {
