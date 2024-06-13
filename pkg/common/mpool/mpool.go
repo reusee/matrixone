@@ -450,22 +450,22 @@ func (mp *MPool) Alloc(size int) ([]byte, error) {
 		return nil, moerr.NewInternalErrorNoCtx("mpool %s unavailable for alloc", mp.tag)
 	}
 
-	// update in use count
-	atomic.AddInt32(&mp.inUseCount, 1)
-	defer atomic.AddInt32(&mp.inUseCount, -1)
+	// update in use count TODO
+	//atomic.AddInt32(&mp.inUseCount, 1)
+	//defer atomic.AddInt32(&mp.inUseCount, -1)
 
-	// update stats
-	gcurr := globalStats.RecordAlloc("global", int64(size))
-	if gcurr > GlobalCap() {
-		globalStats.RecordFree("global", int64(size))
-		return nil, moerr.NewOOMNoCtx()
-	}
-	mycurr := mp.stats.RecordAlloc(mp.tag, int64(size))
-	if mycurr > mp.Cap() {
-		mp.stats.RecordFree(mp.tag, int64(size))
-		globalStats.RecordFree("global", int64(size))
-		return nil, moerr.NewInternalErrorNoCtx("mpool out of space, alloc %d bytes, cap %d", size, mp.cap)
-	}
+	// update stats TODO
+	//gcurr := globalStats.RecordAlloc("global", int64(size))
+	//if gcurr > GlobalCap() {
+	//	globalStats.RecordFree("global", int64(size))
+	//	return nil, moerr.NewOOMNoCtx()
+	//}
+	//mycurr := mp.stats.RecordAlloc(mp.tag, int64(size))
+	//if mycurr > mp.Cap() {
+	//	mp.stats.RecordFree(mp.tag, int64(size))
+	//	globalStats.RecordFree("global", int64(size))
+	//	return nil, moerr.NewInternalErrorNoCtx("mpool out of space, alloc %d bytes, cap %d", size, mp.cap)
+	//}
 
 	// allocate
 	ptr, deallocator := malloc.GetDefault(nil).Allocate(uint64(size))
@@ -484,7 +484,8 @@ func (mp *MPool) Free(bs []byte) {
 	ptr := unsafe.Pointer(unsafe.SliceData(bs))
 	v, ok := ptrInfos.LoadAndDelete(ptr)
 	if !ok {
-		panic("bad pointer")
+		logutil.Error("bad pointer in MPool.Free")
+		return
 	}
 	info := v.(*ptrInfo)
 	info.deallocator.Deallocate(ptr)
@@ -492,11 +493,12 @@ func (mp *MPool) Free(bs []byte) {
 	atomic.AddInt32(&mp.inUseCount, 1)
 	defer atomic.AddInt32(&mp.inUseCount, -1)
 
-	mp.stats.RecordFree(mp.tag, info.size)
-	globalStats.RecordFree("global", info.size)
-	if mp.details != nil {
-		mp.details.recordFree(info.size)
-	}
+	//TODO
+	//mp.stats.RecordFree(mp.tag, info.size)
+	//globalStats.RecordFree("global", info.size)
+	//if mp.details != nil {
+	//	mp.details.recordFree(info.size)
+	//}
 
 }
 
