@@ -23,6 +23,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/matrixorigin/matrixone/pkg/common/malloc"
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 	"github.com/matrixorigin/matrixone/pkg/logutil"
 	v2 "github.com/matrixorigin/matrixone/pkg/util/metric/v2"
@@ -543,14 +544,20 @@ func sizeToIdx(size int) int {
 	return NumFixedPool
 }
 
-func (mp *MPool) Alloc(sz int) ([]byte, error) {
-	// reject unexpected alloc size.
-	if sz < 0 || sz > GB {
-		logutil.Errorf("Invalid alloc size %d: %s", sz, string(debug.Stack()))
-		return nil, moerr.NewInternalErrorNoCtx("Invalid alloc size %d", sz)
+type ptrInfo struct {
+	size        int64
+	deallocator malloc.Deallocator
+}
+
+var ptrInfos sync.Map
+
+func (mp *MPool) Alloc(size int) ([]byte, error) {
+	if size < 0 || size > GB {
+		logutil.Errorf("Invalid alloc size %d: %s", size, string(debug.Stack()))
+		return nil, moerr.NewInternalErrorNoCtx("Invalid alloc size %d", size)
 	}
 
-	if sz == 0 {
+	if size == 0 {
 		return nil, nil
 	}
 
@@ -562,89 +569,50 @@ func (mp *MPool) Alloc(sz int) ([]byte, error) {
 	atomic.AddInt32(&mp.inUseCount, 1)
 	defer atomic.AddInt32(&mp.inUseCount, -1)
 
-	idx := NumFixedPool
-	requiredSpaceWithoutHeader := sz
-	if !mp.noFixed {
-		idx = sizeToIdx(requiredSpaceWithoutHeader)
-		if idx < NumFixedPool {
-			requiredSpaceWithoutHeader = int(mp.pools[idx].eleSz)
-		}
-	}
-
-	tempSize := int64(requiredSpaceWithoutHeader + kMemHdrSz)
-	gcurr := globalStats.RecordAlloc("global", tempSize)
+	// update stats
+	gcurr := globalStats.RecordAlloc("global", int64(size))
 	if gcurr > GlobalCap() {
-		globalStats.RecordFree("global", tempSize)
+		globalStats.RecordFree("global", int64(size))
 		return nil, moerr.NewOOMNoCtx()
 	}
-	mycurr := mp.stats.RecordAlloc(mp.tag, tempSize)
+	mycurr := mp.stats.RecordAlloc(mp.tag, int64(size))
 	if mycurr > mp.Cap() {
-		mp.stats.RecordFree(mp.tag, tempSize)
-		globalStats.RecordFree("global", tempSize)
-		return nil, moerr.NewInternalErrorNoCtx("mpool out of space, alloc %d bytes, cap %d", sz, mp.cap)
+		mp.stats.RecordFree(mp.tag, int64(size))
+		globalStats.RecordFree("global", int64(size))
+		return nil, moerr.NewInternalErrorNoCtx("mpool out of space, alloc %d bytes, cap %d", size, mp.cap)
 	}
 
-	// from fixed pool
-	if idx < NumFixedPool {
-		bs := mp.pools[idx].alloc(int32(requiredSpaceWithoutHeader))
-		if mp.details != nil {
-			mp.details.recordAlloc(int64(bs.allocSz))
-		}
-		return bs.ToSlice(sz, int(mp.pools[idx].eleSz)), nil
-	}
-
-	return alloc(sz, requiredSpaceWithoutHeader, mp), nil
+	// allocate
+	ptr, deallocator := malloc.GetDefault(nil).Allocate(uint64(size))
+	ptrInfos.Store(ptr, &ptrInfo{
+		size:        int64(size),
+		deallocator: deallocator,
+	})
+	return unsafe.Slice((*byte)(ptr), size), nil
 }
 
 func (mp *MPool) Free(bs []byte) {
-	if bs == nil || cap(bs) == 0 {
-		return
-	}
-	bs = bs[:1]
-	hdr := unsafe.Add((unsafe.Pointer)(&bs[0]), -kMemHdrSz)
-	pHdr := (*memHdr)(hdr)
-
-	if !pHdr.CheckGuard() {
-		panic(moerr.NewInternalErrorNoCtx("invalid free, mp header corruption"))
-	}
 	if atomic.LoadInt32(&mp.available) == Unavailable {
 		panic(moerr.NewInternalErrorNoCtx("mpool %s unavailable for free", mp.tag))
 	}
 
-	// if cross pool free.
-	if pHdr.poolId != mp.id {
-		crossPoolFreeCounter.Add(1)
-		otherPool, ok := globalPools.Load(pHdr.poolId)
-		if !ok {
-			panic(moerr.NewInternalErrorNoCtx("invalid mpool id %d", pHdr.poolId))
-		}
-		(otherPool.(*MPool)).Free(bs)
-		return
+	ptr := unsafe.Pointer(unsafe.SliceData(bs))
+	v, ok := ptrInfos.LoadAndDelete(ptr)
+	if !ok {
+		panic("bad pointer")
 	}
+	info := v.(*ptrInfo)
+	info.deallocator.Deallocate(ptr)
 
 	atomic.AddInt32(&mp.inUseCount, 1)
 	defer atomic.AddInt32(&mp.inUseCount, -1)
-	// double free check
-	if atomic.LoadInt32(&pHdr.allocSz) == -1 {
-		panic(moerr.NewInternalErrorNoCtx("free size -1, possible double free"))
-	}
 
-	recordSize := int64(pHdr.allocSz) + kMemHdrSz
-	mp.stats.RecordFree(mp.tag, recordSize)
-	globalStats.RecordFree("global", recordSize)
+	mp.stats.RecordFree(mp.tag, info.size)
+	globalStats.RecordFree("global", info.size)
 	if mp.details != nil {
-		mp.details.recordFree(int64(pHdr.allocSz))
+		mp.details.recordFree(info.size)
 	}
 
-	// free from fixed pool
-	if pHdr.fixedPoolIdx < NumFixedPool {
-		mp.pools[pHdr.fixedPoolIdx].free(pHdr)
-	} else {
-		// non fixed pool just mark it freed
-		if !atomic.CompareAndSwapInt32(&pHdr.allocSz, pHdr.allocSz, -1) {
-			panic(moerr.NewInternalErrorNoCtx("free size -1, possible double free"))
-		}
-	}
 }
 
 func (mp *MPool) reAlloc(old []byte, sz int) ([]byte, error) {
