@@ -21,8 +21,8 @@ import (
 	"sort"
 	"unsafe"
 
+	"github.com/matrixorigin/matrixone/pkg/common/malloc"
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
-	"github.com/matrixorigin/matrixone/pkg/common/mpool"
 	"github.com/matrixorigin/matrixone/pkg/common/reuse"
 	"github.com/matrixorigin/matrixone/pkg/container/nulls"
 	"github.com/matrixorigin/matrixone/pkg/container/types"
@@ -44,11 +44,15 @@ type Vector struct {
 	typ types.Type
 
 	// data of fixed length element, in case of varlen, the Varlena
-	col  typedSlice
-	data []byte
+	col             typedSlice
+	data            []byte
+	dataPtr         unsafe.Pointer
+	dataDeallocator malloc.Deallocator
 
 	// area for holding large strings.
-	area []byte
+	area            []byte
+	areaPtr         unsafe.Pointer
+	areaDeallocator malloc.Deallocator
 
 	capacity int
 	length   int
@@ -288,7 +292,7 @@ func NewVec(typ types.Type) *Vector {
 	return vec
 }
 
-func NewConstNull(typ types.Type, length int, mp *mpool.MPool) *Vector {
+func NewConstNull(typ types.Type, length int, mp malloc.Allocator) *Vector {
 	vec := NewVecFromReuse()
 	vec.typ = typ
 	vec.class = CONSTANT
@@ -297,7 +301,7 @@ func NewConstNull(typ types.Type, length int, mp *mpool.MPool) *Vector {
 	return vec
 }
 
-func NewConstFixed[T any](typ types.Type, val T, length int, mp *mpool.MPool) (vec *Vector, err error) {
+func NewConstFixed[T any](typ types.Type, val T, length int, mp malloc.Allocator) (vec *Vector, err error) {
 	vec = NewVecFromReuse()
 	vec.typ = typ
 	vec.class = CONSTANT
@@ -309,7 +313,7 @@ func NewConstFixed[T any](typ types.Type, val T, length int, mp *mpool.MPool) (v
 	return vec, err
 }
 
-func NewConstBytes(typ types.Type, val []byte, length int, mp *mpool.MPool) (vec *Vector, err error) {
+func NewConstBytes(typ types.Type, val []byte, length int, mp malloc.Allocator) (vec *Vector, err error) {
 	vec = NewVecFromReuse()
 	vec.typ = typ
 	vec.class = CONSTANT
@@ -322,7 +326,7 @@ func NewConstBytes(typ types.Type, val []byte, length int, mp *mpool.MPool) (vec
 }
 
 // NewConstArray Creates a Const_Array Vector
-func NewConstArray[T types.RealNumbers](typ types.Type, val []T, length int, mp *mpool.MPool) (vec *Vector, err error) {
+func NewConstArray[T types.RealNumbers](typ types.Type, val []T, length int, mp malloc.Allocator) (vec *Vector, err error) {
 	vec = NewVecFromReuse()
 	vec.typ = typ
 	vec.class = CONSTANT
@@ -379,7 +383,7 @@ func SetFixedAt[T types.FixedSizeT](v *Vector, idx int, t T) error {
 	return nil
 }
 
-func SetBytesAt(v *Vector, idx int, bs []byte, mp *mpool.MPool) error {
+func SetBytesAt(v *Vector, idx int, bs []byte, mp malloc.Allocator) error {
 	var va types.Varlena
 	err := BuildVarlenaFromByteSlice(v, &va, &bs, mp)
 	if err != nil {
@@ -388,7 +392,7 @@ func SetBytesAt(v *Vector, idx int, bs []byte, mp *mpool.MPool) error {
 	return SetFixedAt(v, idx, va)
 }
 
-func SetStringAt(v *Vector, idx int, bs string, mp *mpool.MPool) error {
+func SetStringAt(v *Vector, idx int, bs string, mp malloc.Allocator) error {
 	return SetBytesAt(v, idx, []byte(bs), mp)
 }
 
@@ -416,12 +420,16 @@ func GetPtrAt[T any](v *Vector, idx int64) *T {
 	return (*T)(unsafe.Pointer(&v.data[idx]))
 }
 
-func (v *Vector) Free(mp *mpool.MPool) {
+func (v *Vector) Free(mp malloc.Allocator) {
 	if !v.cantFreeData {
-		mp.Free(v.data)
+		if v.dataDeallocator != nil {
+			v.dataDeallocator.Deallocate(v.dataPtr)
+		}
 	}
 	if !v.cantFreeArea {
-		mp.Free(v.area)
+		if v.areaDeallocator != nil {
+			v.areaDeallocator.Deallocate(v.areaPtr)
+		}
 	}
 	v.class = FLAT
 	v.col.reset()
@@ -557,8 +565,43 @@ func (v *Vector) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-func (v *Vector) UnmarshalBinaryWithCopy(data []byte, mp *mpool.MPool) error {
-	var err error
+func (v *Vector) allocateData(allocator malloc.Allocator, size uint64, copyOld bool) error {
+	ptr, dec, err := allocator.Allocate(size)
+	if err != nil {
+		return err
+	}
+	slice := unsafe.Slice((*byte)(ptr), size)
+	if copyOld {
+		copy(slice, v.data)
+	}
+	if v.dataDeallocator != nil {
+		v.dataDeallocator.Deallocate(v.dataPtr)
+	}
+	v.dataPtr = ptr
+	v.dataDeallocator = dec
+	v.data = slice
+	return nil
+}
+
+func (v *Vector) allocateArea(allocator malloc.Allocator, size uint64, copyOld bool) error {
+	ptr, dec, err := allocator.Allocate(size)
+	if err != nil {
+		return err
+	}
+	slice := unsafe.Slice((*byte)(ptr), size)
+	if copyOld {
+		copy(slice, v.area)
+	}
+	if v.areaDeallocator != nil {
+		v.areaDeallocator.Deallocate(v.areaPtr)
+	}
+	v.areaPtr = ptr
+	v.areaDeallocator = dec
+	v.area = slice
+	return nil
+}
+
+func (v *Vector) UnmarshalBinaryWithCopy(data []byte, mp malloc.Allocator) error {
 
 	// read class
 	v.class = int(data[0])
@@ -576,8 +619,7 @@ func (v *Vector) UnmarshalBinaryWithCopy(data []byte, mp *mpool.MPool) error {
 	dataLen := int(types.DecodeUint32(data[:4]))
 	data = data[4:]
 	if dataLen > 0 {
-		v.data, err = mp.Alloc(dataLen)
-		if err != nil {
+		if err := v.allocateData(mp, uint64(dataLen), false); err != nil {
 			return err
 		}
 		copy(v.data, data[:dataLen])
@@ -589,8 +631,7 @@ func (v *Vector) UnmarshalBinaryWithCopy(data []byte, mp *mpool.MPool) error {
 	areaLen := int(types.DecodeUint32(data[:4]))
 	data = data[4:]
 	if areaLen > 0 {
-		v.area, err = mp.Alloc(areaLen)
-		if err != nil {
+		if err := v.allocateArea(mp, uint64(areaLen), false); err != nil {
 			return err
 		}
 		copy(v.area, data[:areaLen])
@@ -615,7 +656,7 @@ func (v *Vector) UnmarshalBinaryWithCopy(data []byte, mp *mpool.MPool) error {
 	return nil
 }
 
-func (v *Vector) ToConst(row, length int, mp *mpool.MPool) *Vector {
+func (v *Vector) ToConst(row, length int, mp malloc.Allocator) *Vector {
 	w := NewConstNull(v.typ, length, mp)
 	if v.IsConstNull() || v.nsp.Contains(uint64(row)) {
 		return w
@@ -638,7 +679,7 @@ func (v *Vector) ToConst(row, length int, mp *mpool.MPool) *Vector {
 }
 
 // PreExtend use to expand the capacity of the vector
-func (v *Vector) PreExtend(rows int, mp *mpool.MPool) error {
+func (v *Vector) PreExtend(rows int, mp malloc.Allocator) error {
 	if v.class == CONSTANT {
 		return nil
 	}
@@ -647,12 +688,10 @@ func (v *Vector) PreExtend(rows int, mp *mpool.MPool) error {
 }
 
 // Dup use to copy an identical vector
-func (v *Vector) Dup(mp *mpool.MPool) (*Vector, error) {
+func (v *Vector) Dup(mp malloc.Allocator) (*Vector, error) {
 	if v.IsConstNull() {
 		return NewConstNull(v.typ, v.Length(), mp), nil
 	}
-
-	var err error
 
 	w := NewVecFromReuse()
 	w.class = v.class
@@ -675,7 +714,7 @@ func (v *Vector) Dup(mp *mpool.MPool) (*Vector, error) {
 	copy(w.data, v.data[:dataLen])
 
 	if len(v.area) > 0 {
-		if w.area, err = mp.Alloc(len(v.area)); err != nil {
+		if err := v.allocateArea(mp, uint64(len(v.area)), false); err != nil {
 			return nil, err
 		}
 		copy(w.area, v.area)
@@ -753,7 +792,7 @@ func (v *Vector) Shrink(sels []int64, negate bool) {
 }
 
 // Shuffle use to shrink vectors, sels can be disordered
-func (v *Vector) Shuffle(sels []int64, mp *mpool.MPool) (err error) {
+func (v *Vector) Shuffle(sels []int64, mp malloc.Allocator) (err error) {
 	if v.IsConst() {
 		return nil
 	}
@@ -817,7 +856,7 @@ func (v *Vector) Shuffle(sels []int64, mp *mpool.MPool) (err error) {
 
 // XXX Old Copy is FUBAR.
 // Copy simply does v[vi] = w[wi]
-func (v *Vector) Copy(w *Vector, vi, wi int64, mp *mpool.MPool) error {
+func (v *Vector) Copy(w *Vector, vi, wi int64, mp malloc.Allocator) error {
 	if w.class == CONSTANT {
 		if w.IsConstNull() {
 			v.nsp.Set(uint64(vi))
@@ -853,7 +892,7 @@ func (v *Vector) Copy(w *Vector, vi, wi int64, mp *mpool.MPool) error {
 
 // GetUnionAllFunction: A more sensible function for copying vector,
 // which avoids having to do type conversions and type judgements every time you append.
-func GetUnionAllFunction(typ types.Type, mp *mpool.MPool) func(v, w *Vector) error {
+func GetUnionAllFunction(typ types.Type, mp malloc.Allocator) func(v, w *Vector) error {
 	switch typ.Oid {
 	case types.T_bool:
 		return func(v, w *Vector) error {
@@ -1536,12 +1575,10 @@ func GetUnionAllFunction(typ types.Type, mp *mpool.MPool) func(v, w *Vector) err
 			if err := extend(v, w.length, mp); err != nil {
 				return err
 			}
-			if sz := len(v.area) + len(w.area); sz > cap(v.area) {
-				area, err := mp.Grow(v.area, sz)
-				if err != nil {
+			if size := len(v.area) + len(w.area); size > cap(v.area) {
+				if err := v.allocateArea(mp, uint64(size), true); err != nil {
 					return err
 				}
-				v.area = area[:len(v.area)]
 			}
 			var vs []types.Varlena
 			ToSlice(v, &vs)
@@ -1596,7 +1633,7 @@ func GetUnionAllFunction(typ types.Type, mp *mpool.MPool) func(v, w *Vector) err
 
 // GetUnionOneFunction: A more sensible function for copying elements,
 // which avoids having to do type conversions and type judgements every time you append.
-func GetUnionOneFunction(typ types.Type, mp *mpool.MPool) func(v, w *Vector, sel int64) error {
+func GetUnionOneFunction(typ types.Type, mp malloc.Allocator) func(v, w *Vector, sel int64) error {
 	switch typ.Oid {
 	case types.T_bool:
 		return func(v, w *Vector, sel int64) error {
@@ -1874,7 +1911,7 @@ func GetUnionOneFunction(typ types.Type, mp *mpool.MPool) func(v, w *Vector, sel
 
 // GetConstSetFunction: A more sensible function for const vector set,
 // which avoids having to do type conversions and type judgements every time you append.
-func GetConstSetFunction(typ types.Type, mp *mpool.MPool) func(v, w *Vector, sel int64, length int) error {
+func GetConstSetFunction(typ types.Type, mp malloc.Allocator) func(v, w *Vector, sel int64, length int) error {
 	switch typ.Oid {
 	case types.T_bool:
 		return func(v, w *Vector, sel int64, length int) error {
@@ -2147,12 +2184,12 @@ func GetConstSetFunction(typ types.Type, mp *mpool.MPool) func(v, w *Vector, sel
 	}
 }
 
-func (v *Vector) UnionNull(mp *mpool.MPool) error {
+func (v *Vector) UnionNull(mp malloc.Allocator) error {
 	return appendOneFixed(v, 0, true, mp)
 }
 
 // It is simply append. the purpose of retention is ease of use
-func (v *Vector) UnionOne(w *Vector, sel int64, mp *mpool.MPool) error {
+func (v *Vector) UnionOne(w *Vector, sel int64, mp malloc.Allocator) error {
 	if err := extend(v, 1, mp); err != nil {
 		return err
 	}
@@ -2204,7 +2241,7 @@ func (v *Vector) UnionOne(w *Vector, sel int64, mp *mpool.MPool) error {
 }
 
 // It is simply append. the purpose of retention is ease of use
-func (v *Vector) UnionMulti(w *Vector, sel int64, cnt int, mp *mpool.MPool) error {
+func (v *Vector) UnionMulti(w *Vector, sel int64, cnt int, mp malloc.Allocator) error {
 	if cnt == 0 {
 		return nil
 	}
@@ -2267,7 +2304,7 @@ func (v *Vector) UnionMulti(w *Vector, sel int64, cnt int, mp *mpool.MPool) erro
 	return nil
 }
 
-func (v *Vector) Union(w *Vector, sels []int32, mp *mpool.MPool) error {
+func (v *Vector) Union(w *Vector, sels []int32, mp malloc.Allocator) error {
 	if len(sels) == 0 {
 		return nil
 	}
@@ -2375,7 +2412,7 @@ func (v *Vector) Union(w *Vector, sels []int32, mp *mpool.MPool) error {
 	return nil
 }
 
-func (v *Vector) UnionBatch(w *Vector, offset int64, cnt int, flags []uint8, mp *mpool.MPool) error {
+func (v *Vector) UnionBatch(w *Vector, offset int64, cnt int, flags []uint8, mp malloc.Allocator) error {
 	addCnt := 0
 	if flags == nil {
 		addCnt = cnt
@@ -2623,7 +2660,7 @@ func (v *Vector) String() string {
 	}
 }
 
-func SetConstNull(vec *Vector, length int, mp *mpool.MPool) error {
+func SetConstNull(vec *Vector, length int, mp malloc.Allocator) error {
 	if len(vec.data) > 0 {
 		vec.data = vec.data[:0]
 	}
@@ -2632,7 +2669,7 @@ func SetConstNull(vec *Vector, length int, mp *mpool.MPool) error {
 	return nil
 }
 
-func SetConstFixed[T any](vec *Vector, val T, length int, mp *mpool.MPool) error {
+func SetConstFixed[T any](vec *Vector, val T, length int, mp malloc.Allocator) error {
 	if vec.capacity == 0 {
 		if err := extend(vec, 1, mp); err != nil {
 			return err
@@ -2647,7 +2684,7 @@ func SetConstFixed[T any](vec *Vector, val T, length int, mp *mpool.MPool) error
 	return nil
 }
 
-func SetConstBytes(vec *Vector, val []byte, length int, mp *mpool.MPool) error {
+func SetConstBytes(vec *Vector, val []byte, length int, mp malloc.Allocator) error {
 	var err error
 	if vec.capacity == 0 {
 		if err := extend(vec, 1, mp); err != nil {
@@ -2667,7 +2704,7 @@ func SetConstBytes(vec *Vector, val []byte, length int, mp *mpool.MPool) error {
 }
 
 // SetConstArray set current vector as Constant_Array vector of given length.
-func SetConstArray[T types.RealNumbers](vec *Vector, val []T, length int, mp *mpool.MPool) error {
+func SetConstArray[T types.RealNumbers](vec *Vector, val []T, length int, mp malloc.Allocator) error {
 	var err error
 
 	if vec.capacity == 0 {
@@ -2687,7 +2724,7 @@ func SetConstArray[T types.RealNumbers](vec *Vector, val []T, length int, mp *mp
 	return nil
 }
 
-func AppendAny(vec *Vector, val any, isNull bool, mp *mpool.MPool) error {
+func AppendAny(vec *Vector, val any, isNull bool, mp malloc.Allocator) error {
 	if vec.IsConst() {
 		panic(moerr.NewInternalErrorNoCtx("append to const vector"))
 	}
@@ -2753,7 +2790,7 @@ func AppendAny(vec *Vector, val any, isNull bool, mp *mpool.MPool) error {
 	return nil
 }
 
-func AppendFixed[T any](vec *Vector, val T, isNull bool, mp *mpool.MPool) error {
+func AppendFixed[T any](vec *Vector, val T, isNull bool, mp malloc.Allocator) error {
 	if vec.IsConst() {
 		panic(moerr.NewInternalErrorNoCtx("append to const vector"))
 	}
@@ -2763,7 +2800,7 @@ func AppendFixed[T any](vec *Vector, val T, isNull bool, mp *mpool.MPool) error 
 	return appendOneFixed(vec, val, isNull, mp)
 }
 
-func AppendBytes(vec *Vector, val []byte, isNull bool, mp *mpool.MPool) error {
+func AppendBytes(vec *Vector, val []byte, isNull bool, mp malloc.Allocator) error {
 	if vec.IsConst() {
 		panic(moerr.NewInternalErrorNoCtx("append to const vector"))
 	}
@@ -2774,7 +2811,7 @@ func AppendBytes(vec *Vector, val []byte, isNull bool, mp *mpool.MPool) error {
 }
 
 // AppendArray mainly used in tests
-func AppendArray[T types.RealNumbers](vec *Vector, val []T, isNull bool, mp *mpool.MPool) error {
+func AppendArray[T types.RealNumbers](vec *Vector, val []T, isNull bool, mp malloc.Allocator) error {
 	if vec.IsConst() {
 		panic(moerr.NewInternalErrorNoCtx("append to const vector"))
 	}
@@ -2784,7 +2821,7 @@ func AppendArray[T types.RealNumbers](vec *Vector, val []T, isNull bool, mp *mpo
 	return appendOneArray[T](vec, val, isNull, mp)
 }
 
-func AppendMultiFixed[T any](vec *Vector, vals T, isNull bool, cnt int, mp *mpool.MPool) error {
+func AppendMultiFixed[T any](vec *Vector, vals T, isNull bool, cnt int, mp malloc.Allocator) error {
 	if vec.IsConst() {
 		panic(moerr.NewInternalErrorNoCtx("append to const vector"))
 	}
@@ -2794,7 +2831,7 @@ func AppendMultiFixed[T any](vec *Vector, vals T, isNull bool, cnt int, mp *mpoo
 	return appendMultiFixed(vec, vals, isNull, cnt, mp)
 }
 
-func AppendMultiBytes(vec *Vector, vals []byte, isNull bool, cnt int, mp *mpool.MPool) error {
+func AppendMultiBytes(vec *Vector, vals []byte, isNull bool, cnt int, mp malloc.Allocator) error {
 	if vec.IsConst() {
 		panic(moerr.NewInternalErrorNoCtx("append to const vector"))
 	}
@@ -2804,7 +2841,7 @@ func AppendMultiBytes(vec *Vector, vals []byte, isNull bool, cnt int, mp *mpool.
 	return appendMultiBytes(vec, vals, isNull, cnt, mp)
 }
 
-func AppendFixedList[T any](vec *Vector, ws []T, isNulls []bool, mp *mpool.MPool) error {
+func AppendFixedList[T any](vec *Vector, ws []T, isNulls []bool, mp malloc.Allocator) error {
 	if vec.IsConst() {
 		panic(moerr.NewInternalErrorNoCtx("append to const vector"))
 	}
@@ -2817,7 +2854,7 @@ func AppendFixedList[T any](vec *Vector, ws []T, isNulls []bool, mp *mpool.MPool
 	return appendList(vec, ws, isNulls, mp)
 }
 
-func AppendBytesList(vec *Vector, ws [][]byte, isNulls []bool, mp *mpool.MPool) error {
+func AppendBytesList(vec *Vector, ws [][]byte, isNulls []bool, mp malloc.Allocator) error {
 	if vec.IsConst() {
 		panic(moerr.NewInternalErrorNoCtx("append to const vector"))
 	}
@@ -2830,7 +2867,7 @@ func AppendBytesList(vec *Vector, ws [][]byte, isNulls []bool, mp *mpool.MPool) 
 	return appendBytesList(vec, ws, isNulls, mp)
 }
 
-func AppendStringList(vec *Vector, ws []string, isNulls []bool, mp *mpool.MPool) error {
+func AppendStringList(vec *Vector, ws []string, isNulls []bool, mp malloc.Allocator) error {
 	if vec.IsConst() {
 		panic(moerr.NewInternalErrorNoCtx("append to const vector"))
 	}
@@ -2844,7 +2881,7 @@ func AppendStringList(vec *Vector, ws []string, isNulls []bool, mp *mpool.MPool)
 }
 
 // AppendArrayList mainly used in unit tests
-func AppendArrayList[T types.RealNumbers](vec *Vector, ws [][]T, isNulls []bool, mp *mpool.MPool) error {
+func AppendArrayList[T types.RealNumbers](vec *Vector, ws [][]T, isNulls []bool, mp malloc.Allocator) error {
 	if vec.IsConst() {
 		panic(moerr.NewInternalErrorNoCtx("append to const vector"))
 	}
@@ -2857,7 +2894,7 @@ func AppendArrayList[T types.RealNumbers](vec *Vector, ws [][]T, isNulls []bool,
 	return appendArrayList[T](vec, ws, isNulls, mp)
 }
 
-func appendOneFixed[T any](vec *Vector, val T, isNull bool, mp *mpool.MPool) error {
+func appendOneFixed[T any](vec *Vector, val T, isNull bool, mp malloc.Allocator) error {
 	if err := extend(vec, 1, mp); err != nil {
 		return err
 	}
@@ -2873,7 +2910,7 @@ func appendOneFixed[T any](vec *Vector, val T, isNull bool, mp *mpool.MPool) err
 	return nil
 }
 
-func appendOneBytes(vec *Vector, val []byte, isNull bool, mp *mpool.MPool) error {
+func appendOneBytes(vec *Vector, val []byte, isNull bool, mp malloc.Allocator) error {
 	var err error
 	var va types.Varlena
 
@@ -2889,7 +2926,7 @@ func appendOneBytes(vec *Vector, val []byte, isNull bool, mp *mpool.MPool) error
 }
 
 // appendOneArray mainly used for unit tests
-func appendOneArray[T types.RealNumbers](vec *Vector, val []T, isNull bool, mp *mpool.MPool) error {
+func appendOneArray[T types.RealNumbers](vec *Vector, val []T, isNull bool, mp malloc.Allocator) error {
 	var err error
 	var va types.Varlena
 
@@ -2904,7 +2941,7 @@ func appendOneArray[T types.RealNumbers](vec *Vector, val []T, isNull bool, mp *
 	}
 }
 
-func appendMultiFixed[T any](vec *Vector, val T, isNull bool, cnt int, mp *mpool.MPool) error {
+func appendMultiFixed[T any](vec *Vector, val T, isNull bool, cnt int, mp malloc.Allocator) error {
 	if err := extend(vec, cnt, mp); err != nil {
 		return err
 	}
@@ -2922,7 +2959,7 @@ func appendMultiFixed[T any](vec *Vector, val T, isNull bool, cnt int, mp *mpool
 	return nil
 }
 
-func appendMultiBytes(vec *Vector, val []byte, isNull bool, cnt int, mp *mpool.MPool) error {
+func appendMultiBytes(vec *Vector, val []byte, isNull bool, cnt int, mp malloc.Allocator) error {
 	var err error
 	var va types.Varlena
 	if err = extend(vec, cnt, mp); err != nil {
@@ -2946,7 +2983,7 @@ func appendMultiBytes(vec *Vector, val []byte, isNull bool, cnt int, mp *mpool.M
 	return nil
 }
 
-func appendList[T any](vec *Vector, vals []T, isNulls []bool, mp *mpool.MPool) error {
+func appendList[T any](vec *Vector, vals []T, isNulls []bool, mp malloc.Allocator) error {
 	if err := extend(vec, len(vals), mp); err != nil {
 		return err
 	}
@@ -2963,7 +3000,7 @@ func appendList[T any](vec *Vector, vals []T, isNulls []bool, mp *mpool.MPool) e
 	return nil
 }
 
-func appendBytesList(vec *Vector, vals [][]byte, isNulls []bool, mp *mpool.MPool) error {
+func appendBytesList(vec *Vector, vals [][]byte, isNulls []bool, mp malloc.Allocator) error {
 	var err error
 	if err = extend(vec, len(vals), mp); err != nil {
 		return err
@@ -2984,7 +3021,7 @@ func appendBytesList(vec *Vector, vals [][]byte, isNulls []bool, mp *mpool.MPool
 	return nil
 }
 
-func appendStringList(vec *Vector, vals []string, isNulls []bool, mp *mpool.MPool) error {
+func appendStringList(vec *Vector, vals []string, isNulls []bool, mp malloc.Allocator) error {
 	var err error
 
 	if err = extend(vec, len(vals), mp); err != nil {
@@ -3008,7 +3045,7 @@ func appendStringList(vec *Vector, vals []string, isNulls []bool, mp *mpool.MPoo
 }
 
 // appendArrayList mainly used for unit tests
-func appendArrayList[T types.RealNumbers](vec *Vector, vals [][]T, isNulls []bool, mp *mpool.MPool) error {
+func appendArrayList[T types.RealNumbers](vec *Vector, vals [][]T, isNulls []bool, mp malloc.Allocator) error {
 	var err error
 
 	if err = extend(vec, len(vals), mp); err != nil {
@@ -3061,16 +3098,12 @@ func shrinkFixed[T types.FixedSizeT](v *Vector, sels []int64, negate bool) {
 	}
 }
 
-func shuffleFixed[T types.FixedSizeT](v *Vector, sels []int64, mp *mpool.MPool) error {
-	sz := v.typ.TypeSize()
-	olddata := v.data[:v.length*sz]
+func shuffleFixed[T types.FixedSizeT](v *Vector, sels []int64, mp malloc.Allocator) error {
 	ns := len(sels)
 	vs := MustFixedCol[T](v)
-	data, err := mp.Alloc(ns * v.GetType().TypeSize())
-	if err != nil {
+	if err := v.allocateData(mp, uint64(ns*v.GetType().TypeSize()), false); err != nil {
 		return err
 	}
-	v.data = data
 	v.setupColFromData()
 	var ws []T
 	ToSlice(v, &ws)
@@ -3080,8 +3113,6 @@ func shuffleFixed[T types.FixedSizeT](v *Vector, sels []int64, mp *mpool.MPool) 
 	// XXX We should never allow "half-owned" vectors later. And unowned vector should be strictly read-only.
 	if v.cantFreeData {
 		v.cantFreeData = false
-	} else {
-		mp.Free(olddata)
 	}
 	v.length = ns
 	return nil
@@ -3140,7 +3171,7 @@ func (v *Vector) Window(start, end int) (*Vector, error) {
 }
 
 // CloneWindow Deep copies the content from start to end into another vector. Afterwise it's safe to destroy the original one.
-func (v *Vector) CloneWindow(start, end int, mp *mpool.MPool) (*Vector, error) {
+func (v *Vector) CloneWindow(start, end int, mp malloc.Allocator) (*Vector, error) {
 	if start == end {
 		return NewVec(v.typ), nil
 	}
@@ -3173,7 +3204,7 @@ func (v *Vector) CloneWindow(start, end int, mp *mpool.MPool) (*Vector, error) {
 	return w, nil
 }
 
-func (v *Vector) CloneWindowTo(w *Vector, start, end int, mp *mpool.MPool) error {
+func (v *Vector) CloneWindowTo(w *Vector, start, end int, mp malloc.Allocator) error {
 	if start == end {
 		return nil
 	}
@@ -4115,7 +4146,7 @@ func BuildVarlenaInline(v1, v2 *types.Varlena) {
 	*(*int64)(unsafe.Add(p1, 16)) = *(*int64)(unsafe.Add(p2, 16))
 }
 
-func BuildVarlenaNoInline(vec *Vector, v1 *types.Varlena, bs *[]byte, m *mpool.MPool) error {
+func BuildVarlenaNoInline(vec *Vector, v1 *types.Varlena, bs *[]byte, m malloc.Allocator) error {
 	vlen := len(*bs)
 	area1 := vec.GetArea()
 	voff := len(area1)
@@ -4125,17 +4156,15 @@ func BuildVarlenaNoInline(vec *Vector, v1 *types.Varlena, bs *[]byte, m *mpool.M
 		vec.SetArea(area1)
 		return nil
 	}
-	var err error
-	area1, err = m.Grow2(area1, *bs, voff+vlen)
-	if err != nil {
+	if err := vec.allocateArea(m, uint64(voff+vlen), false); err != nil {
 		return err
 	}
+	copy(vec.area, *bs)
 	v1.SetOffsetLen(uint32(voff), uint32(vlen))
-	vec.SetArea(area1)
 	return nil
 }
 
-func BuildVarlenaFromValena(vec *Vector, v1, v2 *types.Varlena, area *[]byte, m *mpool.MPool) error {
+func BuildVarlenaFromValena(vec *Vector, v1, v2 *types.Varlena, area *[]byte, m malloc.Allocator) error {
 	if (*v2)[0] <= types.VarlenaInlineSize {
 		BuildVarlenaInline(v1, v2)
 		return nil
@@ -4145,7 +4174,7 @@ func BuildVarlenaFromValena(vec *Vector, v1, v2 *types.Varlena, area *[]byte, m 
 	return BuildVarlenaNoInline(vec, v1, &bs, m)
 }
 
-func BuildVarlenaFromByteSlice(vec *Vector, v *types.Varlena, bs *[]byte, m *mpool.MPool) error {
+func BuildVarlenaFromByteSlice(vec *Vector, v *types.Varlena, bs *[]byte, m malloc.Allocator) error {
 	vlen := len(*bs)
 	if vlen <= types.VarlenaInlineSize {
 		// first clear varlena to 0
@@ -4161,7 +4190,7 @@ func BuildVarlenaFromByteSlice(vec *Vector, v *types.Varlena, bs *[]byte, m *mpo
 }
 
 // BuildVarlenaFromArray convert array to Varlena so that it can be stored in the vector
-func BuildVarlenaFromArray[T types.RealNumbers](vec *Vector, v *types.Varlena, array *[]T, m *mpool.MPool) error {
+func BuildVarlenaFromArray[T types.RealNumbers](vec *Vector, v *types.Varlena, array *[]T, m malloc.Allocator) error {
 	_bs := types.ArrayToBytes[T](*array)
 	bs := &_bs
 	vlen := len(*bs)

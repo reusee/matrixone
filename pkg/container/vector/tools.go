@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/matrixorigin/matrixone/pkg/common/mpool"
+	"github.com/matrixorigin/matrixone/pkg/common/malloc"
 	"github.com/matrixorigin/matrixone/pkg/container/types"
 	"github.com/matrixorigin/matrixone/pkg/pb/api"
 	"github.com/matrixorigin/matrixone/pkg/pb/plan"
@@ -172,14 +172,13 @@ func MustVarlenaRawData(v *Vector) (data []types.Varlena, area []byte) {
 }
 
 // XXX extend will extend the vector's Data to accommodate rows more entry.
-func extend(v *Vector, rows int, m *mpool.MPool) error {
+func extend(v *Vector, rows int, m malloc.Allocator) error {
 	if tgtCap := v.length + rows; tgtCap > v.capacity {
 		sz := v.typ.TypeSize()
-		ndata, err := m.Grow(v.data, tgtCap*sz)
-		if err != nil {
+		newLen := tgtCap * sz
+		if err := v.allocateData(m, uint64(newLen), true); err != nil {
 			return err
 		}
-		v.data = ndata[:cap(ndata)]
 		v.setupColFromData()
 	}
 	return nil
@@ -299,17 +298,17 @@ func ProtoTypeToType(typ *plan.Type) types.Type {
 	return types.New(types.T(typ.Id), typ.Width, typ.Scale)
 }
 
-func appendBytesToFixSized[T types.FixedSizeT](vec *Vector) func([]byte, bool, *mpool.MPool) error {
-	return func(buf []byte, isNull bool, mp *mpool.MPool) (err error) {
+func appendBytesToFixSized[T types.FixedSizeT](vec *Vector) func([]byte, bool, malloc.Allocator) error {
+	return func(buf []byte, isNull bool, mp malloc.Allocator) (err error) {
 		v := types.DecodeFixed[T](buf)
 		return AppendFixed(vec, v, isNull, mp)
 	}
 }
 
-func MakeAppendBytesFunc(vec *Vector) func([]byte, bool, *mpool.MPool) error {
+func MakeAppendBytesFunc(vec *Vector) func([]byte, bool, malloc.Allocator) error {
 	t := vec.GetType()
 	if t.IsVarlen() {
-		return func(v []byte, isNull bool, mp *mpool.MPool) (err error) {
+		return func(v []byte, isNull bool, mp malloc.Allocator) (err error) {
 			return AppendBytes(vec, v, isNull, mp)
 		}
 	}

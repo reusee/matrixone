@@ -17,7 +17,7 @@ package vector
 import (
 	"testing"
 
-	"github.com/matrixorigin/matrixone/pkg/common/mpool"
+	"github.com/matrixorigin/matrixone/pkg/common/malloc"
 	"github.com/matrixorigin/matrixone/pkg/container/types"
 	"github.com/stretchr/testify/require"
 )
@@ -43,7 +43,7 @@ func TestFindFirstIndex(t *testing.T) {
 
 // test FindFirstIndexInSortedVarlenVector
 func TestFindFirstIndexInSortedVarlenVector(t *testing.T) {
-	mp := mpool.MustNewZero()
+	mp := malloc.GetDefault(nil)
 	v1 := NewVec(types.T_char.ToType())
 	err := AppendStringList(v1, []string{"a", "b", "b", "c", "c"}, nil, mp)
 	require.NoError(t, err)
@@ -76,7 +76,7 @@ func TestFindFirstIndexInSortedVarlenVector(t *testing.T) {
 }
 
 func TestCollectOffsetsByPrefixEqFactory(t *testing.T) {
-	mp := mpool.MustNewZero()
+	mp := malloc.GetDefault(nil)
 	v1 := NewVec(types.T_char.ToType())
 	defer v1.Free(mp)
 
@@ -107,7 +107,7 @@ func TestCollectOffsetsByPrefixEqFactory(t *testing.T) {
 }
 
 func TestCollectOffsetsByPrefixBetweenFactory(t *testing.T) {
-	mp := mpool.MustNewZero()
+	mp := malloc.GetDefault(nil)
 	v1 := NewVec(types.T_char.ToType())
 	defer v1.Free(mp)
 

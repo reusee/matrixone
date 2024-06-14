@@ -18,7 +18,7 @@ import (
 	"fmt"
 
 	"github.com/matrixorigin/matrixone/pkg/common/bitmap"
-	"github.com/matrixorigin/matrixone/pkg/common/mpool"
+	"github.com/matrixorigin/matrixone/pkg/common/malloc"
 	"github.com/matrixorigin/matrixone/pkg/container/types"
 )
 
@@ -353,7 +353,7 @@ var _ FunctionResultWrapper = &FunctionResult[int64]{}
 type FunctionResult[T types.FixedSizeT] struct {
 	typ types.Type
 	vec *Vector
-	mp  *mpool.MPool
+	mp  malloc.Allocator
 
 	getVectorMethod func(typ types.Type) *Vector
 	putVectorMethod func(vec *Vector)
@@ -374,7 +374,7 @@ func newResultFunc[T types.FixedSizeT](
 	v *Vector,
 	getVectorMethod func(typ types.Type) *Vector,
 	putVectorMethod func(vec *Vector),
-	mp *mpool.MPool) *FunctionResult[T] {
+	mp malloc.Allocator) *FunctionResult[T] {
 
 	f := &FunctionResult[T]{
 		typ:             *v.GetType(),
@@ -498,7 +498,7 @@ func NewFunctionResultWrapper(
 	getVectorMethod func(typ types.Type) *Vector,
 	putVectorMethod func(vec *Vector),
 	typ types.Type,
-	mp *mpool.MPool) FunctionResultWrapper {
+	mp malloc.Allocator) FunctionResultWrapper {
 	v := getVectorMethod(typ)
 
 	switch typ.Oid {
