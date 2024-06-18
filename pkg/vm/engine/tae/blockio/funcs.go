@@ -47,6 +47,12 @@ func LoadColumnsData(
 	if ioVectors, err = objectio.ReadOneBlock(ctx, &dataMeta, name.String(), location.ID(), cols, typs, m, fs, policy); err != nil {
 		return
 	}
+	defer func() {
+		if err != nil {
+			// release
+			objectio.ReleaseIOVector(ioVectors)
+		}
+	}()
 	release = func() {
 		objectio.ReleaseIOVector(ioVectors)
 	}
@@ -60,7 +66,6 @@ func LoadColumnsData(
 		bat.Vecs[i] = obj.(*vector.Vector)
 		bat.SetRowCount(bat.Vecs[i].Length())
 	}
-	//TODO call CachedData.Release
 	return
 }
 
@@ -86,12 +91,17 @@ func LoadColumnsData2(
 		return
 	}
 	defer func() {
-		if needCopy {
+		if err != nil {
+			// release
 			objectio.ReleaseIOVector(ioVectors)
-			return
-		}
-		release = func() {
-			objectio.ReleaseIOVector(ioVectors)
+		} else {
+			if needCopy {
+				objectio.ReleaseIOVector(ioVectors)
+				return
+			}
+			release = func() {
+				objectio.ReleaseIOVector(ioVectors)
+			}
 		}
 	}()
 	var obj any
