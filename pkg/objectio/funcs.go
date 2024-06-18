@@ -194,7 +194,12 @@ func ReadOneBlockWithMeta(
 		if err != nil {
 			return
 		}
-		//TODO when to call ioVec.Release?
+		defer func() {
+			// release if error occur
+			if err != nil {
+				ioVec.Release()
+			}
+		}()
 	}
 
 	// need to generate vector
