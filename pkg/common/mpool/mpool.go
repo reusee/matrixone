@@ -26,112 +26,20 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 	"github.com/matrixorigin/matrixone/pkg/logutil"
 	v2 "github.com/matrixorigin/matrixone/pkg/util/metric/v2"
-	"github.com/matrixorigin/matrixone/pkg/util/stack"
 )
 
 // Mo's extremely simple memory pool.
 
-// Stats
-type MPoolStats struct {
-	NumAlloc      atomic.Int64 // number of allocations
-	NumFree       atomic.Int64 // number of frees
-	NumAllocBytes atomic.Int64 // number of bytes allocated
-	NumFreeBytes  atomic.Int64 // number of bytes freed
-	NumCurrBytes  atomic.Int64 // current number of bytes
-	HighWaterMark atomic.Int64 // high water mark
-}
-
-func (s *MPoolStats) Report(tab string) string {
-	if s.HighWaterMark.Load() == 0 {
-		// empty, reduce noise.
-		return ""
-	}
-
-	ret := ""
-	ret += fmt.Sprintf("%s allocations : %d\n", tab, s.NumAlloc.Load())
-	ret += fmt.Sprintf("%s frees : %d\n", tab, s.NumFree.Load())
-	ret += fmt.Sprintf("%s alloc bytes : %d\n", tab, s.NumAllocBytes.Load())
-	ret += fmt.Sprintf("%s free bytes : %d\n", tab, s.NumFreeBytes.Load())
-	ret += fmt.Sprintf("%s current bytes : %d\n", tab, s.NumCurrBytes.Load())
-	ret += fmt.Sprintf("%s high water mark : %d\n", tab, s.HighWaterMark.Load())
-	return ret
-}
-
-func (s *MPoolStats) ReportJson() string {
-	if s.HighWaterMark.Load() == 0 {
-		return ""
-	}
-	ret := "{"
-	ret += fmt.Sprintf("\"alloc\": %d,", s.NumAlloc.Load())
-	ret += fmt.Sprintf("\"free\": %d,", s.NumFree.Load())
-	ret += fmt.Sprintf("\"allocBytes\": %d,", s.NumAllocBytes.Load())
-	ret += fmt.Sprintf("\"freeBytes\": %d,", s.NumFreeBytes.Load())
-	ret += fmt.Sprintf("\"currBytes\": %d,", s.NumCurrBytes.Load())
-	ret += fmt.Sprintf("\"highWaterMark\": %d", s.HighWaterMark.Load())
-	ret += "}"
-	return ret
-}
-
-// Update alloc stats, return curr bytes
-func (s *MPoolStats) RecordAlloc(tag string, sz int64) int64 {
-	s.NumAlloc.Add(1)
-	s.NumAllocBytes.Add(sz)
-	curr := s.NumCurrBytes.Add(sz)
-	hwm := s.HighWaterMark.Load()
-	if curr > hwm {
-		swapped := s.HighWaterMark.CompareAndSwap(hwm, curr)
-		if swapped && curr/GB != hwm/GB {
-			logutil.Infof("MPool %s new high watermark\n%s", tag, s.Report("    "))
-		}
-	}
-	return curr
-}
-
-// Update free stats, return curr bytes.
-func (s *MPoolStats) RecordFree(tag string, sz int64) int64 {
-	if sz < 0 {
-		logutil.Errorf("Mpool %s free bug, stats: %s", tag, s.Report("    "))
-		panic(moerr.NewInternalErrorNoCtx("mpool freed -1"))
-	}
-	s.NumFree.Add(1)
-	s.NumFreeBytes.Add(sz)
-	curr := s.NumCurrBytes.Add(-sz)
-	if curr < 0 {
-		logutil.Errorf("Mpool %s free bug, stats: %s", tag, s.Report("    "))
-		panic(moerr.NewInternalErrorNoCtx("mpool freed more bytes than alloc"))
-	}
-	return curr
-}
-
-func (s *MPoolStats) RecordManyFrees(tag string, nfree, sz int64) int64 {
-	if sz < 0 {
-		logutil.Errorf("Mpool %s free bug, stats: %s", tag, s.Report("    "))
-		panic(moerr.NewInternalErrorNoCtx("mpool freed -1"))
-	}
-	s.NumFree.Add(nfree)
-	s.NumFreeBytes.Add(sz)
-	curr := s.NumCurrBytes.Add(-sz)
-	if curr < 0 {
-		logutil.Errorf("Mpool %s free many bug, stats: %s", tag, s.Report("    "))
-		panic(moerr.NewInternalErrorNoCtx("mpool freemany freed more bytes than alloc"))
-	}
-	return curr
-}
-
 const (
-	NumFixedPool = 5
-	kMemHdrSz    = 16
-	kStripeSize  = 128
-	B            = 1
-	KB           = 1024
-	MB           = 1024 * KB
-	GB           = 1024 * MB
-	TB           = 1024 * GB
-	PB           = 1024 * TB
+	kMemHdrSz   = 16
+	kStripeSize = 128
+	B           = 1
+	KB          = 1024
+	MB          = 1024 * KB
+	GB          = 1024 * MB
+	TB          = 1024 * GB
+	PB          = 1024 * TB
 )
-
-// Pool emement size
-var PoolElemSize = [NumFixedPool]int32{64, 128, 256, 512, 1024}
 
 // Memory header, kMemHdrSz bytes.
 type memHdr struct {
@@ -161,161 +69,6 @@ func (pHdr *memHdr) ToSlice(sz, cap int) []byte {
 	ptr := unsafe.Add(unsafe.Pointer(pHdr), kMemHdrSz)
 	bs := unsafe.Slice((*byte)(ptr), cap)
 	return bs[:sz]
-}
-
-// pool for fixed elements.  Note that we preconfigure the pool size.
-// We should consider implement some kind of growing logic.
-type fixedPool struct {
-	m      sync.Mutex
-	noLock bool
-	fpIdx  int8
-	poolId int64
-	eleSz  int32
-	// holds buffers allocated, it is not really used in alloc/free
-	// but hold here for bookkeeping.
-	buf   [][]byte
-	flist unsafe.Pointer
-}
-
-// Initaialze a fixed pool
-func (fp *fixedPool) initPool(tag string, poolid int64, idx int, noLock bool) {
-	eleSz := PoolElemSize[idx]
-	fp.poolId = poolid
-	fp.fpIdx = int8(idx)
-	fp.noLock = noLock
-	fp.eleSz = eleSz
-}
-
-func (fp *fixedPool) nextPtr(ptr unsafe.Pointer) unsafe.Pointer {
-	iptr := *(*unsafe.Pointer)(unsafe.Add(ptr, kMemHdrSz))
-	return iptr
-}
-func (fp *fixedPool) setNextPtr(ptr unsafe.Pointer, next unsafe.Pointer) {
-	iptr := (*unsafe.Pointer)(unsafe.Add(ptr, kMemHdrSz))
-	*iptr = next
-}
-
-func (fp *fixedPool) alloc(sz int32) *memHdr {
-	if !fp.noLock {
-		fp.m.Lock()
-		defer fp.m.Unlock()
-	}
-
-	if fp.flist == nil {
-		buf := make([]byte, kStripeSize*(fp.eleSz+kMemHdrSz))
-		fp.buf = append(fp.buf, buf)
-		// return the first one
-		ret := (unsafe.Pointer)(&buf[0])
-		pHdr := (*memHdr)(ret)
-		pHdr.poolId = fp.poolId
-		pHdr.allocSz = sz
-		pHdr.fixedPoolIdx = fp.fpIdx
-		pHdr.SetGuard()
-
-		ptr := unsafe.Add(ret, fp.eleSz+kMemHdrSz)
-		// and thread the rest
-		for i := 1; i < kStripeSize; i++ {
-			pHdr := (*memHdr)(ptr)
-			pHdr.poolId = fp.poolId
-			pHdr.allocSz = -1
-			pHdr.fixedPoolIdx = fp.fpIdx
-			pHdr.SetGuard()
-			fp.setNextPtr(ptr, fp.flist)
-			fp.flist = ptr
-			ptr = unsafe.Add(ptr, fp.eleSz+kMemHdrSz)
-		}
-		return (*memHdr)(ret)
-	} else {
-		ret := fp.flist
-		fp.flist = fp.nextPtr(fp.flist)
-		pHdr := (*memHdr)(ret)
-		pHdr.allocSz = sz
-		// Zero slice.  Go requires slice to be zeroed.
-		bs := unsafe.Slice((*byte)(unsafe.Add(ret, kMemHdrSz)), fp.eleSz)
-		// the compiler will optimize this loop to memclr
-		for i := range bs {
-			bs[i] = 0
-		}
-		return pHdr
-	}
-}
-
-func (fp *fixedPool) free(hdr *memHdr) {
-	if hdr.poolId != fp.poolId || hdr.fixedPoolIdx != fp.fpIdx ||
-		hdr.allocSz < 0 || hdr.allocSz > fp.eleSz ||
-		!hdr.CheckGuard() {
-		panic(moerr.NewInternalErrorNoCtx("mpool fixed pool hdr corruption.   Possible double free"))
-	}
-
-	if !fp.noLock {
-		fp.m.Lock()
-		defer fp.m.Unlock()
-	}
-	ptr := unsafe.Pointer(hdr)
-	fp.setNextPtr(ptr, fp.flist)
-	fp.flist = ptr
-}
-
-type detailInfo struct {
-	cnt, bytes int64
-}
-
-type mpoolDetails struct {
-	mu    sync.Mutex
-	alloc map[string]detailInfo
-	free  map[string]detailInfo
-}
-
-func newMpoolDetails() *mpoolDetails {
-	mpd := mpoolDetails{}
-	mpd.alloc = make(map[string]detailInfo)
-	mpd.free = make(map[string]detailInfo)
-	return &mpd
-}
-
-func (d *mpoolDetails) recordAlloc(nb int64) {
-	f := stack.Caller(2)
-	k := fmt.Sprintf("%v", f)
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	info := d.alloc[k]
-	info.cnt += 1
-	info.bytes += nb
-	d.alloc[k] = info
-}
-
-func (d *mpoolDetails) recordFree(nb int64) {
-	f := stack.Caller(2)
-	k := fmt.Sprintf("%v", f)
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	info := d.free[k]
-	info.cnt += 1
-	info.bytes += nb
-	d.free[k] = info
-}
-
-func (d *mpoolDetails) reportJson() string {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	ret := `{"alloc": {`
-	allocs := make([]string, 0)
-	for k, v := range d.alloc {
-		kvs := fmt.Sprintf("\"%s\": [%d, %d]", k, v.cnt, v.bytes)
-		allocs = append(allocs, kvs)
-	}
-	ret += strings.Join(allocs, ",")
-	ret += `}, "free": {`
-	frees := make([]string, 0)
-	for k, v := range d.free {
-		kvs := fmt.Sprintf("\"%s\": [%d, %d]", k, v.cnt, v.bytes)
-		frees = append(frees, kvs)
-	}
-	ret += strings.Join(frees, ",")
-	ret += "}}"
-	return ret
 }
 
 // The memory pool.
@@ -348,6 +101,7 @@ const (
 func (mp *MPool) PutSels(sels []int64) {
 	mp.sels.Put(&sels)
 }
+
 func (mp *MPool) GetSels() []int64 {
 	ss := mp.sels.Get().(*[]int64)
 	return (*ss)[:0]
