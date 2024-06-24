@@ -12,25 +12,40 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !race
-// +build !race
-
 package mpool
 
 import (
+	"runtime"
 	"unsafe"
+
+	"github.com/matrixorigin/matrixone/pkg/common/malloc"
 )
 
-func alloc(sz, requiredSpaceWithoutHeader int, mp *MPool) []byte {
-	bs := make([]byte, requiredSpaceWithoutHeader+kMemHdrSz)
-	hdr := unsafe.Pointer(&bs[0])
-	pHdr := (*memHdr)(hdr)
-	pHdr.poolId = mp.id
-	pHdr.fixedPoolIdx = NumFixedPool
-	pHdr.allocSz = int32(sz)
-	pHdr.SetGuard()
-	if mp.details != nil {
-		mp.details.recordAlloc(int64(pHdr.allocSz))
+func alloc(allocator malloc.Allocator, sz, requiredSpaceWithoutHeader int, mp *MPool) []byte {
+	size := requiredSpaceWithoutHeader + kMemHdrSz
+	ptr, dec, err := allocator.Allocate(uint64(size), malloc.NoHints)
+	if err != nil {
+		panic(err)
 	}
-	return pHdr.ToSlice(sz, requiredSpaceWithoutHeader)
+
+	header := (*memHdr)(ptr)
+	header.poolId = mp.id
+	header.fixedPoolIdx = NumFixedPool
+	header.allocSz = int32(sz)
+	header.SetGuard()
+
+	if mp.details != nil {
+		mp.details.recordAlloc(int64(header.allocSz))
+	}
+
+	slice := unsafe.Slice(
+		(*byte)(unsafe.Add(ptr, kMemHdrSz)),
+		requiredSpaceWithoutHeader,
+	)[:sz]
+
+	runtime.SetFinalizer(&slice, func(_ *[]byte) {
+		dec.Deallocate(ptr, malloc.NoHints)
+	})
+
+	return slice
 }
