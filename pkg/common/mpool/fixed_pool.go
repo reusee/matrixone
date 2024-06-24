@@ -18,6 +18,7 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/matrixorigin/matrixone/pkg/common/malloc"
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 )
 
@@ -31,11 +32,12 @@ var PoolElemSize = [NumFixedPool]int32{64, 128, 256, 512, 1024}
 // pool for fixed elements.  Note that we preconfigure the pool size.
 // We should consider implement some kind of growing logic.
 type fixedPool struct {
-	m      sync.Mutex
-	noLock bool
-	fpIdx  int8
-	poolId int64
-	eleSz  int32
+	allocator malloc.Allocator
+	m         sync.Mutex
+	noLock    bool
+	fpIdx     int8
+	poolId    int64
+	eleSz     int32
 	// holds buffers allocated, it is not really used in alloc/free
 	// but hold here for bookkeeping.
 	buf   [][]byte
@@ -43,7 +45,8 @@ type fixedPool struct {
 }
 
 // Initaialze a fixed pool
-func (fp *fixedPool) initPool(tag string, poolid int64, idx int, noLock bool) {
+func (fp *fixedPool) initPool(allocator malloc.Allocator, tag string, poolid int64, idx int, noLock bool) {
+	fp.allocator = allocator
 	eleSz := PoolElemSize[idx]
 	fp.poolId = poolid
 	fp.fpIdx = int8(idx)
@@ -68,41 +71,46 @@ func (fp *fixedPool) alloc(sz int32) *memHdr {
 	}
 
 	if fp.flist == nil {
-		buf := make([]byte, kStripeSize*(fp.eleSz+kMemHdrSz))
+		size := kStripeSize * (fp.eleSz + kMemHdrSz)
+		ptr, dec, err := fp.allocator.Allocate(uint64(size), malloc.NoHints)
+		if err != nil {
+			panic(err)
+		}
+		buf := unsafe.Slice((*byte)(ptr), size)
+		_ = dec // never deallocate
+
 		fp.buf = append(fp.buf, buf)
 		// return the first one
-		ret := (unsafe.Pointer)(&buf[0])
-		pHdr := (*memHdr)(ret)
-		pHdr.poolId = fp.poolId
-		pHdr.allocSz = sz
-		pHdr.fixedPoolIdx = fp.fpIdx
-		pHdr.SetGuard()
+		ret := ptr
+		header := (*memHdr)(ret)
+		header.poolId = fp.poolId
+		header.allocSz = sz
+		header.fixedPoolIdx = fp.fpIdx
+		header.SetGuard()
 
-		ptr := unsafe.Add(ret, fp.eleSz+kMemHdrSz)
 		// and thread the rest
+		ptr = unsafe.Add(ret, fp.eleSz+kMemHdrSz)
 		for i := 1; i < kStripeSize; i++ {
-			pHdr := (*memHdr)(ptr)
-			pHdr.poolId = fp.poolId
-			pHdr.allocSz = -1
-			pHdr.fixedPoolIdx = fp.fpIdx
-			pHdr.SetGuard()
+			header := (*memHdr)(ptr)
+			header.poolId = fp.poolId
+			header.allocSz = -1
+			header.fixedPoolIdx = fp.fpIdx
+			header.SetGuard()
 			fp.setNextPtr(ptr, fp.flist)
 			fp.flist = ptr
 			ptr = unsafe.Add(ptr, fp.eleSz+kMemHdrSz)
 		}
+
 		return (*memHdr)(ret)
+
 	} else {
 		ret := fp.flist
 		fp.flist = fp.nextPtr(fp.flist)
-		pHdr := (*memHdr)(ret)
-		pHdr.allocSz = sz
+		header := (*memHdr)(ret)
+		header.allocSz = sz
 		// Zero slice.  Go requires slice to be zeroed.
-		bs := unsafe.Slice((*byte)(unsafe.Add(ret, kMemHdrSz)), fp.eleSz)
-		// the compiler will optimize this loop to memclr
-		for i := range bs {
-			bs[i] = 0
-		}
-		return pHdr
+		clear(unsafe.Slice((*byte)(unsafe.Add(ret, kMemHdrSz)), fp.eleSz))
+		return header
 	}
 }
 

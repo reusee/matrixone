@@ -23,6 +23,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/matrixorigin/matrixone/pkg/common/malloc"
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 	"github.com/matrixorigin/matrixone/pkg/logutil"
 	v2 "github.com/matrixorigin/matrixone/pkg/util/metric/v2"
@@ -73,7 +74,8 @@ func (pHdr *memHdr) ToSlice(sz, cap int) []byte {
 
 // The memory pool.
 type MPool struct {
-	id         int64      // mpool generated, used to look up the MPool
+	id         int64 // mpool generated, used to look up the MPool
+	allocator  malloc.Allocator
 	tag        string     // user supplied, for debug/inspect
 	cap        int64      // pool capacity
 	stats      MPoolStats // stats
@@ -175,13 +177,14 @@ func NewMPool(tag string, cap int64, flag int) (*MPool, error) {
 	mp.id = id
 	mp.tag = tag
 	mp.cap = cap
+	mp.allocator = malloc.GetDefault(nil)
 
 	mp.noFixed = (flag & NoFixed) != 0
 	mp.noLock = (flag & NoFixed) != 0
 
 	if !mp.noFixed {
 		for i := 0; i < NumFixedPool; i++ {
-			mp.pools[i].initPool(mp.tag, mp.id, i, mp.noLock)
+			mp.pools[i].initPool(mp.allocator, mp.tag, mp.id, i, mp.noLock)
 		}
 	}
 
@@ -349,7 +352,7 @@ func (mp *MPool) Alloc(sz int) ([]byte, error) {
 		return bs.ToSlice(sz, int(mp.pools[idx].eleSz)), nil
 	}
 
-	return alloc(sz, requiredSpaceWithoutHeader, mp), nil
+	return alloc(mp.allocator, sz, requiredSpaceWithoutHeader, mp), nil
 }
 
 func (mp *MPool) Free(bs []byte) {
