@@ -34,23 +34,23 @@ func TestMPool(t *testing.T) {
 	require.True(t, nfree0 == 0, "bad nfree")
 
 	for i := 1; i <= 10000; i++ {
-		a, err := m.Alloc(i * 10)
+		a, dec, err := m.Alloc(i * 10)
 		require.True(t, err == nil, "alloc failure, %v", err)
 		require.True(t, len(a) == i*10, "allocation i size error")
 		a[0] = 0xF0
 		require.True(t, a[1] == 0, "allocation result not zeroed.")
 		a[i*10-1] = 0xBA
-		a, err = m.reAlloc(a, i*20)
+		a, dec, err = m.reAlloc(a, dec, i*20)
 		require.True(t, err == nil, "realloc failure %v", err)
 		require.True(t, len(a) == i*20, "allocation i size error")
 		require.True(t, a[0] == 0xF0, "reallocation not copied")
 		require.True(t, a[i*10-1] == 0xBA, "reallocation not copied")
 		require.True(t, a[i*10] == 0, "reallocation not zeroed")
 		require.True(t, a[i*20-1] == 0, "reallocation not zeroed")
-		m.Free(a)
+		m.Free(a, dec)
 	}
 
-	require.True(t, nb0 == m.CurrNB(), "leak")
+	require.Equal(t, nb0, m.CurrNB(), "leak")
 	// 30 -- we realloc, need alloc first, then copy.
 	// therefore, (10 + 20) * max(i) and 2 header size (old and new), is the high water.
 	require.True(t, (hw0+10000*30+2*kMemHdrSz) == m.Stats().HighWaterMark.Load(), "hw")
@@ -65,7 +65,7 @@ func TestReportMemUsage(t *testing.T) {
 	m.EnableDetailRecording()
 
 	require.True(t, err == nil, "new mpool failed %v", err)
-	mem, err := m.Alloc(1000000)
+	mem, dec, err := m.Alloc(1000000)
 	require.True(t, err == nil, "mpool alloc failed %v", err)
 
 	j1 := ReportMemUsage("")
@@ -75,7 +75,7 @@ func TestReportMemUsage(t *testing.T) {
 	t.Logf("global mem usage: %s", j2)
 	t.Logf("testjson mem usage: %s", j3)
 
-	m.Free(mem)
+	m.Free(mem, dec)
 	j1 = ReportMemUsage("")
 	j2 = ReportMemUsage("global")
 	j3 = ReportMemUsage("testjson")
@@ -101,11 +101,11 @@ func TestMP(t *testing.T) {
 	run := func() {
 		defer wg.Done()
 		for i := 0; i < 1000; i++ {
-			buf, err := pool.Alloc(10)
+			buf, dec, err := pool.Alloc(10)
 			if err != nil {
 				panic(err)
 			}
-			pool.Free(buf)
+			pool.Free(buf, dec)
 		}
 	}
 	for i := 0; i < 800; i++ {
@@ -118,35 +118,36 @@ func TestMP(t *testing.T) {
 
 func TestMpoolReAllocate(t *testing.T) {
 	m := MustNewZero()
-	d1, err := m.Alloc(1023)
+	d1, dec, err := m.Alloc(1023)
 	require.NoError(t, err)
 	require.Equal(t, int64(cap(d1)+kMemHdrSz), m.CurrNB())
 
-	d2, err := m.reAlloc(d1, cap(d1)-1)
+	d2, dec, err := m.reAlloc(d1, dec, cap(d1)-1)
 	require.NoError(t, err)
 	require.Equal(t, cap(d1), cap(d2))
 	require.Equal(t, int64(cap(d1)+kMemHdrSz), m.CurrNB())
 
-	d3, err := m.reAlloc(d2, cap(d2)+1025)
+	d3, dec, err := m.reAlloc(d2, dec, cap(d2)+1025)
 	require.NoError(t, err)
 	require.Equal(t, int64(cap(d3)+kMemHdrSz), m.CurrNB())
 
 	if cap(d3) > 5 {
 		d3 = d3[:cap(d3)-4]
-		d3_1, err := m.Grow(d3, cap(d3)-2)
+		d3_1, d, err := m.Grow(d3, dec, cap(d3)-2)
 		require.NoError(t, err)
 		require.Equal(t, cap(d3), cap(d3_1))
 		require.Equal(t, int64(cap(d3)+kMemHdrSz), m.CurrNB())
 		d3 = d3_1
+		dec = d
 	}
 
-	d4, err := m.Grow(d3, cap(d3)+10)
+	d4, dec, err := m.Grow(d3, dec, cap(d3)+10)
 	require.NoError(t, err)
 	require.Equal(t, int64(cap(d4)+kMemHdrSz), m.CurrNB())
 
 	if cap(d4) > 0 {
 		d4 = d4[:cap(d4)-1]
 	}
-	m.Free(d4)
+	m.Free(d4, dec)
 	require.Equal(t, int64(0), m.CurrNB())
 }

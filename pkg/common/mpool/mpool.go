@@ -302,19 +302,19 @@ func sizeToIdx(size int) int {
 	return NumFixedPool
 }
 
-func (mp *MPool) Alloc(sz int) ([]byte, error) {
+func (mp *MPool) Alloc(sz int) ([]byte, malloc.Deallocator, error) {
 	// reject unexpected alloc size.
 	if sz < 0 || sz > GB {
 		logutil.Errorf("Invalid alloc size %d: %s", sz, string(debug.Stack()))
-		return nil, moerr.NewInternalErrorNoCtx("Invalid alloc size %d", sz)
+		return nil, nil, moerr.NewInternalErrorNoCtx("Invalid alloc size %d", sz)
 	}
 
 	if sz == 0 {
-		return nil, nil
+		return nil, NoopDeallocator, nil
 	}
 
 	if atomic.LoadInt32(&mp.available) == Unavailable {
-		return nil, moerr.NewInternalErrorNoCtx("mpool %s unavailable for alloc", mp.tag)
+		return nil, nil, moerr.NewInternalErrorNoCtx("mpool %s unavailable for alloc", mp.tag)
 	}
 
 	// update in use count
@@ -334,13 +334,13 @@ func (mp *MPool) Alloc(sz int) ([]byte, error) {
 	gcurr := globalStats.RecordAlloc("global", tempSize)
 	if gcurr > GlobalCap() {
 		globalStats.RecordFree("global", tempSize)
-		return nil, moerr.NewOOMNoCtx()
+		return nil, nil, moerr.NewOOMNoCtx()
 	}
 	mycurr := mp.stats.RecordAlloc(mp.tag, tempSize)
 	if mycurr > mp.Cap() {
 		mp.stats.RecordFree(mp.tag, tempSize)
 		globalStats.RecordFree("global", tempSize)
-		return nil, moerr.NewInternalErrorNoCtx("mpool out of space, alloc %d bytes, cap %d", sz, mp.cap)
+		return nil, nil, moerr.NewInternalErrorNoCtx("mpool out of space, alloc %d bytes, cap %d", sz, mp.cap)
 	}
 
 	// from fixed pool
@@ -349,13 +349,15 @@ func (mp *MPool) Alloc(sz int) ([]byte, error) {
 		if mp.details != nil {
 			mp.details.recordAlloc(int64(bs.allocSz))
 		}
-		return bs.ToSlice(sz, int(mp.pools[idx].eleSz)), nil
+		return bs.ToSlice(sz, int(mp.pools[idx].eleSz)), NoopDeallocator, nil
 	}
 
-	return alloc(mp.allocator, sz, requiredSpaceWithoutHeader, mp), nil
+	return alloc(mp.allocator, sz, requiredSpaceWithoutHeader, mp)
 }
 
-func (mp *MPool) Free(bs []byte) {
+func (mp *MPool) Free(bs []byte, deallocator malloc.Deallocator) {
+	defer deallocator.Deallocate(malloc.NoHints)
+
 	if bs == nil || cap(bs) == 0 {
 		return
 	}
@@ -377,7 +379,7 @@ func (mp *MPool) Free(bs []byte) {
 		if !ok {
 			panic(moerr.NewInternalErrorNoCtx("invalid mpool id %d", pHdr.poolId))
 		}
-		(otherPool.(*MPool)).Free(bs)
+		(otherPool.(*MPool)).Free(bs, deallocator)
 		return
 	}
 
@@ -403,22 +405,20 @@ func (mp *MPool) Free(bs []byte) {
 		if !atomic.CompareAndSwapInt32(&pHdr.allocSz, pHdr.allocSz, -1) {
 			panic(moerr.NewInternalErrorNoCtx("free size -1, possible double free"))
 		}
-
-		free(hdr)
 	}
 }
 
-func (mp *MPool) reAlloc(old []byte, sz int) ([]byte, error) {
+func (mp *MPool) reAlloc(old []byte, oldDeallocator malloc.Deallocator, sz int) ([]byte, malloc.Deallocator, error) {
 	if sz <= cap(old) {
-		return old[:sz], nil
+		return old[:sz], oldDeallocator, nil
 	}
-	ret, err := mp.Alloc(sz)
+	ret, dec, err := mp.Alloc(sz)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	copy(ret, old)
-	mp.Free(old)
-	return ret, nil
+	mp.Free(old, oldDeallocator)
+	return ret, dec, nil
 }
 
 // alignUp rounds n up to a multiple of a. a must be a power of 2.
@@ -450,20 +450,20 @@ func roundupsize(size int) int {
 
 // Grow is like reAlloc, but we try to be a little bit more aggressive on growing
 // the slice.
-func (mp *MPool) Grow(old []byte, sz int) ([]byte, error) {
+func (mp *MPool) Grow(old []byte, oldDeallocator malloc.Deallocator, sz int) ([]byte, malloc.Deallocator, error) {
 	if sz < len(old) {
-		return nil, moerr.NewInternalErrorNoCtx("mpool grow actually shrinks, %d, %d", len(old), sz)
+		return nil, nil, moerr.NewInternalErrorNoCtx("mpool grow actually shrinks, %d, %d", len(old), sz)
 	}
 	if sz <= cap(old) {
-		return old[:sz], nil
+		return old[:sz], oldDeallocator, nil
 	}
 	newCap := calculateNewCap(cap(old), sz)
 
-	ret, err := mp.reAlloc(old, newCap)
+	ret, dec, err := mp.reAlloc(old, oldDeallocator, newCap)
 	if err != nil {
-		return old, err
+		return old, oldDeallocator, err
 	}
-	return ret[:sz], nil
+	return ret[:sz], dec, nil
 }
 
 // copy-paste from go slice grow strategy.
@@ -489,19 +489,19 @@ func calculateNewCap(oldCap int, requiredSize int) int {
 	return newcap
 }
 
-func (mp *MPool) Grow2(old []byte, old2 []byte, sz int) ([]byte, error) {
+func (mp *MPool) Grow2(old []byte, oldDeallocator malloc.Deallocator, old2 []byte, sz int) ([]byte, malloc.Deallocator, error) {
 	len1 := len(old)
 	len2 := len(old2)
 	if sz < len1+len2 {
-		return nil, moerr.NewInternalErrorNoCtx("mpool grow2 actually shrinks, %d+%d, %d", len1, len2, sz)
+		return nil, nil, moerr.NewInternalErrorNoCtx("mpool grow2 actually shrinks, %d+%d, %d", len1, len2, sz)
 	}
-	ret, err := mp.Grow(old, sz)
+	ret, dec, err := mp.Grow(old, oldDeallocator, sz)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	copy(ret[len1:len1+len2], old2)
-	return ret, nil
+	return ret, dec, nil
 }
 
 /*
@@ -527,30 +527,30 @@ func (mp *MPool) Decrease(nb int64) {
 }
 */
 
-func MakeSliceWithCap[T any](n, cap int, mp *MPool) ([]T, error) {
+func MakeSliceWithCap[T any](n, cap int, mp *MPool) ([]T, malloc.Deallocator, error) {
 	var t T
 	tsz := unsafe.Sizeof(t)
-	bs, err := mp.Alloc(int(tsz) * cap)
+	bs, dec, err := mp.Alloc(int(tsz) * cap)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ptr := unsafe.Pointer(&bs[0])
 	tptr := (*T)(ptr)
 	ret := unsafe.Slice(tptr, cap)
-	return ret[:n:cap], nil
+	return ret[:n:cap], dec, nil
 }
 
-func MakeSlice[T any](n int, mp *MPool) ([]T, error) {
+func MakeSlice[T any](n int, mp *MPool) ([]T, malloc.Deallocator, error) {
 	return MakeSliceWithCap[T](n, n, mp)
 }
 
-func MakeSliceArgs[T any](mp *MPool, args ...T) ([]T, error) {
-	ret, err := MakeSlice[T](len(args), mp)
+func MakeSliceArgs[T any](mp *MPool, args ...T) ([]T, malloc.Deallocator, error) {
+	ret, dec, err := MakeSlice[T](len(args), mp)
 	if err != nil {
-		return ret, err
+		return nil, nil, err
 	}
 	copy(ret, args)
-	return ret, nil
+	return ret, dec, nil
 }
 
 // Report memory usage in json.
