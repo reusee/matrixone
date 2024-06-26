@@ -17,6 +17,8 @@ package fifocache
 import (
 	"sync"
 	"sync/atomic"
+
+	"golang.org/x/sys/cpu"
 )
 
 // Cache implements an in-memory cache with FIFO-based eviction
@@ -30,6 +32,7 @@ type Cache[K comparable, V any] struct {
 	shards [256]struct {
 		sync.RWMutex
 		values map[K]*_CacheItem[K, V]
+		_      cpu.CacheLinePad
 	}
 
 	queueLock sync.Mutex
