@@ -403,6 +403,8 @@ func (mp *MPool) Free(bs []byte) {
 		if !atomic.CompareAndSwapInt32(&pHdr.allocSz, pHdr.allocSz, -1) {
 			panic(moerr.NewInternalErrorNoCtx("free size -1, possible double free"))
 		}
+
+		free(hdr)
 	}
 }
 

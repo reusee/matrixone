@@ -15,11 +15,13 @@
 package mpool
 
 import (
-	"runtime"
+	"sync"
 	"unsafe"
 
 	"github.com/matrixorigin/matrixone/pkg/common/malloc"
 )
+
+var ptrToDeallocator sync.Map
 
 func alloc(allocator malloc.Allocator, sz, requiredSpaceWithoutHeader int, mp *MPool) []byte {
 	size := requiredSpaceWithoutHeader + kMemHdrSz
@@ -43,9 +45,15 @@ func alloc(allocator malloc.Allocator, sz, requiredSpaceWithoutHeader int, mp *M
 		requiredSpaceWithoutHeader,
 	)[:sz]
 
-	runtime.SetFinalizer(&slice, func(_ *[]byte) {
-		dec.Deallocate(ptr, malloc.NoHints)
-	})
+	ptrToDeallocator.Store(ptr, dec)
 
 	return slice
+}
+
+func free(ptr unsafe.Pointer) {
+	v, ok := ptrToDeallocator.Load(ptr)
+	if !ok {
+		panic("bad pointer")
+	}
+	v.(malloc.Deallocator).Deallocate(ptr, malloc.NoHints)
 }
