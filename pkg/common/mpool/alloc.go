@@ -15,22 +15,19 @@
 package mpool
 
 import (
-	"sync"
 	"unsafe"
 
 	"github.com/matrixorigin/matrixone/pkg/common/malloc"
 )
 
-var ptrToDeallocator sync.Map
-
-func alloc(allocator malloc.Allocator, sz, requiredSpaceWithoutHeader int, mp *MPool) []byte {
+func alloc(allocator malloc.Allocator, sz, requiredSpaceWithoutHeader int, mp *MPool) ([]byte, malloc.Deallocator, error) {
 	size := requiredSpaceWithoutHeader + kMemHdrSz
-	ptr, dec, err := allocator.Allocate(uint64(size), malloc.NoHints)
+	slice, dec, err := allocator.Allocate(uint64(size), malloc.NoHints)
 	if err != nil {
-		panic(err)
+		return nil, nil, err
 	}
 
-	header := (*memHdr)(ptr)
+	header := (*memHdr)(unsafe.Pointer(unsafe.SliceData(slice)))
 	header.poolId = mp.id
 	header.fixedPoolIdx = NumFixedPool
 	header.allocSz = int32(sz)
@@ -40,20 +37,15 @@ func alloc(allocator malloc.Allocator, sz, requiredSpaceWithoutHeader int, mp *M
 		mp.details.recordAlloc(int64(header.allocSz))
 	}
 
-	slice := unsafe.Slice(
-		(*byte)(unsafe.Add(ptr, kMemHdrSz)),
-		requiredSpaceWithoutHeader,
-	)[:sz]
+	slice = slice[kMemHdrSz:][:requiredSpaceWithoutHeader:requiredSpaceWithoutHeader]
 
-	ptrToDeallocator.Store(ptr, dec)
-
-	return slice
+	return slice, dec, nil
 }
 
-func free(ptr unsafe.Pointer) {
-	v, ok := ptrToDeallocator.Load(ptr)
-	if !ok {
-		panic("bad pointer")
-	}
-	v.(malloc.Deallocator).Deallocate(ptr, malloc.NoHints)
-}
+type noopDeallocator struct{}
+
+var _ malloc.Deallocator = noopDeallocator{}
+
+func (n noopDeallocator) Deallocate(hints malloc.Hints) {}
+
+var NoopDeallocator noopDeallocator

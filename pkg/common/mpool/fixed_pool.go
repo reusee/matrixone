@@ -72,12 +72,12 @@ func (fp *fixedPool) alloc(sz int32) *memHdr {
 
 	if fp.flist == nil {
 		size := kStripeSize * (fp.eleSz + kMemHdrSz)
-		ptr, dec, err := fp.allocator.Allocate(uint64(size), malloc.NoHints)
+		buf, dec, err := fp.allocator.Allocate(uint64(size), malloc.NoHints)
 		if err != nil {
 			panic(err)
 		}
-		buf := unsafe.Slice((*byte)(ptr), size)
 		_ = dec // never deallocate
+		ptr := unsafe.Pointer(unsafe.SliceData(buf))
 
 		fp.buf = append(fp.buf, buf)
 		// return the first one
