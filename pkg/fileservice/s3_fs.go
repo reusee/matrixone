@@ -408,7 +408,7 @@ func (s *S3FS) Read(ctx context.Context, vector *IOVector) (err error) {
 	LogEvent(ctx, "S3FS.Read, vector %+v", vector)
 	defer func() {
 		LogEvent(ctx, "Read return")
-		LogSlowEvent(ctx, time.Second*10)
+		LogSlowEvent(ctx, time.Second*5)
 	}()
 
 	tp := reuse.Alloc[tracePoint](nil)
