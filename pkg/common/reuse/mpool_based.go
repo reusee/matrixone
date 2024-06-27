@@ -16,15 +16,18 @@ package reuse
 
 import (
 	"fmt"
+	"sync"
 	"unsafe"
 
+	"github.com/matrixorigin/matrixone/pkg/common/malloc"
 	"github.com/matrixorigin/matrixone/pkg/common/mpool"
 )
 
 type mpoolBased[T any, P ReusableObject[T]] struct {
-	pool *mpool.MPool
-	opts *Options[T, P]
-	c    *checker[T, P]
+	pool  *mpool.MPool
+	opts  *Options[T, P]
+	c     *checker[T, P]
+	inuse sync.Map // unsafe.Pointer -> malloc.Deallocator
 }
 
 func newMpoolBased[T any, P ReusableObject[T]](
@@ -46,11 +49,13 @@ func newMpoolBased[T any, P ReusableObject[T]](
 
 func (p *mpoolBased[T, P]) Alloc() P {
 	var t T
-	data, err := p.pool.Alloc(int(unsafe.Sizeof(t)))
+	data, dec, err := p.pool.Alloc(int(unsafe.Sizeof(t)))
 	if err != nil {
 		panic(err)
 	}
-	v := P(unsafe.Pointer(unsafe.SliceData(data)))
+	ptr := unsafe.Pointer(unsafe.SliceData(data))
+	p.inuse.Store(ptr, dec)
+	v := (*T)(ptr)
 	p.c.created(v)
 	p.c.got(v)
 	return v
@@ -59,5 +64,11 @@ func (p *mpoolBased[T, P]) Alloc() P {
 func (p *mpoolBased[T, P]) Free(v P) {
 	p.c.free(v)
 	p.opts.release(v)
-	p.pool.Free(unsafe.Slice((*byte)(unsafe.Pointer(v)), unsafe.Sizeof(*v)))
+	ptr := unsafe.Pointer(v)
+	value, ok := p.inuse.LoadAndDelete(ptr)
+	if !ok {
+		panic("bad pointer")
+	}
+	deallocator := value.(malloc.Deallocator)
+	p.pool.Free(unsafe.Slice((*byte)(ptr), unsafe.Sizeof(*v)), deallocator)
 }
