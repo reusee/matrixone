@@ -40,8 +40,9 @@ type fixedPool struct {
 	eleSz     int32
 	// holds buffers allocated, it is not really used in alloc/free
 	// but hold here for bookkeeping.
-	buf   [][]byte
-	flist unsafe.Pointer
+	buf             [][]byte
+	bufDeallocators []malloc.Deallocator
+	flist           unsafe.Pointer
 }
 
 // Initaialze a fixed pool
@@ -52,6 +53,12 @@ func (fp *fixedPool) initPool(allocator malloc.Allocator, tag string, poolid int
 	fp.fpIdx = int8(idx)
 	fp.noLock = noLock
 	fp.eleSz = eleSz
+}
+
+func (fp *fixedPool) closePool() {
+	for _, dec := range fp.bufDeallocators {
+		dec.Deallocate(malloc.NoHints)
+	}
 }
 
 func (fp *fixedPool) nextPtr(ptr unsafe.Pointer) unsafe.Pointer {
@@ -76,10 +83,10 @@ func (fp *fixedPool) alloc(sz int32) *memHdr {
 		if err != nil {
 			panic(err)
 		}
-		_ = dec // never deallocate
 		ptr := unsafe.Pointer(unsafe.SliceData(buf))
 
 		fp.buf = append(fp.buf, buf)
+		fp.bufDeallocators = append(fp.bufDeallocators, dec)
 		// return the first one
 		ret := ptr
 		header := (*memHdr)(ret)
