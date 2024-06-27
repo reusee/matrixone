@@ -36,6 +36,7 @@ import (
 	"strings"
 	"unsafe"
 
+	"github.com/matrixorigin/matrixone/pkg/common/malloc"
 	"github.com/matrixorigin/matrixone/pkg/common/mpool"
 
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
@@ -245,37 +246,40 @@ func adjustFloatBytes(b []byte, encode bool) {
 const PackerMemUnit = 64
 
 type Packer struct {
-	buf      []byte
-	size     int
-	capacity int
-	mp       *mpool.MPool
+	buf         []byte
+	size        int
+	capacity    int
+	mp          *mpool.MPool
+	deallocator malloc.Deallocator
 }
 
 func NewPacker(mp *mpool.MPool) *Packer {
-	bytes, err := mp.Alloc(PackerMemUnit)
+	bytes, dec, err := mp.Alloc(PackerMemUnit)
 	if err != nil {
 		panic(err)
 	}
 	return &Packer{
-		buf:      bytes,
-		size:     0,
-		capacity: PackerMemUnit,
-		mp:       mp,
+		buf:         bytes,
+		size:        0,
+		capacity:    PackerMemUnit,
+		mp:          mp,
+		deallocator: dec,
 	}
 }
 
 func NewPackerArray(length int, mp *mpool.MPool) []*Packer {
 	packerArr := make([]*Packer, length)
 	for num := range packerArr {
-		bytes, err := mp.Alloc(PackerMemUnit)
+		bytes, dec, err := mp.Alloc(PackerMemUnit)
 		if err != nil {
 			panic(err)
 		}
 		packerArr[num] = &Packer{
-			buf:      bytes,
-			size:     0,
-			capacity: PackerMemUnit,
-			mp:       mp,
+			buf:         bytes,
+			size:        0,
+			capacity:    PackerMemUnit,
+			mp:          mp,
+			deallocator: dec,
 		}
 	}
 	return packerArr
@@ -283,10 +287,11 @@ func NewPackerArray(length int, mp *mpool.MPool) []*Packer {
 
 func (p *Packer) FreeMem() {
 	if p.buf != nil {
-		p.mp.Free(p.buf)
+		p.mp.Free(p.buf, p.deallocator)
 		p.size = 0
 		p.capacity = 0
 		p.buf = nil
+		p.deallocator = nil
 	}
 }
 
@@ -299,7 +304,11 @@ func (p *Packer) putByte(b byte) {
 		p.buf[p.size] = b
 		p.size++
 	} else {
-		p.buf, _ = p.mp.Grow(p.buf, p.capacity+PackerMemUnit)
+		var err error
+		p.buf, p.deallocator, err = p.mp.Grow(p.buf, p.deallocator, p.capacity+PackerMemUnit)
+		if err != nil {
+			panic(err)
+		}
 		p.capacity += PackerMemUnit
 		p.buf[p.size] = b
 		p.size++
@@ -314,7 +323,11 @@ func (p *Packer) putBytes(bs []byte) {
 		}
 	} else {
 		incrementSize := ((len(bs) / PackerMemUnit) + 1) * PackerMemUnit
-		p.buf, _ = p.mp.Grow(p.buf, p.capacity+incrementSize)
+		var err error
+		p.buf, p.deallocator, err = p.mp.Grow(p.buf, p.deallocator, p.capacity+incrementSize)
+		if err != nil {
+			panic(err)
+		}
 		p.capacity += incrementSize
 		for _, b := range bs {
 			p.buf[p.size] = b

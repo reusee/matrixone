@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"unsafe"
 
+	"github.com/matrixorigin/matrixone/pkg/common/malloc"
 	"github.com/matrixorigin/matrixone/pkg/common/mpool"
 	"github.com/matrixorigin/matrixone/pkg/common/util"
 )
@@ -64,26 +65,28 @@ func (v *Varlena) SetOffsetLen(voff, vlen uint32) {
 
 // do not use this function, will be deleted in the future
 // use BuildVarlenaFromValena or BuildVarlenaFromByteSlice instead
-func BuildVarlena(bs []byte, area []byte, m *mpool.MPool) (Varlena, []byte, error) {
+func BuildVarlena(bs []byte, area []byte, areaDeallocator malloc.Deallocator, m *mpool.MPool) (Varlena, []byte, malloc.Deallocator, error) {
 	var err error
 	var v Varlena
 	vlen := len(bs)
 	if vlen <= VarlenaInlineSize {
 		v[0] = byte(vlen)
 		copy(v[1:1+vlen], bs)
-		return v, area, nil
+		return v, area, areaDeallocator, nil
 	} else {
+		var dec malloc.Deallocator
 		voff := len(area)
 		if voff+vlen < cap(area) || m == nil {
 			area = append(area, bs...)
+			dec = areaDeallocator
 		} else {
-			area, err = m.Grow2(area, bs, voff+vlen)
+			area, dec, err = m.Grow2(area, areaDeallocator, bs, voff+vlen)
 			if err != nil {
-				return v, nil, err
+				return v, nil, nil, err
 			}
 		}
 		v.SetOffsetLen(uint32(voff), uint32(vlen))
-		return v, area, nil
+		return v, area, dec, nil
 	}
 }
 
