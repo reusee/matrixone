@@ -144,6 +144,10 @@ func (mp *MPool) destroy() (succeed bool) {
 		logutil.Errorf("mp error: %s", mp.stats.Report(""))
 	}
 
+	for i := 0; i < len(mp.pools); i++ {
+		mp.pools[i].closePool()
+	}
+
 	// We do not call each individual fixedPool's destroy
 	// because they recorded pooled elements alloc/frees.
 	// Those are not reflected in globalStats.
