@@ -342,7 +342,7 @@ func (m *StrHashMap) Dup(pool *mpool.MPool) *StrHashMap {
 		copy(val.keys[i], key)
 	}
 	if m.hashMap != nil {
-		val.hashMap = m.hashMap.Dup()
+		val.hashMap = m.hashMap.Dup(pool)
 	}
 	return val
 }

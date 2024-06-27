@@ -129,7 +129,7 @@ func (m *IntHashMap) Dup(pool *mpool.MPool) *IntHashMap {
 	copy(val.zValues, m.zValues)
 	copy(val.hashes, m.hashes)
 	if m.hashMap != nil {
-		val.hashMap = m.hashMap.Dup()
+		val.hashMap = m.hashMap.Dup(pool)
 	}
 
 	return val
