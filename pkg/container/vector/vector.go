@@ -21,6 +21,7 @@ import (
 	"sort"
 	"unsafe"
 
+	"github.com/matrixorigin/matrixone/pkg/common/malloc"
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 	"github.com/matrixorigin/matrixone/pkg/common/mpool"
 	"github.com/matrixorigin/matrixone/pkg/container/bytejson"
@@ -44,11 +45,13 @@ type Vector struct {
 	typ types.Type
 
 	// data of fixed length element, in case of varlen, the Varlena
-	col  typedSlice
-	data []byte
+	col             typedSlice
+	data            []byte
+	dataDeallocator malloc.Deallocator
 
 	// area for holding large strings.
-	area []byte
+	area            []byte
+	areaDeallocator malloc.Deallocator
 
 	capacity int
 	length   int
@@ -451,15 +454,17 @@ func GetPtrAt[T any](v *Vector, idx int64) *T {
 
 func (v *Vector) Free(mp *mpool.MPool) {
 	if !v.cantFreeData {
-		mp.Free(v.data)
+		mp.Free(v.data, v.dataDeallocator)
 	}
 	if !v.cantFreeArea {
-		mp.Free(v.area)
+		mp.Free(v.area, v.areaDeallocator)
 	}
 	v.class = FLAT
 	v.col.reset()
 	v.data = nil
+	v.dataDeallocator = nil
 	v.area = nil
+	v.areaDeallocator = nil
 	v.capacity = 0
 	v.length = 0
 	v.cantFreeData = false
@@ -609,7 +614,7 @@ func (v *Vector) UnmarshalBinaryWithCopy(data []byte, mp *mpool.MPool) error {
 	dataLen := int(types.DecodeUint32(data[:4]))
 	data = data[4:]
 	if dataLen > 0 {
-		v.data, err = mp.Alloc(dataLen)
+		v.data, v.dataDeallocator, err = mp.Alloc(dataLen)
 		if err != nil {
 			return err
 		}
@@ -622,7 +627,7 @@ func (v *Vector) UnmarshalBinaryWithCopy(data []byte, mp *mpool.MPool) error {
 	areaLen := int(types.DecodeUint32(data[:4]))
 	data = data[4:]
 	if areaLen > 0 {
-		v.area, err = mp.Alloc(areaLen)
+		v.area, v.areaDeallocator, err = mp.Alloc(areaLen)
 		if err != nil {
 			return err
 		}
@@ -702,7 +707,8 @@ func (v *Vector) PreExtendWithArea(rows int, extraAreaSize int, mp *mpool.MPool)
 	// grow area
 	var err error
 	oldSz := len(area1)
-	area1, err = mp.Grow(area1, voff+extraAreaSize)
+	var deallocator malloc.Deallocator
+	area1, deallocator, err = mp.Grow(area1, v.areaDeallocator, voff+extraAreaSize)
 	if err != nil {
 		return err
 	}
@@ -710,6 +716,7 @@ func (v *Vector) PreExtendWithArea(rows int, extraAreaSize int, mp *mpool.MPool)
 
 	// set area
 	v.area = area1
+	v.areaDeallocator = deallocator
 
 	return nil
 }
@@ -743,7 +750,7 @@ func (v *Vector) Dup(mp *mpool.MPool) (*Vector, error) {
 	copy(w.data, v.data[:dataLen])
 
 	if len(v.area) > 0 {
-		if w.area, err = mp.Alloc(len(v.area)); err != nil {
+		if w.area, w.areaDeallocator, err = mp.Alloc(len(v.area)); err != nil {
 			return nil, err
 		}
 		copy(w.area, v.area)
@@ -1605,11 +1612,12 @@ func GetUnionAllFunction(typ types.Type, mp *mpool.MPool) func(v, w *Vector) err
 				return err
 			}
 			if sz := len(v.area) + len(w.area); sz > cap(v.area) {
-				area, err := mp.Grow(v.area, sz)
+				area, dec, err := mp.Grow(v.area, v.areaDeallocator, sz)
 				if err != nil {
 					return err
 				}
 				v.area = area[:len(v.area)]
+				v.areaDeallocator = dec
 			}
 			var vs []types.Varlena
 			ToSlice(v, &vs)
@@ -3183,13 +3191,15 @@ func shrinkFixed[T types.FixedSizeT](v *Vector, sels []int64, negate bool) {
 func shuffleFixed[T types.FixedSizeT](v *Vector, sels []int64, mp *mpool.MPool) error {
 	sz := v.typ.TypeSize()
 	olddata := v.data[:v.length*sz]
+	oldDeallocator := v.dataDeallocator
 	ns := len(sels)
 	vs := MustFixedCol[T](v)
-	data, err := mp.Alloc(ns * v.GetType().TypeSize())
+	data, dec, err := mp.Alloc(ns * v.GetType().TypeSize())
 	if err != nil {
 		return err
 	}
 	v.data = data
+	v.dataDeallocator = dec
 	v.setupFromData()
 	var ws []T
 	ToSlice(v, &ws)
@@ -3200,7 +3210,7 @@ func shuffleFixed[T types.FixedSizeT](v *Vector, sels []int64, mp *mpool.MPool) 
 	if v.cantFreeData {
 		v.cantFreeData = false
 	} else {
-		mp.Free(olddata)
+		mp.Free(olddata, oldDeallocator)
 	}
 	v.length = ns
 	return nil
@@ -4245,12 +4255,14 @@ func BuildVarlenaNoInline(vec *Vector, v1 *types.Varlena, bs *[]byte, m *mpool.M
 		return nil
 	}
 	var err error
-	area1, err = m.Grow2(area1, *bs, voff+vlen)
+	var dec malloc.Deallocator
+	area1, dec, err = m.Grow2(area1, vec.areaDeallocator, *bs, voff+vlen)
 	if err != nil {
 		return err
 	}
 	v1.SetOffsetLen(uint32(voff), uint32(vlen))
 	vec.area = area1
+	vec.areaDeallocator = dec
 	return nil
 }
 
