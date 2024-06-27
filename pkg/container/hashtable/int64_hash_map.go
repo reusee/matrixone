@@ -17,6 +17,7 @@ package hashtable
 import (
 	"unsafe"
 
+	"github.com/matrixorigin/matrixone/pkg/common/malloc"
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 	"github.com/matrixorigin/matrixone/pkg/common/mpool"
 )
@@ -31,10 +32,11 @@ type Int64HashMap struct {
 	blockMaxElemCnt uint64
 	cellCntMask     uint64
 
-	cellCnt uint64
-	elemCnt uint64
-	rawData [][]byte
-	cells   [][]Int64HashMapCell
+	cellCnt             uint64
+	elemCnt             uint64
+	rawData             [][]byte
+	rawDataDeallocators []malloc.Deallocator
+	cells               [][]Int64HashMapCell
 }
 
 var (
@@ -47,7 +49,7 @@ func init() {
 	maxIntCellCntPerBlock = maxBlockSize / intCellSize
 }
 
-func (ht *Int64HashMap) Dup() *Int64HashMap {
+func (ht *Int64HashMap) Dup(m *mpool.MPool) *Int64HashMap {
 	val := &Int64HashMap{
 		blockCellCnt:    ht.blockCellCnt,
 		blockMaxElemCnt: ht.blockMaxElemCnt,
@@ -56,13 +58,19 @@ func (ht *Int64HashMap) Dup() *Int64HashMap {
 		cellCnt: ht.cellCnt,
 		elemCnt: ht.elemCnt,
 
-		rawData: make([][]byte, len(ht.rawData)),
-		cells:   make([][]Int64HashMapCell, len(ht.cells)),
+		rawData:             make([][]byte, len(ht.rawData)),
+		rawDataDeallocators: make([]malloc.Deallocator, len(ht.rawData)),
+		cells:               make([][]Int64HashMapCell, len(ht.cells)),
 	}
 
 	for i, raw := range ht.rawData {
-		val.rawData[i] = make([]byte, len(raw))
-		copy(val.rawData[i], raw)
+		newSlice, dec, err := m.Alloc(len(raw))
+		if err != nil {
+			panic(err)
+		}
+		copy(newSlice, raw)
+		val.rawData[i] = newSlice
+		val.rawDataDeallocators[i] = dec
 	}
 
 	for i, cell := range ht.cells {
@@ -76,11 +84,11 @@ func (ht *Int64HashMap) Dup() *Int64HashMap {
 func (ht *Int64HashMap) Free(m *mpool.MPool) {
 	for i := range ht.rawData {
 		if len(ht.rawData[i]) > 0 {
-			m.Free(ht.rawData[i])
+			m.Free(ht.rawData[i], ht.rawDataDeallocators[i])
 		}
-		ht.rawData[i], ht.cells[i] = nil, nil
+		ht.rawData[i], ht.cells[i], ht.rawDataDeallocators[i] = nil, nil, nil
 	}
-	ht.rawData, ht.cells = nil, nil
+	ht.rawData, ht.cells, ht.rawDataDeallocators = nil, nil, nil
 }
 
 func (ht *Int64HashMap) Init(m *mpool.MPool) (err error) {
@@ -91,8 +99,9 @@ func (ht *Int64HashMap) Init(m *mpool.MPool) (err error) {
 	ht.cellCnt = kInitialCellCnt
 
 	ht.rawData = make([][]byte, 1)
+	ht.rawDataDeallocators = make([]malloc.Deallocator, 1)
 	ht.cells = make([][]Int64HashMapCell, 1)
-	if ht.rawData[0], err = m.Alloc(int(ht.blockCellCnt * intCellSize)); err == nil {
+	if ht.rawData[0], ht.rawDataDeallocators[0], err = m.Alloc(int(ht.blockCellCnt * intCellSize)); err == nil {
 		ht.cells[0] = unsafe.Slice((*Int64HashMapCell)(unsafe.Pointer(&ht.rawData[0][0])), ht.blockCellCnt)
 	}
 	return
@@ -215,12 +224,13 @@ func (ht *Int64HashMap) ResizeOnDemand(n int, m *mpool.MPool) error {
 		newBlockNum := newAlloc / maxBlockSize
 
 		ht.rawData = append(ht.rawData, make([][]byte, newBlockNum-oldBlockNum)...)
+		ht.rawDataDeallocators = append(ht.rawDataDeallocators, make([]malloc.Deallocator, newBlockNum-oldBlockNum)...)
 		ht.cells = append(ht.cells, make([][]Int64HashMapCell, newBlockNum-oldBlockNum)...)
 		ht.cellCnt = ht.blockCellCnt * uint64(newBlockNum)
 		ht.cellCntMask = ht.cellCnt - 1
 
 		for i := oldBlockNum; i < newBlockNum; i++ {
-			ht.rawData[i], err = m.Alloc(int(ht.blockCellCnt * intCellSize))
+			ht.rawData[i], ht.rawDataDeallocators[i], err = m.Alloc(int(ht.blockCellCnt * intCellSize))
 			if err != nil {
 				return err
 			}
@@ -261,6 +271,7 @@ func (ht *Int64HashMap) ResizeOnDemand(n int, m *mpool.MPool) error {
 	} else {
 		oldCells0 := ht.cells[0]
 		oldData0 := ht.rawData[0]
+		oldDataDeallocator0 := ht.rawDataDeallocators[0]
 		ht.cellCnt = newCellCnt
 		ht.cellCntMask = newCellCnt - 1
 
@@ -268,7 +279,7 @@ func (ht *Int64HashMap) ResizeOnDemand(n int, m *mpool.MPool) error {
 			ht.blockCellCnt = newCellCnt
 			ht.blockMaxElemCnt = newMaxElemCnt
 
-			ht.rawData[0], err = m.Alloc(newAlloc)
+			ht.rawData[0], ht.rawDataDeallocators[0], err = m.Alloc(newAlloc)
 			if err != nil {
 				return err
 			}
@@ -279,12 +290,13 @@ func (ht *Int64HashMap) ResizeOnDemand(n int, m *mpool.MPool) error {
 
 			newBlockNum := newAlloc / maxBlockSize
 			ht.rawData = make([][]byte, newBlockNum)
+			ht.rawDataDeallocators = make([]malloc.Deallocator, newBlockNum)
 			ht.cells = make([][]Int64HashMapCell, newBlockNum)
 			ht.cellCnt = ht.blockCellCnt * uint64(newBlockNum)
 			ht.cellCntMask = ht.cellCnt - 1
 
 			for i := 0; i < newBlockNum; i++ {
-				ht.rawData[i], err = m.Alloc(int(ht.blockCellCnt * intCellSize))
+				ht.rawData[i], ht.rawDataDeallocators[i], err = m.Alloc(int(ht.blockCellCnt * intCellSize))
 				if err != nil {
 					return err
 				}
@@ -301,7 +313,7 @@ func (ht *Int64HashMap) ResizeOnDemand(n int, m *mpool.MPool) error {
 			}
 		}
 
-		m.Free(oldData0)
+		m.Free(oldData0, oldDataDeallocator0)
 	}
 
 	return nil
