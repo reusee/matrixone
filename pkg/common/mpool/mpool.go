@@ -360,7 +360,9 @@ func (mp *MPool) Alloc(sz int) ([]byte, malloc.Deallocator, error) {
 }
 
 func (mp *MPool) Free(bs []byte, deallocator malloc.Deallocator) {
-	defer deallocator.Deallocate(malloc.NoHints)
+	if deallocator != nil {
+		defer deallocator.Deallocate(malloc.NoHints)
+	}
 
 	if bs == nil || cap(bs) == 0 {
 		return
