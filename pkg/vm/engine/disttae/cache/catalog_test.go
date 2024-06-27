@@ -149,7 +149,7 @@ func TestDatabasesWithMultiVersion(t *testing.T) {
 	{ // reset names
 		name := []byte{'0'}
 		for i := range names {
-			names[i], _, _ = types.BuildVarlena(name, nil, nil)
+			names[i], _, _, _ = types.BuildVarlena(name, nil, nil, nil)
 		}
 	}
 	cc.InsertDatabase(bat)
