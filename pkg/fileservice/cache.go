@@ -157,6 +157,12 @@ type IOVectorCache interface {
 	) error
 }
 
+// IOVectorDataCache caches IOVector with CachedData
+type IOVectorDataCache interface {
+	IOVectorCache
+	CacheDataAllocator
+}
+
 var slowCacheReadThreshold = time.Second * 0
 
 func readCache(ctx context.Context, cache IOVectorCache, vector *IOVector) error {
