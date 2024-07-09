@@ -223,3 +223,29 @@ func TestRef(t *testing.T) {
 	})
 
 }
+
+func TestConcurrentRef(t *testing.T) {
+	holder1 := NewRefHolder[int]()
+	holder2 := NewRefHolder[int]()
+
+	sem := make(chan struct{}, 1024)
+
+	for i := 0; i < 65536; i++ {
+		sem <- struct{}{}
+		go func() {
+			defer func() {
+				<-sem
+			}()
+			ref := holder1.Own(1)
+			ref.Move(holder2)
+			ref.Borrow(holder1)
+			ref2 := holder2.Own(1)
+			ref2.Move(holder1)
+			ref2.Borrow(holder2)
+		}()
+	}
+
+	for i := 0; i < cap(sem); i++ {
+		sem <- struct{}{}
+	}
+}
