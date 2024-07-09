@@ -15,6 +15,7 @@
 package malloc
 
 import (
+	"slices"
 	"sync"
 	"sync/atomic"
 )
@@ -40,6 +41,14 @@ const (
 	Borrower
 )
 
+func NewRefHolder[T any]() *RefHolder[T] {
+	return &RefHolder[T]{
+		owns:       make(map[uint64]bool),
+		borrowTo:   make(map[uint64][]*RefHolder[T]),
+		borrowFrom: make(map[uint64]*RefHolder[T]),
+	}
+}
+
 var nextID atomic.Uint64
 
 func (r *RefHolder[T]) Own(value T) Ref[T] {
@@ -55,20 +64,24 @@ func (r *RefHolder[T]) Own(value T) Ref[T] {
 	}
 }
 
-func (r *RefHolder[T]) Borrow(ref Ref[T], to *RefHolder[T]) Ref[T] {
+func (r *RefHolder[T]) borrow(ref Ref[T], to *RefHolder[T]) Ref[T] {
+	if to == r {
+		panic("borrow to owner")
+	}
+
 	r.mu.Lock()
+	defer r.mu.Unlock()
+	to.mu.Lock()
+	defer to.mu.Unlock()
+
 	r.borrowTo[ref.id] = append(
 		r.borrowTo[ref.id],
 		to,
 	)
-	r.mu.Unlock()
-
-	to.mu.Lock()
 	if _, ok := to.borrowFrom[ref.id]; ok {
 		panic("already borrowed")
 	}
 	to.borrowFrom[ref.id] = r
-	to.mu.Unlock()
 
 	return Ref[T]{
 		id:     ref.id,
@@ -78,6 +91,57 @@ func (r *RefHolder[T]) Borrow(ref Ref[T], to *RefHolder[T]) Ref[T] {
 	}
 }
 
+func (r Ref[T]) Borrow(holder *RefHolder[T]) Ref[T] {
+	if r.role != Owner {
+		panic("cannot borrow")
+	}
+	return r.holder.borrow(r, holder)
+}
+
+func (r *Ref[T]) End() {
+	if r.id == 0 ||
+		r.holder == nil ||
+		r.role == 0 {
+		panic("null Ref")
+	}
+
+	defer func() {
+		*r = Ref[T]{}
+	}()
+
+	switch r.role {
+
+	case Owner:
+		r.holder.mu.Lock()
+		defer r.holder.mu.Unlock()
+		delete(r.holder.owns, r.id)
+		borrows := r.holder.borrowTo[r.id]
+		delete(r.holder.borrowTo, r.id)
+		if len(borrows) > 0 {
+			panic("still being borrowed")
+		}
+
+	case Borrower:
+		r.holder.mu.Lock()
+		defer r.holder.mu.Unlock()
+		owner := r.holder.borrowFrom[r.id]
+		delete(r.holder.borrowFrom, r.id)
+		if owner == nil {
+			panic("owner not found")
+		}
+		owner.mu.Lock()
+		defer owner.mu.Unlock()
+		owner.borrowTo[r.id] = slices.DeleteFunc(
+			owner.borrowTo[r.id],
+			func(h *RefHolder[T]) bool {
+				return h == r.holder
+			},
+		)
+
+	default:
+		panic("invalid role")
+	}
+}
+
 //TODO RefHolder end
-//TODO Ref end
 //TODO Ref move
