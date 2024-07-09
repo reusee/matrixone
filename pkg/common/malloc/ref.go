@@ -143,5 +143,64 @@ func (r *Ref[T]) End() {
 	}
 }
 
+func (r *RefHolder[T]) move(ref *Ref[T], to *RefHolder[T]) {
+	if ref.holder != r {
+		panic("not holder")
+	}
+	if r == to {
+		panic("same holder")
+	}
+
+	ref.holder = to
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	to.mu.Lock()
+	defer to.mu.Unlock()
+
+	switch ref.role {
+
+	case Owner:
+		delete(r.owns, ref.id)
+		to.owns[ref.id] = true
+		borrowers := r.borrowTo[ref.id]
+		delete(r.borrowTo, ref.id)
+		for _, borrower := range borrowers {
+			if borrower == to {
+				panic("cannot move ownership to borrower")
+			}
+			to.borrowTo[ref.id] = append(
+				to.borrowTo[ref.id],
+				borrower,
+			)
+			borrower.mu.Lock()
+			borrower.borrowFrom[ref.id] = to
+			borrower.mu.Unlock()
+		}
+
+	case Borrower:
+		owner, ok := r.borrowFrom[ref.id]
+		if !ok {
+			panic("owner not found")
+		}
+		delete(r.borrowFrom, ref.id)
+		to.borrowFrom[ref.id] = owner
+		owner.mu.Lock()
+		for i, borrower := range owner.borrowTo[ref.id] {
+			if borrower == r {
+				owner.borrowTo[ref.id][i] = to
+			}
+		}
+		owner.mu.Unlock()
+
+	default:
+		panic("invalid role")
+	}
+}
+
+func (r *Ref[T]) Move(to *RefHolder[T]) {
+	r.holder.move(r, to)
+}
+
 //TODO RefHolder end
-//TODO Ref move
+//TODO deadlock

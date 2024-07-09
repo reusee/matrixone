@@ -121,7 +121,7 @@ func TestRef(t *testing.T) {
 		ref3.End()
 	})
 
-	t.Run("invalid role", func(t *testing.T) {
+	t.Run("invalid role in End", func(t *testing.T) {
 		defer func() {
 			p := recover()
 			if p == nil {
@@ -135,6 +135,91 @@ func TestRef(t *testing.T) {
 		ref2 := ref1.Borrow(holder2)
 		ref2.role = 99
 		ref2.End()
+	})
+
+	t.Run("move", func(t *testing.T) {
+		ref1 := holder1.Own(1)
+		ref1.Move(holder2)
+		ref2 := ref1.Borrow(holder1)
+		holder3 := NewRefHolder[int]()
+		ref1.Move(holder3)
+		ref2.Move(holder2)
+	})
+
+	t.Run("bad holder in move", func(t *testing.T) {
+		defer func() {
+			p := recover()
+			if p == nil {
+				t.Fatal("should panic")
+			}
+			if msg := fmt.Sprintf("%v", p); msg != "not holder" {
+				t.Fatalf("got %v", msg)
+			}
+		}()
+		ref1 := holder1.Own(1)
+		holder2.move(&ref1, holder2)
+	})
+
+	t.Run("same holder in move", func(t *testing.T) {
+		defer func() {
+			p := recover()
+			if p == nil {
+				t.Fatal("should panic")
+			}
+			if msg := fmt.Sprintf("%v", p); msg != "same holder" {
+				t.Fatalf("got %v", msg)
+			}
+		}()
+		ref1 := holder1.Own(1)
+		ref1.Move(holder1)
+	})
+
+	t.Run("move ownership to borrower", func(t *testing.T) {
+		defer func() {
+			p := recover()
+			if p == nil {
+				t.Fatal("should panic")
+			}
+			if msg := fmt.Sprintf("%v", p); msg != "cannot move ownership to borrower" {
+				t.Fatalf("got %v", msg)
+			}
+		}()
+		ref1 := holder1.Own(1)
+		_ = ref1.Borrow(holder2)
+		ref1.Move(holder2)
+	})
+
+	t.Run("owner not found in move", func(t *testing.T) {
+		defer func() {
+			p := recover()
+			if p == nil {
+				t.Fatal("should panic")
+			}
+			if msg := fmt.Sprintf("%v", p); msg != "owner not found" {
+				t.Fatalf("got %v", msg)
+			}
+		}()
+		ref1 := holder1.Own(1)
+		ref2 := ref1.Borrow(holder2)
+		ref3 := ref2 // should not copy Ref
+		ref2.End()
+		holder3 := NewRefHolder[int]()
+		ref3.Move(holder3)
+	})
+
+	t.Run("invalid role in Move", func(t *testing.T) {
+		defer func() {
+			p := recover()
+			if p == nil {
+				t.Fatal("should panic")
+			}
+			if msg := fmt.Sprintf("%v", p); msg != "invalid role" {
+				t.Fatalf("got %v", msg)
+			}
+		}()
+		ref1 := holder1.Own(1)
+		ref1.role = 99
+		ref1.Move(holder2)
 	})
 
 }
