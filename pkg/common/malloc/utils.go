@@ -22,3 +22,8 @@ const (
 func ptrTo[T any](v T) *T {
 	return &v
 }
+
+type noCopy struct{}
+
+func (n *noCopy) Lock()   {}
+func (n *noCopy) Unlock() {}

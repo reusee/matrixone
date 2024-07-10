@@ -21,6 +21,7 @@ import (
 )
 
 type Ref[T any] struct {
+	_      noCopy
 	id     uint64
 	Value  T
 	holder *RefHolder[T]
@@ -51,12 +52,12 @@ func NewRefHolder[T any]() *RefHolder[T] {
 
 var nextID atomic.Uint64
 
-func (r *RefHolder[T]) Own(value T) Ref[T] {
+func (r *RefHolder[T]) Own(value T) *Ref[T] {
 	id := nextID.Add(1)
 	r.mu.Lock()
 	r.owns[id] = true
 	r.mu.Unlock()
-	return Ref[T]{
+	return &Ref[T]{
 		id:     id,
 		Value:  value,
 		holder: r,
@@ -64,7 +65,7 @@ func (r *RefHolder[T]) Own(value T) Ref[T] {
 	}
 }
 
-func (r *RefHolder[T]) borrow(ref Ref[T], to *RefHolder[T]) Ref[T] {
+func (r *RefHolder[T]) borrow(ref *Ref[T], to *RefHolder[T]) *Ref[T] {
 	if to == r {
 		panic("borrow to owner")
 	}
@@ -84,7 +85,7 @@ func (r *RefHolder[T]) borrow(ref Ref[T], to *RefHolder[T]) Ref[T] {
 	to.borrowFrom[ref.id] = r
 	to.mu.Unlock()
 
-	return Ref[T]{
+	return &Ref[T]{
 		id:     ref.id,
 		Value:  ref.Value,
 		holder: to,
@@ -92,7 +93,7 @@ func (r *RefHolder[T]) borrow(ref Ref[T], to *RefHolder[T]) Ref[T] {
 	}
 }
 
-func (r Ref[T]) Borrow(holder *RefHolder[T]) Ref[T] {
+func (r *Ref[T]) Borrow(holder *RefHolder[T]) *Ref[T] {
 	if r.role != Owner {
 		panic("cannot borrow")
 	}

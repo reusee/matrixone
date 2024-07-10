@@ -104,23 +104,6 @@ func TestRef(t *testing.T) {
 		ref1.End()
 	})
 
-	t.Run("owner not found", func(t *testing.T) {
-		defer func() {
-			p := recover()
-			if p == nil {
-				t.Fatal("should panic")
-			}
-			if msg := fmt.Sprintf("%v", p); msg != "owner not found" {
-				t.Fatalf("got %v", msg)
-			}
-		}()
-		ref1 := holder1.Own(1)
-		ref2 := ref1.Borrow(holder2)
-		ref3 := ref2 // should not copy Ref
-		ref2.End()
-		ref3.End()
-	})
-
 	t.Run("invalid role in End", func(t *testing.T) {
 		defer func() {
 			p := recover()
@@ -157,7 +140,7 @@ func TestRef(t *testing.T) {
 			}
 		}()
 		ref1 := holder1.Own(1)
-		holder2.move(&ref1, holder2)
+		holder2.move(ref1, holder2)
 	})
 
 	t.Run("same holder in move", func(t *testing.T) {
@@ -187,24 +170,6 @@ func TestRef(t *testing.T) {
 		ref1 := holder1.Own(1)
 		_ = ref1.Borrow(holder2)
 		ref1.Move(holder2)
-	})
-
-	t.Run("owner not found in move", func(t *testing.T) {
-		defer func() {
-			p := recover()
-			if p == nil {
-				t.Fatal("should panic")
-			}
-			if msg := fmt.Sprintf("%v", p); msg != "owner not found" {
-				t.Fatalf("got %v", msg)
-			}
-		}()
-		ref1 := holder1.Own(1)
-		ref2 := ref1.Borrow(holder2)
-		ref3 := ref2 // should not copy Ref
-		ref2.End()
-		holder3 := NewRefHolder[int]()
-		ref3.Move(holder3)
 	})
 
 	t.Run("invalid role in Move", func(t *testing.T) {
