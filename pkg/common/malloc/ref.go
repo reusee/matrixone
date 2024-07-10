@@ -70,18 +70,19 @@ func (r *RefHolder[T]) borrow(ref Ref[T], to *RefHolder[T]) Ref[T] {
 	}
 
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	to.mu.Lock()
-	defer to.mu.Unlock()
-
 	r.borrowTo[ref.id] = append(
 		r.borrowTo[ref.id],
 		to,
 	)
+	r.mu.Unlock()
+
+	to.mu.Lock()
 	if _, ok := to.borrowFrom[ref.id]; ok {
+		to.mu.Unlock()
 		panic("already borrowed")
 	}
 	to.borrowFrom[ref.id] = r
+	to.mu.Unlock()
 
 	return Ref[T]{
 		id:     ref.id,
@@ -113,30 +114,31 @@ func (r *Ref[T]) End() {
 
 	case Owner:
 		r.holder.mu.Lock()
-		defer r.holder.mu.Unlock()
 		delete(r.holder.owns, r.id)
 		borrows := r.holder.borrowTo[r.id]
 		delete(r.holder.borrowTo, r.id)
+		r.holder.mu.Unlock()
 		if len(borrows) > 0 {
 			panic("still being borrowed")
 		}
 
 	case Borrower:
 		r.holder.mu.Lock()
-		defer r.holder.mu.Unlock()
 		owner := r.holder.borrowFrom[r.id]
 		delete(r.holder.borrowFrom, r.id)
+		r.holder.mu.Unlock()
 		if owner == nil {
 			panic("owner not found")
 		}
+
 		owner.mu.Lock()
-		defer owner.mu.Unlock()
 		owner.borrowTo[r.id] = slices.DeleteFunc(
 			owner.borrowTo[r.id],
 			func(h *RefHolder[T]) bool {
 				return h == r.holder
 			},
 		)
+		owner.mu.Unlock()
 
 	default:
 		panic("invalid role")
@@ -153,38 +155,67 @@ func (r *RefHolder[T]) move(ref *Ref[T], to *RefHolder[T]) {
 
 	ref.holder = to
 
+	// delete from r
+	var borrowers []*RefHolder[T]
+	var owner *RefHolder[T]
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	to.mu.Lock()
-	defer to.mu.Unlock()
-
 	switch ref.role {
 
 	case Owner:
 		delete(r.owns, ref.id)
-		to.owns[ref.id] = true
-		borrowers := r.borrowTo[ref.id]
+		borrowers = r.borrowTo[ref.id]
 		delete(r.borrowTo, ref.id)
+
+	case Borrower:
+		var ok bool
+		owner, ok = r.borrowFrom[ref.id]
+		if !ok {
+			r.mu.Unlock()
+			panic("owner not found")
+		}
+		delete(r.borrowFrom, ref.id)
+
+	default:
+		r.mu.Unlock()
+		panic("invalid role")
+	}
+	r.mu.Unlock()
+
+	// update to
+	to.mu.Lock()
+	switch ref.role {
+
+	case Owner:
+		to.owns[ref.id] = true
 		for _, borrower := range borrowers {
 			if borrower == to {
+				to.mu.Unlock()
 				panic("cannot move ownership to borrower")
 			}
 			to.borrowTo[ref.id] = append(
 				to.borrowTo[ref.id],
 				borrower,
 			)
-			borrower.mu.Lock()
-			borrower.borrowFrom[ref.id] = to
-			borrower.mu.Unlock()
 		}
 
 	case Borrower:
-		owner, ok := r.borrowFrom[ref.id]
-		if !ok {
-			panic("owner not found")
-		}
-		delete(r.borrowFrom, ref.id)
 		to.borrowFrom[ref.id] = owner
+
+	default:
+		to.mu.Unlock()
+		panic("invalid role")
+	}
+	to.mu.Unlock()
+
+	// update borrowers
+	for _, borrower := range borrowers {
+		borrower.mu.Lock()
+		borrower.borrowFrom[ref.id] = to
+		borrower.mu.Unlock()
+	}
+
+	// update owner
+	if owner != nil {
 		owner.mu.Lock()
 		for i, borrower := range owner.borrowTo[ref.id] {
 			if borrower == r {
@@ -192,10 +223,8 @@ func (r *RefHolder[T]) move(ref *Ref[T], to *RefHolder[T]) {
 			}
 		}
 		owner.mu.Unlock()
-
-	default:
-		panic("invalid role")
 	}
+
 }
 
 func (r *Ref[T]) Move(to *RefHolder[T]) {
@@ -203,4 +232,3 @@ func (r *Ref[T]) Move(to *RefHolder[T]) {
 }
 
 //TODO RefHolder end
-//TODO deadlock
