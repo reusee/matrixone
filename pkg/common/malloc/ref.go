@@ -29,10 +29,10 @@ type Ref[T any] struct {
 }
 
 type RefHolder[T any] struct {
-	mu         sync.Mutex
-	owns       map[uint64]bool
-	borrowTo   map[uint64][]*RefHolder[T]
-	borrowFrom map[uint64]*RefHolder[T]
+	mu      sync.Mutex
+	owns    map[uint64]bool
+	lends   map[uint64][]*RefHolder[T]
+	borrows map[uint64]*RefHolder[T]
 }
 
 type HolderRole uint8
@@ -44,9 +44,9 @@ const (
 
 func NewRefHolder[T any]() *RefHolder[T] {
 	return &RefHolder[T]{
-		owns:       make(map[uint64]bool),
-		borrowTo:   make(map[uint64][]*RefHolder[T]),
-		borrowFrom: make(map[uint64]*RefHolder[T]),
+		owns:    make(map[uint64]bool),
+		lends:   make(map[uint64][]*RefHolder[T]),
+		borrows: make(map[uint64]*RefHolder[T]),
 	}
 }
 
@@ -71,18 +71,18 @@ func (r *RefHolder[T]) borrow(ref *Ref[T], to *RefHolder[T]) *Ref[T] {
 	}
 
 	r.mu.Lock()
-	r.borrowTo[ref.id] = append(
-		r.borrowTo[ref.id],
+	r.lends[ref.id] = append(
+		r.lends[ref.id],
 		to,
 	)
 	r.mu.Unlock()
 
 	to.mu.Lock()
-	if _, ok := to.borrowFrom[ref.id]; ok {
+	if _, ok := to.borrows[ref.id]; ok {
 		to.mu.Unlock()
-		panic("already borrowed")
+		panic("already lent")
 	}
-	to.borrowFrom[ref.id] = r
+	to.borrows[ref.id] = r
 	to.mu.Unlock()
 
 	return &Ref[T]{
@@ -116,25 +116,25 @@ func (r *Ref[T]) End() {
 	case Owner:
 		r.holder.mu.Lock()
 		delete(r.holder.owns, r.id)
-		borrows := r.holder.borrowTo[r.id]
-		delete(r.holder.borrowTo, r.id)
+		borrows := r.holder.lends[r.id]
+		delete(r.holder.lends, r.id)
 		r.holder.mu.Unlock()
 		if len(borrows) > 0 {
-			panic("still being borrowed")
+			panic("still being lent")
 		}
 
 	case Borrower:
 		r.holder.mu.Lock()
-		owner := r.holder.borrowFrom[r.id]
-		delete(r.holder.borrowFrom, r.id)
+		owner := r.holder.borrows[r.id]
+		delete(r.holder.borrows, r.id)
 		r.holder.mu.Unlock()
 		if owner == nil {
 			panic("owner not found")
 		}
 
 		owner.mu.Lock()
-		owner.borrowTo[r.id] = slices.DeleteFunc(
-			owner.borrowTo[r.id],
+		owner.lends[r.id] = slices.DeleteFunc(
+			owner.lends[r.id],
 			func(h *RefHolder[T]) bool {
 				return h == r.holder
 			},
@@ -164,17 +164,17 @@ func (r *RefHolder[T]) move(ref *Ref[T], to *RefHolder[T]) {
 
 	case Owner:
 		delete(r.owns, ref.id)
-		borrowers = r.borrowTo[ref.id]
-		delete(r.borrowTo, ref.id)
+		borrowers = r.lends[ref.id]
+		delete(r.lends, ref.id)
 
 	case Borrower:
 		var ok bool
-		owner, ok = r.borrowFrom[ref.id]
+		owner, ok = r.borrows[ref.id]
 		if !ok {
 			r.mu.Unlock()
 			panic("owner not found")
 		}
-		delete(r.borrowFrom, ref.id)
+		delete(r.borrows, ref.id)
 
 	default:
 		r.mu.Unlock()
@@ -193,14 +193,14 @@ func (r *RefHolder[T]) move(ref *Ref[T], to *RefHolder[T]) {
 				to.mu.Unlock()
 				panic("cannot move ownership to borrower")
 			}
-			to.borrowTo[ref.id] = append(
-				to.borrowTo[ref.id],
+			to.lends[ref.id] = append(
+				to.lends[ref.id],
 				borrower,
 			)
 		}
 
 	case Borrower:
-		to.borrowFrom[ref.id] = owner
+		to.borrows[ref.id] = owner
 
 	default:
 		to.mu.Unlock()
@@ -211,16 +211,16 @@ func (r *RefHolder[T]) move(ref *Ref[T], to *RefHolder[T]) {
 	// update borrowers
 	for _, borrower := range borrowers {
 		borrower.mu.Lock()
-		borrower.borrowFrom[ref.id] = to
+		borrower.borrows[ref.id] = to
 		borrower.mu.Unlock()
 	}
 
 	// update owner
 	if owner != nil {
 		owner.mu.Lock()
-		for i, borrower := range owner.borrowTo[ref.id] {
+		for i, borrower := range owner.lends[ref.id] {
 			if borrower == r {
-				owner.borrowTo[ref.id][i] = to
+				owner.lends[ref.id][i] = to
 			}
 		}
 		owner.mu.Unlock()
@@ -232,4 +232,50 @@ func (r *Ref[T]) Move(to *RefHolder[T]) {
 	r.holder.move(r, to)
 }
 
-//TODO RefHolder end
+func (r *RefHolder[T]) End() {
+	r.mu.Lock()
+
+	// check owns
+	if len(r.owns) > 0 {
+		r.mu.Unlock()
+		panic("end with live owned references")
+	}
+
+	// check lends
+	if len(r.lends) > 0 {
+		r.mu.Unlock()
+		panic("end with live lent references")
+	}
+
+	// borrows
+	infos := make([]borrowInfo[T], 0, len(r.borrows))
+	for id, owner := range r.borrows {
+		infos = append(infos, borrowInfo[T]{
+			id:    id,
+			owner: owner,
+		})
+	}
+
+	r.mu.Unlock()
+
+	// clear
+	*r = RefHolder[T]{}
+
+	// update owner lends
+	for _, info := range infos {
+		info.owner.mu.Lock()
+		info.owner.lends[info.id] = slices.DeleteFunc(
+			info.owner.lends[info.id],
+			func(h *RefHolder[T]) bool {
+				return h == r
+			},
+		)
+		info.owner.mu.Unlock()
+	}
+
+}
+
+type borrowInfo[T any] struct {
+	id    uint64
+	owner *RefHolder[T]
+}

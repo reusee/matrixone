@@ -20,10 +20,13 @@ import (
 )
 
 func TestRef(t *testing.T) {
-	holder1 := NewRefHolder[int]()
-	holder2 := NewRefHolder[int]()
 
 	t.Run("borrow", func(t *testing.T) {
+		holder1 := NewRefHolder[int]()
+		defer holder1.End()
+		holder2 := NewRefHolder[int]()
+		defer holder2.End()
+
 		ref1 := holder1.Own(1)
 		ref2 := ref1.Borrow(holder2)
 		ref2.End()
@@ -31,21 +34,33 @@ func TestRef(t *testing.T) {
 	})
 
 	t.Run("double borrow", func(t *testing.T) {
+		holder1 := NewRefHolder[int]()
+		defer holder1.End()
+		holder2 := NewRefHolder[int]()
+		defer holder2.End()
+
 		defer func() {
 			p := recover()
 			if p == nil {
 				t.Fatal("should panic")
 			}
-			if msg := fmt.Sprintf("%v", p); msg != "already borrowed" {
+			if msg := fmt.Sprintf("%v", p); msg != "already lent" {
 				t.Fatalf("got %v", msg)
 			}
 		}()
 		ref1 := holder1.Own(1)
-		_ = ref1.Borrow(holder2)
+		defer ref1.End()
+		ref2 := ref1.Borrow(holder2)
+		defer ref2.End()
 		_ = ref1.Borrow(holder2)
 	})
 
 	t.Run("borrow from borrower", func(t *testing.T) {
+		holder1 := NewRefHolder[int]()
+		defer holder1.End()
+		holder2 := NewRefHolder[int]()
+		defer holder2.End()
+
 		defer func() {
 			p := recover()
 			if p == nil {
@@ -56,11 +71,18 @@ func TestRef(t *testing.T) {
 			}
 		}()
 		ref1 := holder1.Own(1)
+		defer ref1.End()
 		ref2 := ref1.Borrow(holder2)
+		defer ref2.End()
 		ref2.Borrow(holder1)
 	})
 
 	t.Run("borrow to owner", func(t *testing.T) {
+		holder1 := NewRefHolder[int]()
+		defer holder1.End()
+		holder2 := NewRefHolder[int]()
+		defer holder2.End()
+
 		defer func() {
 			p := recover()
 			if p == nil {
@@ -71,10 +93,16 @@ func TestRef(t *testing.T) {
 			}
 		}()
 		ref1 := holder1.Own(1)
+		defer ref1.End()
 		ref1.Borrow(holder1)
 	})
 
 	t.Run("null ref", func(t *testing.T) {
+		holder1 := NewRefHolder[int]()
+		defer holder1.End()
+		holder2 := NewRefHolder[int]()
+		defer holder2.End()
+
 		defer func() {
 			p := recover()
 			if p == nil {
@@ -90,21 +118,28 @@ func TestRef(t *testing.T) {
 	})
 
 	t.Run("end with borrowing", func(t *testing.T) {
+		holder1 := NewRefHolder[int]()
+		holder2 := NewRefHolder[int]()
+
 		defer func() {
 			p := recover()
 			if p == nil {
 				t.Fatal("should panic")
 			}
-			if msg := fmt.Sprintf("%v", p); msg != "still being borrowed" {
+			if msg := fmt.Sprintf("%v", p); msg != "still being lent" {
 				t.Fatalf("got %v", msg)
 			}
 		}()
 		ref1 := holder1.Own(1)
-		_ = ref1.Borrow(holder2)
+		ref2 := ref1.Borrow(holder2)
+		defer ref2.End()
 		ref1.End()
 	})
 
 	t.Run("invalid role in End", func(t *testing.T) {
+		holder1 := NewRefHolder[int]()
+		holder2 := NewRefHolder[int]()
+
 		defer func() {
 			p := recover()
 			if p == nil {
@@ -121,15 +156,26 @@ func TestRef(t *testing.T) {
 	})
 
 	t.Run("move", func(t *testing.T) {
+		holder1 := NewRefHolder[int]()
+		defer holder1.End()
+		holder2 := NewRefHolder[int]()
+		defer holder2.End()
+
 		ref1 := holder1.Own(1)
 		ref1.Move(holder2)
 		ref2 := ref1.Borrow(holder1)
 		holder3 := NewRefHolder[int]()
+		defer holder3.End()
 		ref1.Move(holder3)
 		ref2.Move(holder2)
+		ref2.End()
+		ref1.End()
 	})
 
 	t.Run("bad holder in move", func(t *testing.T) {
+		holder1 := NewRefHolder[int]()
+		holder2 := NewRefHolder[int]()
+
 		defer func() {
 			p := recover()
 			if p == nil {
@@ -144,6 +190,8 @@ func TestRef(t *testing.T) {
 	})
 
 	t.Run("same holder in move", func(t *testing.T) {
+		holder1 := NewRefHolder[int]()
+
 		defer func() {
 			p := recover()
 			if p == nil {
@@ -158,6 +206,9 @@ func TestRef(t *testing.T) {
 	})
 
 	t.Run("move ownership to borrower", func(t *testing.T) {
+		holder1 := NewRefHolder[int]()
+		holder2 := NewRefHolder[int]()
+
 		defer func() {
 			p := recover()
 			if p == nil {
@@ -173,6 +224,9 @@ func TestRef(t *testing.T) {
 	})
 
 	t.Run("invalid role in Move", func(t *testing.T) {
+		holder1 := NewRefHolder[int]()
+		holder2 := NewRefHolder[int]()
+
 		defer func() {
 			p := recover()
 			if p == nil {
@@ -191,7 +245,9 @@ func TestRef(t *testing.T) {
 
 func TestConcurrentRef(t *testing.T) {
 	holder1 := NewRefHolder[int]()
+	defer holder1.End()
 	holder2 := NewRefHolder[int]()
+	defer holder2.End()
 
 	sem := make(chan struct{}, 1024)
 
@@ -202,11 +258,15 @@ func TestConcurrentRef(t *testing.T) {
 				<-sem
 			}()
 			ref := holder1.Own(1)
+			defer ref.End()
 			ref.Move(holder2)
-			ref.Borrow(holder1)
-			ref2 := holder2.Own(1)
-			ref2.Move(holder1)
-			ref2.Borrow(holder2)
+			ref2 := ref.Borrow(holder1)
+			defer ref2.End()
+			ref3 := holder2.Own(1)
+			defer ref3.End()
+			ref3.Move(holder1)
+			ref4 := ref3.Borrow(holder2)
+			defer ref4.End()
 		}()
 	}
 
