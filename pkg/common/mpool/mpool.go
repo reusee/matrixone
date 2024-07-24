@@ -120,7 +120,7 @@ func (s *MPoolStats) RecordManyFrees(tag string, nfree, sz int64) int64 {
 
 const (
 	NumFixedPool = 5
-	kMemHdrSz    = 16
+	kMemHdrSz    = 24
 	kStripeSize  = 128
 	B            = 1
 	KB           = 1024
@@ -139,6 +139,7 @@ type memHdr struct {
 	allocSz      int32
 	fixedPoolIdx int8
 	guard        [3]uint8
+	guardID      int64
 }
 
 func init() {
@@ -600,6 +601,8 @@ func (mp *MPool) Free(bs []byte) {
 	bs = bs[:1]
 	hdr := unsafe.Add((unsafe.Pointer)(&bs[0]), -kMemHdrSz)
 	pHdr := (*memHdr)(hdr)
+
+	freeGuard(pHdr.guardID)
 
 	if !pHdr.CheckGuard() {
 		panic(moerr.NewInternalErrorNoCtx("invalid free, mp header corruption"))

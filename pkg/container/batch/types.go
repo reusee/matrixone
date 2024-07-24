@@ -17,6 +17,7 @@ package batch
 import (
 	"github.com/matrixorigin/matrixone/pkg/container/vector"
 	"github.com/matrixorigin/matrixone/pkg/sql/colexec/aggexec"
+	"github.com/matrixorigin/matrixone/pkg/util/missingfreeguard"
 )
 
 var (
@@ -58,4 +59,6 @@ type Batch struct {
 
 	// row count of batch, to instead of old len(Zs).
 	rowCount int
+
+	freeGuard *missingfreeguard.Guard
 }

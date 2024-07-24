@@ -15,7 +15,11 @@
 package mpool
 
 import (
+	"sync"
+	"sync/atomic"
 	"unsafe"
+
+	"github.com/matrixorigin/matrixone/pkg/util/missingfreeguard"
 )
 
 func alloc(sz, requiredSpaceWithoutHeader int, mp *MPool) []byte {
@@ -26,8 +30,27 @@ func alloc(sz, requiredSpaceWithoutHeader int, mp *MPool) []byte {
 	pHdr.fixedPoolIdx = NumFixedPool
 	pHdr.allocSz = int32(sz)
 	pHdr.SetGuard()
+
+	id := nextID.Add(1)
+	pHdr.guardID = id
+	guard := guardManager.NewGuard(&bs[0], int64(sz))
+	guardsMap.Store(id, guard)
+
 	if mp.details != nil {
 		mp.details.recordAlloc(int64(pHdr.allocSz))
 	}
 	return pHdr.ToSlice(sz, requiredSpaceWithoutHeader)
+}
+
+var guardManager = missingfreeguard.NewManager("/missing-free-mpool/")
+
+var guardsMap sync.Map
+
+var nextID atomic.Int64
+
+func freeGuard(id int64) {
+	v, deleted := guardsMap.LoadAndDelete(id)
+	if deleted {
+		v.(*missingfreeguard.Guard).Free()
+	}
 }

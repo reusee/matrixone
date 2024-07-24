@@ -31,19 +31,21 @@ import (
 
 func New(ro bool, attrs []string) *Batch {
 	return &Batch{
-		Ro:       ro,
-		Cnt:      1,
-		Attrs:    attrs,
-		Vecs:     make([]*vector.Vector, len(attrs)),
-		rowCount: 0,
+		Ro:        ro,
+		Cnt:       1,
+		Attrs:     attrs,
+		Vecs:      make([]*vector.Vector, len(attrs)),
+		rowCount:  0,
+		freeGuard: guardManager.NewGuard(nil, 1),
 	}
 }
 
 func NewWithSize(n int) *Batch {
 	return &Batch{
-		Cnt:      1,
-		Vecs:     make([]*vector.Vector, n),
-		rowCount: 0,
+		Cnt:       1,
+		Vecs:      make([]*vector.Vector, n),
+		rowCount:  0,
+		freeGuard: guardManager.NewGuard(nil, 1),
 	}
 }
 
@@ -291,6 +293,10 @@ func (bat *Batch) Clean(m *mpool.MPool) {
 	bat.Vecs = nil
 	bat.Attrs = nil
 	bat.SetRowCount(0)
+	if bat.freeGuard != nil {
+		bat.freeGuard.Free()
+		bat.freeGuard = nil
+	}
 }
 
 func (bat *Batch) Last() bool {

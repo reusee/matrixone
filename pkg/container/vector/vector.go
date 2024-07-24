@@ -27,6 +27,7 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/container/bytejson"
 	"github.com/matrixorigin/matrixone/pkg/container/nulls"
 	"github.com/matrixorigin/matrixone/pkg/container/types"
+	"github.com/matrixorigin/matrixone/pkg/util/missingfreeguard"
 	"github.com/matrixorigin/matrixone/pkg/vectorize/moarray"
 	"github.com/matrixorigin/matrixone/pkg/vectorize/shuffle"
 )
@@ -63,6 +64,8 @@ type Vector struct {
 
 	// FIXME: Bad design! Will be deleted soon.
 	isBin bool
+
+	freeGuard *missingfreeguard.Guard
 }
 
 type typedSlice struct {
@@ -487,6 +490,8 @@ func (v *Vector) Free(mp *mpool.MPool) {
 	v.nsp.Reset()
 	v.sorted = false
 	v.isBin = false
+
+	v.freeGuard.Free()
 
 	// if !v.OnUsed || v.OnPut {
 	// 	panic("free vector which unalloc or in put list")

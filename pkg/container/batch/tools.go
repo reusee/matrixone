@@ -17,7 +17,10 @@ package batch
 import (
 	"github.com/matrixorigin/matrixone/pkg/container/vector"
 	"github.com/matrixorigin/matrixone/pkg/pb/api"
+	"github.com/matrixorigin/matrixone/pkg/util/missingfreeguard"
 )
+
+var guardManager = missingfreeguard.NewManager("/missing-free-batch/")
 
 func BatchToProtoBatch(bat *Batch) (*api.Batch, error) {
 	rbat := new(api.Batch)

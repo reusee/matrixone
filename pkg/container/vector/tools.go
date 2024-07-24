@@ -22,6 +22,7 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/container/types"
 	"github.com/matrixorigin/matrixone/pkg/pb/api"
 	"github.com/matrixorigin/matrixone/pkg/pb/plan"
+	"github.com/matrixorigin/matrixone/pkg/util/missingfreeguard"
 )
 
 func ToFixedColNoTypeCheck[T any](v *Vector, ret *[]T) {
@@ -32,6 +33,8 @@ func ToFixedColNoTypeCheck[T any](v *Vector, ret *[]T) {
 		*ret = (*ret)[:v.length]
 	}
 }
+
+var guardManager = missingfreeguard.NewManager("/missing-free-vector/")
 
 func ToFixedCol[T any](v *Vector, ret *[]T) {
 	// XXX hack.   Sometimes we generate an t_any, for untyped const null.
