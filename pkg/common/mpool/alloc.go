@@ -48,4 +48,8 @@ var _ malloc.Deallocator = noopDeallocator{}
 
 func (n noopDeallocator) Deallocate(hints malloc.Hints) {}
 
+func (n noopDeallocator) As(trait malloc.Trait) bool {
+	return false
+}
+
 var NoopDeallocator noopDeallocator

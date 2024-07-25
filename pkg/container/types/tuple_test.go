@@ -114,7 +114,7 @@ func TestSingleTypeTuple(t *testing.T) {
 		for i := range tuple {
 			require.Equal(t, tuple[i], tt[i])
 		}
-		packer.FreeMem()
+		packer.Close()
 	}
 }
 
@@ -145,7 +145,7 @@ func TestMulTypeTuple(t *testing.T) {
 		for i := range tuple {
 			require.Equal(t, tuple[i], tt[i])
 		}
-		packer.FreeMem()
+		packer.Close()
 	}
 }
 
