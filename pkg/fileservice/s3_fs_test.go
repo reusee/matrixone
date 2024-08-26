@@ -34,11 +34,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
-	"github.com/matrixorigin/matrixone/pkg/logutil"
 	"github.com/matrixorigin/matrixone/pkg/perfcounter"
 	"github.com/matrixorigin/matrixone/pkg/util/toml"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
 )
 
 type _TestS3Config struct {
@@ -70,6 +68,11 @@ func loadS3TestConfig(t testing.TB) (config _TestS3Config, err error) {
 		}
 	}
 	err = nil // ignore errors
+
+	if strings.EqualFold(config.Endpoint, "disk") &&
+		config.Bucket == "" {
+		config.Bucket = t.TempDir()
+	}
 
 	// load from env
 	loadEnv := func(name string, ptr *string) {
@@ -107,10 +110,6 @@ func testS3FS(
 	config, err := loadS3TestConfig(t)
 	assert.Nil(t, err)
 
-	t.Setenv("AWS_REGION", config.Region)
-	t.Setenv("AWS_ACCESS_KEY_ID", config.APIKey)
-	t.Setenv("AWS_SECRET_ACCESS_KEY", config.APISecret)
-
 	t.Run("file service", func(t *testing.T) {
 		testFileService(t, policy, func(name string) FileService {
 			ctx := context.Background()
@@ -118,7 +117,10 @@ func testS3FS(
 				ctx,
 				ObjectStorageArguments{
 					Name:      name,
+					KeyID:     config.APIKey,
+					KeySecret: config.APISecret,
 					Endpoint:  config.Endpoint,
+					Region:    config.Region,
 					Bucket:    config.Bucket,
 					KeyPrefix: time.Now().Format("2006-01-02.15:04:05.000000"),
 					RoleARN:   config.RoleARN,
@@ -134,8 +136,6 @@ func testS3FS(
 			switch storage := fs.storage.(type) {
 			case *AwsSDKv2:
 				storage.listMaxKeys = 5
-			case *AwsSDKv1:
-				storage.listMaxKeys = 5
 			}
 
 			return fs
@@ -148,7 +148,10 @@ func testS3FS(
 			ctx,
 			ObjectStorageArguments{
 				Name:      "s3",
+				KeyID:     config.APIKey,
+				KeySecret: config.APISecret,
 				Endpoint:  config.Endpoint,
+				Region:    config.Region,
 				Bucket:    config.Bucket,
 				RoleARN:   config.RoleARN,
 				KeyPrefix: time.Now().Format("2006-01-02.15:04:05.000000"),
@@ -188,7 +191,10 @@ func testS3FS(
 				ctx,
 				ObjectStorageArguments{
 					Name:      "s3",
+					KeyID:     config.APIKey,
+					KeySecret: config.APISecret,
 					Endpoint:  config.Endpoint,
+					Region:    config.Region,
 					Bucket:    config.Bucket,
 					KeyPrefix: time.Now().Format("2006-01-02.15:04:05.000000"),
 					RoleARN:   config.RoleARN,
@@ -212,7 +218,10 @@ func testS3FS(
 				ctx,
 				ObjectStorageArguments{
 					Name:      "s3",
+					KeyID:     config.APIKey,
+					KeySecret: config.APISecret,
 					Endpoint:  config.Endpoint,
+					Region:    config.Region,
 					Bucket:    config.Bucket,
 					KeyPrefix: time.Now().Format("2006-01-02.15:04:05.000000"),
 					RoleARN:   config.RoleARN,
@@ -495,10 +504,6 @@ func BenchmarkS3FS(b *testing.B) {
 		b.Skip()
 	}
 
-	b.Setenv("AWS_REGION", config.Region)
-	b.Setenv("AWS_ACCESS_KEY_ID", config.APIKey)
-	b.Setenv("AWS_SECRET_ACCESS_KEY", config.APISecret)
-
 	cacheDir := b.TempDir()
 
 	b.ResetTimer()
@@ -509,6 +514,9 @@ func BenchmarkS3FS(b *testing.B) {
 			ctx,
 			ObjectStorageArguments{
 				Name:      "s3",
+				KeyID:     config.APIKey,
+				KeySecret: config.APISecret,
+				Region:    config.Region,
 				Endpoint:  config.Endpoint,
 				Bucket:    config.Bucket,
 				KeyPrefix: time.Now().Format("2006-01-02.15:04:05.000000"),
@@ -530,16 +538,15 @@ func TestS3FSWithSubPath(t *testing.T) {
 	config, err := loadS3TestConfig(t)
 	assert.Nil(t, err)
 
-	t.Setenv("AWS_REGION", config.Region)
-	t.Setenv("AWS_ACCESS_KEY_ID", config.APIKey)
-	t.Setenv("AWS_SECRET_ACCESS_KEY", config.APISecret)
-
 	testFileService(t, 0, func(name string) FileService {
 		ctx := context.Background()
 		fs, err := NewS3FS(
 			ctx,
 			ObjectStorageArguments{
 				Name:      name,
+				Region:    config.Region,
+				KeyID:     config.APIKey,
+				KeySecret: config.APISecret,
 				Endpoint:  config.Endpoint,
 				Bucket:    config.Bucket,
 				KeyPrefix: time.Now().Format("2006-01-02.15:04:05.000000"),
@@ -565,9 +572,6 @@ func BenchmarkS3ConcurrentRead(b *testing.B) {
 		// no config
 		b.Skip()
 	}
-	b.Setenv("AWS_REGION", config.Region)
-	b.Setenv("AWS_ACCESS_KEY_ID", config.APIKey)
-	b.Setenv("AWS_SECRET_ACCESS_KEY", config.APISecret)
 
 	var numRead atomic.Int64
 	var numGotConn, numReuse, numConnect atomic.Int64
@@ -618,6 +622,9 @@ func BenchmarkS3ConcurrentRead(b *testing.B) {
 		ctx,
 		ObjectStorageArguments{
 			Name:      "bench",
+			Region:    config.Region,
+			KeyID:     config.APIKey,
+			KeySecret: config.APISecret,
 			Endpoint:  config.Endpoint,
 			Bucket:    config.Bucket,
 			KeyPrefix: time.Now().Format("2006-01-02.15:04:05.000000"),
@@ -743,6 +750,9 @@ func TestSequentialS3Read(t *testing.T) {
 		ctx,
 		ObjectStorageArguments{
 			Name:      "bench",
+			Region:    config.Region,
+			KeyID:     config.APIKey,
+			KeySecret: config.APISecret,
 			Endpoint:  config.Endpoint,
 			Bucket:    config.Bucket,
 			KeyPrefix: time.Now().Format("2006-01-02.15:04:05.000000"),
@@ -791,97 +801,6 @@ func TestSequentialS3Read(t *testing.T) {
 
 }
 
-func TestS3RestoreFromCache(t *testing.T) {
-	t.Skip("no longer valid since we delete cache files when calling Delete")
-	ctx := context.Background()
-
-	config, err := loadS3TestConfig(t)
-	assert.Nil(t, err)
-
-	t.Setenv("AWS_REGION", config.Region)
-	t.Setenv("AWS_ACCESS_KEY_ID", config.APIKey)
-	t.Setenv("AWS_SECRET_ACCESS_KEY", config.APISecret)
-
-	cacheDir := t.TempDir()
-	fs, err := NewS3FS(
-		ctx,
-		ObjectStorageArguments{
-			Name:      "s3",
-			Endpoint:  config.Endpoint,
-			Bucket:    config.Bucket,
-			KeyPrefix: time.Now().Format("2006-01-02.15:04:05.000000"),
-			RoleARN:   config.RoleARN,
-		},
-		CacheConfig{
-			DiskPath: ptrTo(cacheDir),
-		},
-		nil,
-		false,
-		false,
-	)
-	assert.Nil(t, err)
-
-	// write file
-	err = fs.Write(ctx, IOVector{
-		FilePath: "foo/bar",
-		Entries: []IOEntry{
-			{
-				Size: 3,
-				Data: []byte("foo"),
-			},
-		},
-	})
-	assert.Nil(t, err)
-
-	// write file without full file cache
-	err = fs.Write(ctx, IOVector{
-		FilePath: "quux",
-		Entries: []IOEntry{
-			{
-				Size: 3,
-				Data: []byte("foo"),
-			},
-		},
-		Policy: SkipFullFilePreloads,
-	})
-	assert.Nil(t, err)
-	err = fs.Read(ctx, &IOVector{
-		FilePath: "quux",
-		Entries: []IOEntry{
-			{
-				Size: 3,
-			},
-		},
-	})
-	assert.Nil(t, err)
-
-	err = fs.Delete(ctx, "foo/bar")
-	assert.Nil(t, err)
-
-	logutil.Info("cache dir", zap.Any("dir", cacheDir))
-
-	counterSet := new(perfcounter.CounterSet)
-	ctx = perfcounter.WithCounterSet(ctx, counterSet)
-	fs.restoreFromDiskCache(ctx)
-
-	if n := counterSet.FileService.S3.Put.Load(); n != 1 {
-		t.Fatalf("got %v", n)
-	}
-
-	vec := &IOVector{
-		FilePath: "foo/bar",
-		Entries: []IOEntry{
-			{
-				Size: -1,
-			},
-		},
-	}
-	err = fs.Read(ctx, vec)
-	assert.Nil(t, err)
-	assert.Equal(t, []byte("foo"), vec.Entries[0].Data)
-
-}
-
 func TestS3PrefetchFile(t *testing.T) {
 	ctx := context.Background()
 	var pcSet perfcounter.CounterSet
@@ -890,15 +809,14 @@ func TestS3PrefetchFile(t *testing.T) {
 	config, err := loadS3TestConfig(t)
 	assert.Nil(t, err)
 
-	t.Setenv("AWS_REGION", config.Region)
-	t.Setenv("AWS_ACCESS_KEY_ID", config.APIKey)
-	t.Setenv("AWS_SECRET_ACCESS_KEY", config.APISecret)
-
 	cacheDir := t.TempDir()
 	fs, err := NewS3FS(
 		ctx,
 		ObjectStorageArguments{
 			Name:      "s3",
+			Region:    config.Region,
+			KeyID:     config.APIKey,
+			KeySecret: config.APISecret,
 			Endpoint:  config.Endpoint,
 			Bucket:    config.Bucket,
 			KeyPrefix: time.Now().Format("2006-01-02.15:04:05.000000"),
