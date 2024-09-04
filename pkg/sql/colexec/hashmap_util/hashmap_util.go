@@ -15,7 +15,6 @@
 package hashmap_util
 
 import (
-	"github.com/matrixorigin/matrixone/pkg/logutil"
 	"runtime"
 
 	"github.com/matrixorigin/matrixone/pkg/container/batch"
@@ -81,16 +80,7 @@ func (hb *HashmapBuilder) Prepare(Conditions []*plan.Expr, proc *process.Process
 			}
 		}
 	}
-	if hb.keyWidth <= 8 {
-		logutil.Infof("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! int hashmap init")
-		if hb.IntHashMap, err = hashmap.NewIntHashMap(false); err != nil {
-			return err
-		}
-	} else {
-		if hb.StrHashMap, err = hashmap.NewStrMap(false); err != nil {
-			return err
-		}
-	}
+
 	return nil
 }
 
@@ -190,26 +180,33 @@ func (hb *HashmapBuilder) BuildHashmap(hashOnPK bool, needAllocateSels bool, run
 		return nil
 	}
 
-	if err := hb.evalJoinCondition(proc); err != nil {
+	var err error
+	if err = hb.evalJoinCondition(proc); err != nil {
 		return err
 	}
 
 	var itr hashmap.Iterator
 	if hb.keyWidth <= 8 {
+		if hb.IntHashMap, err = hashmap.NewIntHashMap(false); err != nil {
+			return err
+		}
 		itr = hb.IntHashMap.NewIterator()
 	} else {
+		if hb.StrHashMap, err = hashmap.NewStrMap(false); err != nil {
+			return err
+		}
 		itr = hb.StrHashMap.NewIterator()
 	}
 
 	if hashOnPK {
 		// if hash on primary key, prealloc hashmap size to the count of batch
 		if hb.keyWidth <= 8 {
-			err := hb.IntHashMap.PreAlloc(uint64(hb.InputBatchRowCount))
+			err = hb.IntHashMap.PreAlloc(uint64(hb.InputBatchRowCount))
 			if err != nil {
 				return err
 			}
 		} else {
-			err := hb.StrHashMap.PreAlloc(uint64(hb.InputBatchRowCount))
+			err = hb.StrHashMap.PreAlloc(uint64(hb.InputBatchRowCount))
 			if err != nil {
 				return err
 			}
