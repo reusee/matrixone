@@ -15,6 +15,7 @@
 package hashtable
 
 import (
+	"github.com/matrixorigin/matrixone/pkg/logutil"
 	"unsafe"
 
 	"github.com/matrixorigin/matrixone/pkg/common/malloc"
@@ -49,6 +50,7 @@ func init() {
 }
 
 func (ht *Int64HashMap) Free() {
+	logutil.Infof("int64 hashmap free!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 	for i, de := range ht.rawDataDeallocators {
 		if de != nil {
 			de.Deallocate(malloc.NoHints)
