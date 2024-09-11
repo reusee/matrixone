@@ -72,7 +72,7 @@ func applyToCatalogCache(cache *cache.CatalogCache, e *api.Entry) {
 		case catalog.MO_TABLES_ID:
 			bat, err := batch.ProtoBatchToBatch(e.Bat)
 			if err != nil {
-				return err
+				panic(err)
 			}
 			if cache != nil {
 				cache.InsertTable(bat)
@@ -80,7 +80,7 @@ func applyToCatalogCache(cache *cache.CatalogCache, e *api.Entry) {
 		case catalog.MO_DATABASE_ID:
 			bat, err := batch.ProtoBatchToBatch(e.Bat)
 			if err != nil {
-				return err
+				panic(err)
 			}
 			if cache != nil {
 				cache.InsertDatabase(bat)
@@ -88,7 +88,7 @@ func applyToCatalogCache(cache *cache.CatalogCache, e *api.Entry) {
 		case catalog.MO_COLUMNS_ID:
 			bat, err := batch.ProtoBatchToBatch(e.Bat)
 			if err != nil {
-				return err
+				panic(err)
 			}
 			if cache != nil {
 				cache.InsertColumns(bat)
@@ -103,7 +103,7 @@ func applyToCatalogCache(cache *cache.CatalogCache, e *api.Entry) {
 		if cache != nil && !logtailreplay.IsTransferredDels(e.TableName) {
 			bat, err := batch.ProtoBatchToBatch(e.Bat)
 			if err != nil {
-				return err
+				panic(err)
 			}
 			cache.DeleteTable(bat)
 		}
@@ -111,7 +111,7 @@ func applyToCatalogCache(cache *cache.CatalogCache, e *api.Entry) {
 		if cache != nil && !logtailreplay.IsTransferredDels(e.TableName) {
 			bat, err := batch.ProtoBatchToBatch(e.Bat)
 			if err != nil {
-				return err
+				panic(err)
 			}
 			cache.DeleteDatabase(bat)
 		}
