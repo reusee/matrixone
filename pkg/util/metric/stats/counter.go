@@ -14,7 +14,10 @@
 
 package stats
 
-import "sync/atomic"
+import (
+	"encoding/json"
+	"sync/atomic"
+)
 
 // Counter represents a combination of global & current_window counter.
 type Counter struct {
@@ -52,4 +55,8 @@ func (c *Counter) LoadW() int64 {
 func (c *Counter) Reset() {
 	c.global.Store(0)
 	c.window.Store(0)
+}
+
+func (c *Counter) MarshalJSON() ([]byte, error) {
+	return json.Marshal(c.Load())
 }

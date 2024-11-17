@@ -60,13 +60,12 @@ func (c *CounterLogExporter) Export() []zap.Field {
 	}
 
 	// all fields in CounterSet
-	_ = c.counter.IterFields(func(path []string, counter *stats.Counter) error {
+	for path, counter := range c.counter.IterFields() {
 		counterValue := counter.SwapW(0)
 		if counterValue != 0 {
 			fields = append(fields, zap.Any(strings.Join(path, "."), counterValue))
 		}
-		return nil
-	})
+	}
 
 	return fields
 }

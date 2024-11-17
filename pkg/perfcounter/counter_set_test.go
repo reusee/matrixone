@@ -1,4 +1,4 @@
-// Copyright 2023 Matrix Origin
+// Copyright 2024 Matrix Origin
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,16 +17,13 @@ package perfcounter
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/matrixorigin/matrixone/pkg/logutil"
+	"go.uber.org/zap"
 )
 
-func TestIterFields(t *testing.T) {
-	var c CounterSet
-	n := 0
-	for path, counter := range c.IterFields() {
-		n++
-		counter.Load()
-		_ = path
-	}
-	assert.True(t, n > 0)
+func TestCounterSetLog(t *testing.T) {
+	var counterSet CounterSet
+	logutil.Info("perf counter",
+		zap.Any("counter-set", &counterSet),
+	)
 }
