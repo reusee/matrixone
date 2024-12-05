@@ -111,6 +111,13 @@ func NewS3FS(
 			return nil, err
 		}
 
+	case strings.Contains(args.Endpoint, "hdfs:"):
+		// hdfs
+		fs.storage, err = NewHDFSObjectStorage(ctx, args, perfCounterSets)
+		if err != nil {
+			return nil, err
+		}
+
 	default:
 		// AWS SDK
 		fs.storage, err = NewAwsSDKv2(ctx, args, perfCounterSets)
