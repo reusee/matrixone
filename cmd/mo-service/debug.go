@@ -57,6 +57,8 @@ var (
 	statusServer          = status.NewServer()
 )
 
+
+
 func startCPUProfile() func() {
 	cpuProfilePath := *cpuProfilePathFlag
 	if cpuProfilePath == "" {
