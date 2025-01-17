@@ -28,7 +28,7 @@ jobs:
     needs: 
       - check-pr-valid
     if: ${{ needs.check-pr-valid.outputs.pr_valid == 'true' }}
-    uses: matrixorigin/CI/.github/workflows/ci.yaml@main
+    uses: matrixorigin/CI/.github/workflows/ci.yaml@add-hdfs-for-ci
     secrets:
       S3ENDPOINT: ${{ secrets.S3ENDPOINT }}
       S3REGION: ${{ secrets.S3REGION }}
