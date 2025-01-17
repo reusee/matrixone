@@ -1,3 +1,4 @@
+
 drop database if exists snapshot_read;
 create database if not exists snapshot_read;
 use snapshot_read;
@@ -17,7 +18,7 @@ INSERT INTO users (username, email, password) VALUES ('emily_adams', 'emily.adam
 select count(*) from snapshot_read.test_snapshot_read;
 select count(*) from snapshot_read.users;
 drop snapshot if exists sp_01;
-create snapshot sp_01 for account sys;
+create snapshot sp_01 for account;
 delete from test_snapshot_read where a <= 50;
 DELETE FROM  users where email = 'john@example.com';
 UPDATE users SET password = 'newsecurepassword123' WHERE email = 'alice.jones@gmail.com';
@@ -52,7 +53,7 @@ INSERT INTO users (username, email, password) VALUES ('emily_adams', 'emily.adam
 select count(*) from snapshot_read.test_snapshot_read;
 select count(*) from snapshot_read.users;
 drop snapshot if exists sp_01;
-create snapshot sp_01 for account sys;
+create snapshot sp_01 for account;
 
 drop table users;
 drop table test_snapshot_read;
@@ -91,7 +92,7 @@ INSERT INTO users (username, email, password) VALUES ('emily_adams', 'emily.adam
 select count(*) from snapshot_read.test_snapshot_read;
 select count(*) from snapshot_read.users;
 drop snapshot if exists sp_01;
-create snapshot sp_01 for account sys;
+create snapshot sp_01 for account;
 
 drop database snapshot_read;
 
@@ -273,6 +274,7 @@ drop table users;
 -- @session
 
 restore account test_account database snapshot_read from snapshot sp_01;
+restore account test_account from snapshot sp_01;
 
 -- @session:id=3&user=test_account:test_user&password=111
 select count(*) from snapshot_read.students;
@@ -285,6 +287,7 @@ drop database snapshot_read;
 -- @session
 
 restore account test_account database snapshot_read from snapshot sp_01;
+restore account test_account from snapshot sp_01;
 
 -- @session:id=3&user=test_account:test_user&password=111
 select count(*) from snapshot_read.students;
@@ -359,3 +362,4 @@ select count(*) from snapshot_read.users;
 drop snapshot sp_01;
 drop account test_account;
 drop account acc02;
+

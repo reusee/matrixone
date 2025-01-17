@@ -40,7 +40,7 @@ type container struct {
 	itr hashmap.Iterator
 
 	batchRowCount int64
-	lastrow       int
+	lastRow       int
 	inbat         *batch.Batch
 	rbat          *batch.Batch
 
@@ -85,7 +85,6 @@ type InnerJoin struct {
 	JoinMapTag         int32
 
 	vm.OperatorBase
-	colexec.Projection
 }
 
 func (innerJoin *InnerJoin) GetOperatorBase() *vm.OperatorBase {
@@ -126,23 +125,15 @@ func (innerJoin *InnerJoin) Reset(proc *process.Process, pipelineFailed bool, er
 	ctr.resetExprExecutor()
 	ctr.cleanHashMap()
 	ctr.inbat = nil
-	ctr.lastrow = 0
+	ctr.lastRow = 0
 	ctr.state = Build
 	ctr.batchRowCount = 0
 
-	if innerJoin.ProjectList != nil {
-		if innerJoin.OpAnalyzer != nil {
-			innerJoin.OpAnalyzer.Alloc(innerJoin.ProjectAllocSize + innerJoin.ctr.maxAllocSize)
-		}
-
-		innerJoin.ctr.maxAllocSize = 0
-		innerJoin.ResetProjection(proc)
-	} else {
-		if innerJoin.OpAnalyzer != nil {
-			innerJoin.OpAnalyzer.Alloc(innerJoin.ctr.maxAllocSize)
-		}
-		innerJoin.ctr.maxAllocSize = 0
+	if innerJoin.OpAnalyzer != nil {
+		innerJoin.OpAnalyzer.Alloc(innerJoin.ctr.maxAllocSize)
 	}
+	innerJoin.ctr.maxAllocSize = 0
+
 }
 
 func (innerJoin *InnerJoin) Free(proc *process.Process, pipelineFailed bool, err error) {
@@ -152,8 +143,10 @@ func (innerJoin *InnerJoin) Free(proc *process.Process, pipelineFailed bool, err
 	ctr.cleanExprExecutor()
 	ctr.cleanBatch(proc)
 
-	innerJoin.FreeProjection(proc)
+}
 
+func (innerJoin *InnerJoin) ExecProjection(proc *process.Process, input *batch.Batch) (*batch.Batch, error) {
+	return input, nil
 }
 
 func (ctr *container) resetExprExecutor() {

@@ -64,26 +64,16 @@ func (singleJoin *SingleJoin) Prepare(proc *process.Process) (err error) {
 			}
 		}
 
-		if singleJoin.ProjectList != nil {
-			err = singleJoin.PrepareProjection(proc)
-		}
 	}
 	return err
 }
 
 func (singleJoin *SingleJoin) Call(proc *process.Process) (vm.CallResult, error) {
-	if err, isCancel := vm.CancelCheck(proc); isCancel {
-		return vm.CancelResult, err
-	}
-
 	analyzer := singleJoin.OpAnalyzer
-	analyzer.Start()
-	defer analyzer.Stop()
 
 	ctr := &singleJoin.ctr
 	input := vm.NewCallResult()
 	result := vm.NewCallResult()
-	probeResult := vm.NewCallResult()
 	var err error
 	for {
 		switch ctr.state {
@@ -106,7 +96,6 @@ func (singleJoin *SingleJoin) Call(proc *process.Process) (vm.CallResult, error)
 			}
 			if bat.Last() {
 				result.Batch = bat
-				analyzer.Output(result.Batch)
 				return result, nil
 			}
 			if bat.IsEmpty() {
@@ -134,20 +123,14 @@ func (singleJoin *SingleJoin) Call(proc *process.Process) (vm.CallResult, error)
 			}
 
 			if ctr.mp == nil {
-				err = ctr.emptyProbe(bat, singleJoin, &probeResult)
+				err = ctr.emptyProbe(bat, singleJoin, &result)
 			} else {
-				err = ctr.probe(bat, singleJoin, proc, &probeResult)
+				err = ctr.probe(bat, singleJoin, proc, &result)
 			}
 			if err != nil {
 				return result, err
 			}
 
-			result.Batch, err = singleJoin.EvalProjection(probeResult.Batch, proc)
-			if err != nil {
-				return result, err
-			}
-
-			analyzer.Output(result.Batch)
 			return result, nil
 
 		default:

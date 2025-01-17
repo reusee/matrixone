@@ -15,8 +15,12 @@
 package logtailreplay
 
 import (
+	"bytes"
 	"context"
+	"math/rand"
 	"testing"
+
+	"github.com/matrixorigin/matrixone/pkg/vm/engine/readutil"
 
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/btree"
@@ -107,8 +111,8 @@ func TestPartitionStateRowsIter(t *testing.T) {
 	// primary key iter
 	for i := 0; i < num; i++ {
 		ts := types.BuildTS(int64(i), 0)
-		bs := EncodePrimaryKey(int64(i), packer)
-		iter := state.NewPrimaryKeyIter(ts, Exact(bs))
+		bs := readutil.EncodePrimaryKey(int64(i), packer)
+		iter := state.NewPrimaryKeyIter(ts, function.EQUAL, [][]byte{bs})
 		n := 0
 		for iter.Next() {
 			n++
@@ -215,7 +219,7 @@ func TestPartitionStateRowsIter(t *testing.T) {
 		{
 			// primary key change detection
 			ts := types.BuildTS(int64(deleteAt+i), 0)
-			key := EncodePrimaryKey(int64(i), packer)
+			key := readutil.EncodePrimaryKey(int64(i), packer)
 			modified, _ := state.PKExistInMemBetween(
 				ts.Prev(),
 				ts.Next(),
@@ -226,8 +230,9 @@ func TestPartitionStateRowsIter(t *testing.T) {
 
 		{
 			// primary key iter
-			key := EncodePrimaryKey(int64(i), packer)
-			iter := state.NewPrimaryKeyIter(types.BuildTS(int64(deleteAt+i+1), 0), Exact(key))
+			key := readutil.EncodePrimaryKey(int64(i), packer)
+			iter := state.NewPrimaryKeyIter(types.BuildTS(int64(deleteAt+i+1), 0),
+				function.EQUAL, [][]byte{key})
 			n := 0
 			for iter.Next() {
 				n++
@@ -375,7 +380,7 @@ func TestInsertAndDeleteAtTheSameTimestamp(t *testing.T) {
 	// should be detectable
 	for i := 0; i < num; i++ {
 		ts := types.BuildTS(int64(i), 0)
-		key := EncodePrimaryKey(int64(i), packer)
+		key := readutil.EncodePrimaryKey(int64(i), packer)
 		modified, _ := state.PKExistInMemBetween(ts.Prev(), ts.Next(), [][]byte{key})
 		require.True(t, modified)
 	}
@@ -474,7 +479,7 @@ func TestDeleteBeforeInsertAtTheSameTime(t *testing.T) {
 	// should be detectable
 	for i := 0; i < num; i++ {
 		ts := types.BuildTS(int64(i), 0)
-		key := EncodePrimaryKey(int64(i), packer)
+		key := readutil.EncodePrimaryKey(int64(i), packer)
 		modified, _ := state.PKExistInMemBetween(ts.Prev(), ts.Next(), [][]byte{key})
 		require.True(t, modified)
 	}
@@ -523,7 +528,7 @@ func TestPrimaryKeyModifiedWithDeleteOnly(t *testing.T) {
 	// should be detectable
 	for i := 0; i < num; i++ {
 		ts := types.BuildTS(int64(i), 0)
-		key := EncodePrimaryKey(int64(i), packer)
+		key := readutil.EncodePrimaryKey(int64(i), packer)
 		modified, _ := state.PKExistInMemBetween(ts.Prev(), ts.Next(), [][]byte{key})
 		require.True(t, modified)
 	}
@@ -561,4 +566,67 @@ func TestPrefixIn(t *testing.T) {
 	require.Equal(t, []byte{2}, pkIter.iter.Item().Bytes)
 	spec.Move(pkIter)
 	require.Equal(t, []byte{4}, pkIter.iter.Item().Bytes)
+}
+
+func BenchmarkPrimaryKeyIter(b *testing.B) {
+	tree := btree.NewBTreeGOptions((*PrimaryIndexEntry).Less,
+		btree.Options{
+			Degree: 64,
+		})
+
+	itemCnt := 1000 * 10
+
+	for i := 0; i < itemCnt; i++ {
+		xx := rand.Intn(itemCnt / 10)
+		ts := types.BuildTS(rand.Int63n(int64(itemCnt)), 0)
+
+		tree.Set(&PrimaryIndexEntry{
+			Time:       ts,
+			RowEntryID: int64(i),
+			Bytes:      types.EncodeFixed[int](xx),
+		})
+	}
+
+	iter1 := tree.Copy().Iter()
+	iter2 := tree.Copy().Iter()
+
+	b.Run("Seek", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			xx := rand.Intn(itemCnt / 10)
+			ts := types.BuildTS(rand.Int63n(int64(itemCnt)), 0)
+			iter1.Seek(&PrimaryIndexEntry{
+				Time:       ts,
+				RowEntryID: rand.Int63n(int64(itemCnt)),
+				Bytes:      types.EncodeFixed[int](xx),
+			})
+		}
+	})
+
+	b.Run("Comparison Item", func(b *testing.B) {
+		items := tree.Items()
+		for i := 0; i < b.N; i++ {
+			x := rand.Intn(tree.Len())
+			y := rand.Intn(tree.Len())
+
+			items[x].Less(items[y])
+		}
+	})
+
+	b.Run("Comparison Bytes", func(b *testing.B) {
+		items := tree.Items()
+		for i := 0; i < b.N; i++ {
+			x := rand.Intn(tree.Len())
+			y := rand.Intn(tree.Len())
+
+			bytes.Compare(items[x].Bytes, items[y].Bytes)
+		}
+	})
+
+	b.Run("Next", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			if !iter2.Next() {
+				iter2.First()
+			}
+		}
+	})
 }

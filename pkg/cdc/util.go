@@ -26,6 +26,7 @@ import (
 	"math/rand"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -67,8 +68,7 @@ func extractRowFromEveryVector(
 			rowIndex = 0
 		}
 
-		err := extractRowFromVector(ctx, vec, i, row, rowIndex)
-		if err != nil {
+		if err := extractRowFromVector(ctx, vec, i, row, rowIndex); err != nil {
 			return err
 		}
 		rowIndex = rowIndexBackup
@@ -532,15 +532,10 @@ func floatArrayToString[T float32 | float64](arr []T) string {
 //	return
 //}
 
-var openDbConn = func(
-	user, password string,
-	ip string,
-	port int) (db *sql.DB, err error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/?multiStatements=true",
-		user,
-		password,
-		ip,
-		port)
+var OpenDbConn = func(user, password string, ip string, port int, timeout string) (db *sql.DB, err error) {
+	logutil.Infof("openDbConn timeout = %s", timeout)
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/?readTimeout=%s&timeout=%s&writeTimeout=%s&multiStatements=true",
+		user, password, ip, port, timeout, timeout, timeout)
 	for i := 0; i < 3; i++ {
 		if db, err = tryConn(dsn); err == nil {
 			// TODO check table existence
@@ -549,14 +544,14 @@ var openDbConn = func(
 		v2.CdcMysqlConnErrorCounter.Inc()
 		time.Sleep(time.Second)
 	}
-	logutil.Error("^^^^^ openDbConn failed")
+	logutil.Error("cdc task OpenDbConn failed")
 	return
 }
 
 var openDb = sql.Open
 
 var tryConn = func(dsn string) (*sql.DB, error) {
-	db, err := openDb("mysql", dsn)
+	db, err := openDb("mysql-mo", dsn)
 	if err != nil {
 		return nil, err
 	} else {
@@ -628,7 +623,7 @@ var ExitRunSql = func(txnOp client.TxnOperator) {
 	txnOp.ExitRunSql()
 }
 
-func GetTableDef(
+var GetTableDef = func(
 	ctx context.Context,
 	txnOp client.TxnOperator,
 	cnEngine engine.Engine,
@@ -676,7 +671,7 @@ func AesCFBDecode(ctx context.Context, data string) (string, error) {
 	return AesCFBDecodeWithKey(ctx, data, []byte(AesKey))
 }
 
-func AesCFBDecodeWithKey(ctx context.Context, data string, aesKey []byte) (string, error) {
+var AesCFBDecodeWithKey = func(ctx context.Context, data string, aesKey []byte) (string, error) {
 	if len(aesKey) == 0 {
 		return "", moerr.NewInternalErrorNoCtx("AesKey is not initialized")
 	}
@@ -736,4 +731,48 @@ func batchRowCount(bat *batch.Batch) int {
 		return 0
 	}
 	return bat.Vecs[0].Length()
+}
+
+// AddSingleQuotesJoin [a, b, c] -> 'a','b','c'
+func AddSingleQuotesJoin(s []string) string {
+	if len(s) == 0 {
+		return ""
+	}
+	return "'" + strings.Join(s, "','") + "'"
+}
+
+func GenDbTblKey(dbName, tblName string) string {
+	return dbName + "." + tblName
+}
+
+func SplitDbTblKey(dbTblKey string) (dbName, tblName string) {
+	s := strings.Split(dbTblKey, ".")
+	if len(s) != 2 {
+		return
+	}
+	return s[0], s[1]
+}
+
+func addStartMetrics(insertData, deleteData *batch.Batch) {
+	count := float64(batchRowCount(insertData) + batchRowCount(deleteData))
+	allocated := float64(insertData.Allocated() + deleteData.Allocated())
+	v2.CdcTotalProcessingRecordCountGauge.Add(count)
+	v2.CdcHoldChangesBytesGauge.Add(allocated)
+	v2.CdcReadRecordCounter.Add(count)
+}
+
+func addSnapshotEndMetrics(insertData *batch.Batch) {
+	count := float64(batchRowCount(insertData))
+	allocated := float64(insertData.Allocated())
+	v2.CdcTotalProcessingRecordCountGauge.Sub(count)
+	v2.CdcHoldChangesBytesGauge.Sub(allocated)
+	v2.CdcSinkRecordCounter.Add(count)
+}
+
+func addTailEndMetrics(bat *AtomicBatch) {
+	count := float64(bat.RowCount())
+	allocated := float64(bat.Allocated())
+	v2.CdcTotalProcessingRecordCountGauge.Sub(count)
+	v2.CdcHoldChangesBytesGauge.Sub(allocated)
+	v2.CdcSinkRecordCounter.Add(count)
 }

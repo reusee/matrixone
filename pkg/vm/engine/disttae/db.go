@@ -16,22 +16,23 @@ package disttae
 
 import (
 	"context"
-	"github.com/matrixorigin/matrixone/pkg/util/fault"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/matrixorigin/matrixone/pkg/logutil"
-
 	"github.com/matrixorigin/matrixone/pkg/catalog"
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
+	"github.com/matrixorigin/matrixone/pkg/common/mpool"
 	"github.com/matrixorigin/matrixone/pkg/container/batch"
 	"github.com/matrixorigin/matrixone/pkg/container/types"
 	"github.com/matrixorigin/matrixone/pkg/container/vector"
+	"github.com/matrixorigin/matrixone/pkg/fileservice"
+	"github.com/matrixorigin/matrixone/pkg/logutil"
 	"github.com/matrixorigin/matrixone/pkg/pb/api"
 	"github.com/matrixorigin/matrixone/pkg/pb/timestamp"
 	"github.com/matrixorigin/matrixone/pkg/sql/plan/function/ctl"
+	"github.com/matrixorigin/matrixone/pkg/util/fault"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/cmd_util"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/cache"
@@ -65,46 +66,59 @@ func (e *Engine) tryAdjustThreeTablesCreatedTimeWithBatch(b *batch.Batch) {
 	}
 }
 
-// init is used to insert some data that will not be synchronized by logtail.
-func (e *Engine) init(ctx context.Context) error {
-	e.Lock()
-	defer e.Unlock()
-	m := e.mp
+func initSysTable(
+	ctx context.Context,
+	//e *Engine,
+	service string,
+	mp *mpool.MPool,
+	packerPool *fileservice.Pool[*types.Packer],
+	moCatalogCreatedTime **vector.Vector,
+	moDatabaseCreatedTime **vector.Vector,
+	moTablesCreatedTime **vector.Vector,
+	moColumnsCreatedTime **vector.Vector,
+	part *logtailreplay.Partition,
+	cc *cache.CatalogCache,
+	tid uint64,
+	initCatalog bool) error {
 
-	e.catalog = cache.NewCatalog()
-	e.partitions = make(map[[2]uint64]*logtailreplay.Partition)
+	m := mp
+	//part := e.partitions[[2]uint64{catalog.MO_CATALOG_ID, tid}]
 
 	var packer *types.Packer
-	put := e.packerPool.Get(&packer)
+	put := packerPool.Get(&packer)
 	defer put.Put()
 
-	{
-		e.partitions[[2]uint64{catalog.MO_CATALOG_ID, catalog.MO_DATABASE_ID}] = logtailreplay.NewPartition(e.service, 1)
-		e.partitions[[2]uint64{catalog.MO_CATALOG_ID, catalog.MO_TABLES_ID}] = logtailreplay.NewPartition(e.service, 2)
-		e.partitions[[2]uint64{catalog.MO_CATALOG_ID, catalog.MO_COLUMNS_ID}] = logtailreplay.NewPartition(e.service, 3)
-	}
-
-	{ // mo_catalog
-		part := e.partitions[[2]uint64{catalog.MO_CATALOG_ID, catalog.MO_DATABASE_ID}]
-		bat, err := catalog.GenCreateDatabaseTuple("", 0, 0, 0, catalog.MO_CATALOG, catalog.MO_CATALOG_ID, "", m, packer)
+	switch tid {
+	case catalog.MO_DATABASE_ID:
+		bat, err := catalog.GenCreateDatabaseTuple(
+			"",
+			0,
+			0,
+			0,
+			catalog.MO_CATALOG,
+			catalog.MO_CATALOG_ID,
+			"",
+			m,
+			packer)
 		if err != nil {
 			return err
 		}
-		e.moCatalogCreatedTime = bat.Vecs[catalog.MO_DATABASE_CREATED_TIME_IDX]
+		if moCatalogCreatedTime != nil {
+			*moCatalogCreatedTime = bat.Vecs[catalog.MO_DATABASE_CREATED_TIME_IDX]
+		}
 		ibat, err := fillRandomRowidAndZeroTs(bat, m)
 		if err != nil {
 			bat.Clean(m)
 			return err
 		}
 		state, done := part.MutateState()
-		state.HandleRowsInsert(ctx, ibat, catalog.MO_DATABASE_CPKEY_IDX, packer, e.mp)
+		state.HandleRowsInsert(ctx, ibat, catalog.MO_DATABASE_CPKEY_IDX, packer, mp)
 		done()
-		e.catalog.InsertDatabase(bat)
-	}
-
-	{ // init mo_database table
-
-		// insert into mo_tables partition
+		if initCatalog {
+			cc.InsertDatabase(bat)
+		}
+	case catalog.MO_TABLES_ID:
+		//put mo_database into mo_tables
 		tbl := catalog.Table{
 			AccountId:    0,
 			UserId:       0,
@@ -113,58 +127,29 @@ func (e *Engine) init(ctx context.Context) error {
 			DatabaseName: catalog.MO_CATALOG,
 			TableId:      catalog.MO_DATABASE_ID,
 			TableName:    catalog.MO_DATABASE,
-			Constraint:   catalog.GetDefines(e.service).MoDatabaseConstraint,
+			Constraint:   catalog.GetDefines(service).MoDatabaseConstraint,
 			Kind:         catalog.SystemOrdinaryRel,
 		}
 		bat, err := catalog.GenCreateTableTuple(tbl, m, packer)
 		if err != nil {
 			return err
 		}
-		e.moDatabaseCreatedTime = bat.Vecs[catalog.MO_TABLES_CREATED_TIME_IDX]
+		if moDatabaseCreatedTime != nil {
+			*moDatabaseCreatedTime = bat.Vecs[catalog.MO_TABLES_CREATED_TIME_IDX]
+		}
 		ibat, err := fillRandomRowidAndZeroTs(bat, m)
 		if err != nil {
 			bat.Clean(m)
 			return err
 		}
 
-		part := e.partitions[[2]uint64{catalog.MO_CATALOG_ID, catalog.MO_TABLES_ID}]
 		state, done := part.MutateState()
-		state.HandleRowsInsert(ctx, ibat, catalog.MO_TABLES_CPKEY_IDX, packer, e.mp)
-		done()
-		e.catalog.InsertTable(bat) // cache
-		// do not clean the bat because the the partition state will be holding the bat
-
-		// insert into mo_columns partition
-		cols, err := catalog.GenColumnsFromDefs(0, catalog.MO_DATABASE, catalog.MO_CATALOG,
-			catalog.MO_DATABASE_ID, catalog.MO_CATALOG_ID, catalog.GetDefines(e.service).MoDatabaseTableDefs)
-		if err != nil {
-			return err
+		state.HandleRowsInsert(ctx, ibat, catalog.MO_TABLES_CPKEY_IDX, packer, mp)
+		if initCatalog {
+			cc.InsertTable(bat) // cache
 		}
-
-		part = e.partitions[[2]uint64{catalog.MO_CATALOG_ID, catalog.MO_COLUMNS_ID}]
-		bat, err = catalog.GenCreateColumnTuples(cols, m, packer)
-		if err != nil {
-			return err
-		}
-		ibat, err = fillRandomRowidAndZeroTs(bat, m)
-		if err != nil {
-			bat.Clean(m)
-			return err
-		}
-		state, done = part.MutateState()
-		state.HandleRowsInsert(ctx, ibat, catalog.MO_COLUMNS_ATT_CPKEY_IDX, packer, e.mp)
-		done()
-		e.catalog.InsertColumns(bat)
-	}
-
-	{ // init mo_tables table
-		part := e.partitions[[2]uint64{catalog.MO_CATALOG_ID, catalog.MO_TABLES_ID}]
-		cols, err := catalog.GenColumnsFromDefs(0, catalog.MO_TABLES, catalog.MO_CATALOG,
-			catalog.MO_TABLES_ID, catalog.MO_CATALOG_ID, catalog.GetDefines(e.service).MoTablesTableDefs)
-		if err != nil {
-			return err
-		}
-		tbl := catalog.Table{
+		//put mo_tables into mo_tables.
+		tbl = catalog.Table{
 			AccountId:    0,
 			UserId:       0,
 			RoleId:       0,
@@ -172,48 +157,28 @@ func (e *Engine) init(ctx context.Context) error {
 			DatabaseName: catalog.MO_CATALOG,
 			TableId:      catalog.MO_TABLES_ID,
 			TableName:    catalog.MO_TABLES,
-			Constraint:   catalog.GetDefines(e.service).MoTableConstraint,
+			Constraint:   catalog.GetDefines(service).MoTableConstraint,
 			Kind:         catalog.SystemOrdinaryRel,
 		}
-		bat, err := catalog.GenCreateTableTuple(tbl, m, packer)
+		bat, err = catalog.GenCreateTableTuple(tbl, m, packer)
 		if err != nil {
 			return err
 		}
-		e.moTablesCreatedTime = bat.Vecs[catalog.MO_TABLES_CREATED_TIME_IDX]
-		ibat, err := fillRandomRowidAndZeroTs(bat, m)
-		if err != nil {
-			bat.Clean(m)
-			return err
-		}
-		state, done := part.MutateState()
-		state.HandleRowsInsert(ctx, ibat, catalog.MO_TABLES_CPKEY_IDX, packer, e.mp)
-		done()
-		e.catalog.InsertTable(bat)
-
-		part = e.partitions[[2]uint64{catalog.MO_CATALOG_ID, catalog.MO_COLUMNS_ID}]
-		bat, err = catalog.GenCreateColumnTuples(cols, m, packer)
-		if err != nil {
-			return err
+		if moTablesCreatedTime != nil {
+			*moTablesCreatedTime = bat.Vecs[catalog.MO_TABLES_CREATED_TIME_IDX]
 		}
 		ibat, err = fillRandomRowidAndZeroTs(bat, m)
 		if err != nil {
 			bat.Clean(m)
 			return err
 		}
-		state, done = part.MutateState()
-		state.HandleRowsInsert(ctx, ibat, catalog.MO_COLUMNS_ATT_CPKEY_IDX, packer, e.mp)
-		done()
-		e.catalog.InsertColumns(bat)
-	}
-
-	{ // mo_columns
-		part := e.partitions[[2]uint64{catalog.MO_CATALOG_ID, catalog.MO_TABLES_ID}]
-		cols, err := catalog.GenColumnsFromDefs(0, catalog.MO_COLUMNS, catalog.MO_CATALOG, catalog.MO_COLUMNS_ID,
-			catalog.MO_CATALOG_ID, catalog.GetDefines(e.service).MoColumnsTableDefs)
-		if err != nil {
-			return err
+		state.HandleRowsInsert(ctx, ibat, catalog.MO_TABLES_CPKEY_IDX, packer, mp)
+		if initCatalog {
+			cc.InsertTable(bat)
 		}
-		tbl := catalog.Table{
+
+		//put mo_columns into mo_tables.
+		tbl = catalog.Table{
 			AccountId:    0,
 			UserId:       0,
 			RoleId:       0,
@@ -221,25 +186,65 @@ func (e *Engine) init(ctx context.Context) error {
 			DatabaseName: catalog.MO_CATALOG,
 			TableId:      catalog.MO_COLUMNS_ID,
 			TableName:    catalog.MO_COLUMNS,
-			Constraint:   catalog.GetDefines(e.service).MoColumnConstraint,
+			Constraint:   catalog.GetDefines(service).MoColumnConstraint,
 			Kind:         catalog.SystemOrdinaryRel,
 		}
-		bat, err := catalog.GenCreateTableTuple(tbl, m, packer)
+		bat, err = catalog.GenCreateTableTuple(tbl, m, packer)
 		if err != nil {
 			return err
 		}
-		e.moColumnsCreatedTime = bat.Vecs[catalog.MO_TABLES_CREATED_TIME_IDX]
+		if moColumnsCreatedTime != nil {
+			*moColumnsCreatedTime = bat.Vecs[catalog.MO_TABLES_CREATED_TIME_IDX]
+		}
+		ibat, err = fillRandomRowidAndZeroTs(bat, m)
+		if err != nil {
+			bat.Clean(m)
+			return err
+		}
+		state.HandleRowsInsert(ctx, ibat, catalog.MO_TABLES_CPKEY_IDX, packer, mp)
+		if initCatalog {
+			cc.InsertTable(bat)
+		}
+		done()
+	case catalog.MO_COLUMNS_ID:
+		//put mo_database into mo_columns
+		cols, err := catalog.GenColumnsFromDefs(
+			0,
+			catalog.MO_DATABASE,
+			catalog.MO_CATALOG,
+			catalog.MO_DATABASE_ID,
+			catalog.MO_CATALOG_ID,
+			catalog.GetDefines(service).MoDatabaseTableDefs)
+		if err != nil {
+			return err
+		}
+
+		bat, err := catalog.GenCreateColumnTuples(cols, m, packer)
+		if err != nil {
+			return err
+		}
 		ibat, err := fillRandomRowidAndZeroTs(bat, m)
 		if err != nil {
 			bat.Clean(m)
 			return err
 		}
 		state, done := part.MutateState()
-		state.HandleRowsInsert(ctx, ibat, catalog.MO_TABLES_CPKEY_IDX, packer, e.mp)
-		done()
-		e.catalog.InsertTable(bat)
+		state.HandleRowsInsert(ctx, ibat, catalog.MO_COLUMNS_ATT_CPKEY_IDX, packer, mp)
+		if initCatalog {
+			cc.InsertColumns(bat)
+		}
 
-		part = e.partitions[[2]uint64{catalog.MO_CATALOG_ID, catalog.MO_COLUMNS_ID}]
+		//put mo_tables into mo_columns
+		cols, err = catalog.GenColumnsFromDefs(
+			0,
+			catalog.MO_TABLES,
+			catalog.MO_CATALOG,
+			catalog.MO_TABLES_ID,
+			catalog.MO_CATALOG_ID,
+			catalog.GetDefines(service).MoTablesTableDefs)
+		if err != nil {
+			return err
+		}
 		bat, err = catalog.GenCreateColumnTuples(cols, m, packer)
 		if err != nil {
 			return err
@@ -249,12 +254,110 @@ func (e *Engine) init(ctx context.Context) error {
 			bat.Clean(m)
 			return err
 		}
-		state, done = part.MutateState()
-		state.HandleRowsInsert(ctx, ibat, catalog.MO_COLUMNS_ATT_CPKEY_IDX, packer, e.mp)
+		state.HandleRowsInsert(ctx, ibat, catalog.MO_COLUMNS_ATT_CPKEY_IDX, packer, mp)
+		if initCatalog {
+			cc.InsertColumns(bat)
+		}
+		// put mo_columns into mo_columns
+		cols, err = catalog.GenColumnsFromDefs(
+			0,
+			catalog.MO_COLUMNS,
+			catalog.MO_CATALOG,
+			catalog.MO_COLUMNS_ID,
+			catalog.MO_CATALOG_ID,
+			catalog.GetDefines(service).MoColumnsTableDefs)
+		if err != nil {
+			return err
+		}
+
+		bat, err = catalog.GenCreateColumnTuples(cols, m, packer)
+		if err != nil {
+			return err
+		}
+		ibat, err = fillRandomRowidAndZeroTs(bat, m)
+		if err != nil {
+			bat.Clean(m)
+			return err
+		}
+		state.HandleRowsInsert(ctx, ibat, catalog.MO_COLUMNS_ATT_CPKEY_IDX, packer, mp)
+		if initCatalog {
+			cc.InsertColumns(bat)
+		}
 		done()
-		e.catalog.InsertColumns(bat)
+	}
+	return nil
+}
+
+// init is used to insert some data that will not be synchronized by logtail.
+func (e *Engine) init(ctx context.Context) error {
+	e.Lock()
+	defer e.Unlock()
+
+	newcache := cache.NewCatalog()
+	e.partitions = make(map[[2]uint64]*logtailreplay.Partition)
+
+	{
+		e.partitions[[2]uint64{catalog.MO_CATALOG_ID, catalog.MO_DATABASE_ID}] =
+			logtailreplay.NewPartition(e.service, 1)
+		e.partitions[[2]uint64{catalog.MO_CATALOG_ID, catalog.MO_TABLES_ID}] =
+			logtailreplay.NewPartition(e.service, 2)
+		e.partitions[[2]uint64{catalog.MO_CATALOG_ID, catalog.MO_COLUMNS_ID}] =
+			logtailreplay.NewPartition(e.service, 3)
 	}
 
+	err := initSysTable(
+		ctx,
+		e.service,
+		e.mp,
+		e.packerPool,
+		&e.moCatalogCreatedTime,
+		&e.moDatabaseCreatedTime,
+		&e.moTablesCreatedTime,
+		&e.moColumnsCreatedTime,
+		e.partitions[[2]uint64{catalog.MO_CATALOG_ID, catalog.MO_DATABASE_ID}],
+		newcache,
+		catalog.MO_DATABASE_ID,
+		true)
+	if err != nil {
+		return err
+	}
+
+	err = initSysTable(
+		ctx,
+		e.service,
+		e.mp,
+		e.packerPool,
+		&e.moCatalogCreatedTime,
+		&e.moDatabaseCreatedTime,
+		&e.moTablesCreatedTime,
+		&e.moColumnsCreatedTime,
+		e.partitions[[2]uint64{catalog.MO_CATALOG_ID, catalog.MO_TABLES_ID}],
+		newcache,
+		catalog.MO_TABLES_ID,
+		true)
+	if err != nil {
+		return err
+
+	}
+
+	err = initSysTable(
+		ctx,
+		e.service,
+		e.mp,
+		e.packerPool,
+		&e.moCatalogCreatedTime,
+		&e.moDatabaseCreatedTime,
+		&e.moTablesCreatedTime,
+		&e.moColumnsCreatedTime,
+		e.partitions[[2]uint64{catalog.MO_CATALOG_ID, catalog.MO_COLUMNS_ID}],
+		newcache,
+		catalog.MO_COLUMNS_ID,
+		true)
+	if err != nil {
+		return err
+	}
+
+	e.catalog.Store(newcache)
 	// clear all tables in global stats.
 	e.globalStats.clearTables()
 
@@ -262,7 +365,7 @@ func (e *Engine) init(ctx context.Context) error {
 }
 
 func (e *Engine) GetLatestCatalogCache() *cache.CatalogCache {
-	return e.catalog
+	return e.catalog.Load()
 }
 
 func requestSnapshotRead(ctx context.Context, tbl *txnTable, snapshot *types.TS) (resp any, err error) {
@@ -349,8 +452,9 @@ func (e *Engine) getOrCreateSnapPart(
 		//check whether the latest partition is available for reuse.
 		if ps, err := tbl.tryToSubscribe(ctx); err == nil {
 			if ps != nil && ps.CanServe(ts) {
-				logutil.Infof("getOrCreateSnapPart:reuse latest partition state:%p, table:%s, tid:%v, txn:%s",
+				logutil.Infof("getOrCreateSnapPart:reuse latest partition state:%p, tbl:%p, table name:%s, tid:%v, txn:%s",
 					ps,
+					tbl,
 					tbl.tableName,
 					tbl.tableId,
 					tbl.db.op.Txn().DebugString())
@@ -361,11 +465,12 @@ func (e *Engine) getOrCreateSnapPart(
 				start, end = ps.GetDuration()
 			}
 			logutil.Infof("getOrCreateSnapPart, "+
-				"latest partition state:%p, duration:[%s_%s] can't serve snapshot read at ts :%s, table:%s, relKind:%s, tid:%v, txn:%s",
+				"latest partition state:%p, duration:[%s_%s] can't serve snapshot read at ts :%s, tbl:%p, table:%s, relKind:%s, tid:%v, txn:%s",
 				ps,
 				start.ToString(),
 				end.ToString(),
 				ts.ToString(),
+				tbl,
 				tbl.tableName,
 				tbl.relKind,
 				tbl.tableId,
@@ -398,8 +503,27 @@ func (e *Engine) getOrCreateSnapPart(
 
 	//new snapshot partition and apply checkpoints into it.
 	snap := logtailreplay.NewPartition(e.service, tbl.tableId)
-	//TODO::if tableId is mo_tables, or mo_colunms, or mo_database,
-	//      we should init the partition,ref to engine.init
+	if tbl.tableId == catalog.MO_TABLES_ID ||
+		tbl.tableId == catalog.MO_DATABASE_ID ||
+		tbl.tableId == catalog.MO_COLUMNS_ID {
+		err := initSysTable(
+			ctx,
+			e.service,
+			e.mp,
+			e.packerPool,
+			nil,
+			nil,
+			nil,
+			nil,
+			snap,
+			nil,
+			tbl.tableId,
+			false)
+		if err != nil {
+			return nil, err
+		}
+
+	}
 	ckps := checkpointEntries
 	err = snap.ConsumeSnapCkps(ctx, ckps, func(
 		checkpoint *checkpoint.CheckpointEntry,
@@ -455,9 +579,10 @@ func (e *Engine) getOrCreateSnapPart(
 	//if has no checkpoints or ts > snap.end, use latest partition.
 	if snap.Snapshot().IsEmpty() || ts.GT(&end) {
 		logutil.Infof("getOrCreateSnapPart:Start to resue latest ps for snapshot read at:%s, "+
-			"table:%s, tid:%v, txn:%s, snapIsEmpty:%v, end:%s",
+			"table name:%s, tbl:%p, tid:%v, txn:%s, snapIsEmpty:%v, end:%s",
 			ts.ToString(),
 			tbl.tableName,
+			tbl,
 			tbl.tableId,
 			tbl.db.op.Txn().DebugString(),
 			snap.Snapshot().IsEmpty(),
@@ -469,8 +594,9 @@ func (e *Engine) getOrCreateSnapPart(
 		}
 		if ps != nil && ps.CanServe(ts) {
 			logutil.Infof("getOrCreateSnapPart: resue latest partiton state:%p, "+
-				"table:%s, tid:%v, txn:%s,ckpIsEmpty:%v, ckp-end:%s",
+				"tbl:%p, table name:%s, tid:%v, txn:%s,ckpIsEmpty:%v, ckp-end:%s",
 				ps,
+				tbl,
 				tbl.tableName,
 				tbl.tableId,
 				tbl.db.op.Txn().DebugString(),
@@ -483,11 +609,12 @@ func (e *Engine) getOrCreateSnapPart(
 			start, end = ps.GetDuration()
 		}
 		logutil.Infof("getOrCreateSnapPart: "+
-			"latest partition state:%p, duration[%s_%s] can't serve for snapshot read at:%s, table:%s, tid:%v, txn:%s",
+			"latest partition state:%p, duration[%s_%s] can't serve for snapshot read at:%s, tbl:%p, table name:%s, tid:%v, txn:%s",
 			ps,
 			start.ToString(),
 			end.ToString(),
 			ts.ToString(),
+			tbl,
 			tbl.tableName,
 			tbl.tableId,
 			tbl.db.op.Txn().DebugString())
@@ -550,8 +677,8 @@ func (e *Engine) LazyLoadLatestCkp(
 				tbl.tableName,
 				tbl.db.databaseId,
 				tbl.db.databaseName,
-				tbl.getTxn().engine.mp,
-				tbl.getTxn().engine.fs)
+				e.mp,
+				e.fs)
 			if err != nil {
 				return err
 			}

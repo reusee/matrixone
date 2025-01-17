@@ -47,20 +47,11 @@ func (productl2 *Productl2) Prepare(proc *process.Process) error {
 		productl2.OpAnalyzer.Reset()
 	}
 
-	if productl2.ProjectList != nil {
-		return productl2.PrepareProjection(proc)
-	}
 	return nil
 }
 
 func (productl2 *Productl2) Call(proc *process.Process) (vm.CallResult, error) {
-	if err, isCancel := vm.CancelCheck(proc); isCancel {
-		return vm.CancelResult, err
-	}
-
 	analyzer := productl2.OpAnalyzer
-	analyzer.Start()
-	defer analyzer.Stop()
 
 	ap := productl2
 	ctr := &ap.ctr
@@ -113,14 +104,6 @@ func (productl2 *Productl2) Call(proc *process.Process) (vm.CallResult, error) {
 				return result, err
 			}
 
-			if productl2.ProjectList != nil {
-				var err error
-				result.Batch, err = productl2.EvalProjection(result.Batch, proc)
-				if err != nil {
-					return result, err
-				}
-			}
-			analyzer.Output(result.Batch)
 			return result, nil
 
 		default:

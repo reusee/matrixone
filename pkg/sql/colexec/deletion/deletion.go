@@ -77,13 +77,11 @@ func (deletion *Deletion) Prepare(proc *process.Process) error {
 	} else {
 		ref := deletion.DeleteCtx.Ref
 		eng := deletion.DeleteCtx.Engine
-		partitionNames := deletion.DeleteCtx.PartitionTableNames
-		rel, partitionRels, err := colexec.GetRelAndPartitionRelsByObjRef(proc.Ctx, proc, eng, ref, partitionNames)
+		rel, err := colexec.GetRelAndPartitionRelsByObjRef(proc.Ctx, proc, eng, ref)
 		if err != nil {
 			return err
 		}
 		deletion.ctr.source = rel
-		deletion.ctr.partitionSources = partitionRels
 	}
 	deletion.ctr.affectedRows = 0
 
@@ -92,10 +90,6 @@ func (deletion *Deletion) Prepare(proc *process.Process) error {
 
 // the bool return value means whether it completed its work or not
 func (deletion *Deletion) Call(proc *process.Process) (vm.CallResult, error) {
-	if err, isCancel := vm.CancelCheck(proc); isCancel {
-		return vm.CancelResult, err
-	}
-
 	if deletion.RemoteDelete {
 		return deletion.remoteDelete(proc)
 	}
@@ -104,8 +98,6 @@ func (deletion *Deletion) Call(proc *process.Process) (vm.CallResult, error) {
 
 func (deletion *Deletion) remoteDelete(proc *process.Process) (vm.CallResult, error) {
 	analyzer := deletion.OpAnalyzer
-	analyzer.Start()
-	defer analyzer.Stop()
 
 	var err error
 	if deletion.ctr.state == vm.Build {
@@ -209,7 +201,6 @@ func (deletion *Deletion) remoteDelete(proc *process.Process) (vm.CallResult, er
 		}
 		result.Batch = deletion.ctr.resBat
 		deletion.ctr.state = vm.End
-		analyzer.Output(result.Batch)
 		return result, nil
 	}
 
@@ -223,8 +214,6 @@ func (deletion *Deletion) remoteDelete(proc *process.Process) (vm.CallResult, er
 
 func (deletion *Deletion) normalDelete(proc *process.Process) (vm.CallResult, error) {
 	analyzer := deletion.OpAnalyzer
-	analyzer.Start()
-	defer analyzer.Stop()
 
 	result, err := vm.ChildrenCall(deletion.GetChildren(0), proc, analyzer)
 	if err != nil {
@@ -245,56 +234,27 @@ func (deletion *Deletion) normalDelete(proc *process.Process) (vm.CallResult, er
 	var affectedRows uint64
 	delCtx := deletion.DeleteCtx
 
-	if len(delCtx.PartitionTableIDs) > 0 {
-		pkTyp := bat.Vecs[delCtx.PrimaryKeyIdx].GetType()
-		deletion.ctr.resBat.SetVector(0, vector.NewVec(types.T_Rowid.ToType()))
-		deletion.ctr.resBat.SetVector(1, vector.NewVec(*pkTyp))
-
-		for partIdx := range len(delCtx.PartitionTableIDs) {
-			deletion.ctr.resBat.CleanOnlyData()
-			expect := int32(partIdx)
-			err = colexec.FillPartitionBatchForDelete(proc, bat, deletion.ctr.resBat, expect, delCtx.RowIdIdx, delCtx.PartitionIndexInBatch, delCtx.PrimaryKeyIdx)
-			if err != nil {
-				deletion.ctr.resBat.Clean(proc.Mp())
-				return result, err
-			}
-			tempRows := uint64(deletion.ctr.resBat.RowCount())
-			if tempRows > 0 {
-				affectedRows += tempRows
-
-				crs := new(perfcounter.CounterSet)
-				newCtx := perfcounter.AttachS3RequestKey(proc.Ctx, crs)
-				err = deletion.ctr.partitionSources[partIdx].Delete(newCtx, deletion.ctr.resBat, catalog.Row_ID)
-				if err != nil {
-					deletion.ctr.resBat.Clean(proc.Mp())
-					return result, err
-				}
-				analyzer.AddS3RequestCount(crs)
-				analyzer.AddDiskIO(crs)
-			}
-		}
-	} else {
-		err = colexec.FilterRowIdForDel(proc, deletion.ctr.resBat, bat, delCtx.RowIdIdx,
-			delCtx.PrimaryKeyIdx)
+	err = colexec.FilterRowIdForDel(proc, deletion.ctr.resBat, bat, delCtx.RowIdIdx,
+		delCtx.PrimaryKeyIdx)
+	if err != nil {
+		return result, err
+	}
+	affectedRows = uint64(deletion.ctr.resBat.RowCount())
+	if affectedRows > 0 {
+		crs := analyzer.GetOpCounterSet()
+		newCtx := perfcounter.AttachS3RequestKey(proc.Ctx, crs)
+		err = deletion.ctr.source.Delete(newCtx, deletion.ctr.resBat, catalog.Row_ID)
 		if err != nil {
 			return result, err
 		}
-		affectedRows = uint64(deletion.ctr.resBat.RowCount())
-		if affectedRows > 0 {
-			crs := new(perfcounter.CounterSet)
-			newCtx := perfcounter.AttachS3RequestKey(proc.Ctx, crs)
-			err = deletion.ctr.source.Delete(newCtx, deletion.ctr.resBat, catalog.Row_ID)
-			if err != nil {
-				return result, err
-			}
-			analyzer.AddS3RequestCount(crs)
-			analyzer.AddDiskIO(crs)
-		}
+		analyzer.AddDeletedRows(int64(deletion.ctr.resBat.RowCount()))
+		analyzer.AddS3RequestCount(crs)
+		analyzer.AddFileServiceCacheInfo(crs)
+		analyzer.AddDiskIO(crs)
 	}
 
 	if delCtx.AddAffectedRows {
 		atomic.AddUint64(&deletion.ctr.affectedRows, affectedRows)
 	}
-	analyzer.Output(result.Batch)
 	return result, nil
 }

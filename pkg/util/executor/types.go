@@ -62,13 +62,20 @@ type Options struct {
 	txnOpts                 []client.TxnOption
 	enableTrace             bool
 	lower                   *int64
+	streaming               bool
+	stream_chan             chan Result
+	error_chan              chan error
+	sql                     string
 }
 
 // StatementOption statement execute option.
 type StatementOption struct {
-	waitPolicy lock.WaitPolicy
-	accountId  uint32
-	disableLog bool
+	waitPolicy       lock.WaitPolicy
+	accountId        uint32
+	roleId           uint32
+	userId           uint32
+	disableLog       bool
+	ignoreForeignKey bool
 }
 
 // Result exec sql result

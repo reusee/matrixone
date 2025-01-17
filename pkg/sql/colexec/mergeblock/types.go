@@ -40,23 +40,16 @@ type Container struct {
 	// Notice that batches in mp should be free, since the memory of these batches be allocated from mpool.
 	mp map[int]*batch.Batch
 	// mp2 is used to store the normal data batches
-	mp2 map[int][]*batch.Batch
-
-	source           engine.Relation
-	partitionSources []engine.Relation
-	affectedRows     uint64
+	mp2          map[int][]*batch.Batch
+	source       engine.Relation
+	affectedRows uint64
 }
 
 type MergeBlock struct {
-	// // 1. main table
-	// Tbl engine.Relation
-	// // 2. partition sub tables
-	// PartitionSources []engine.Relation
-	AddAffectedRows     bool
-	Engine              engine.Engine
-	Ref                 *plan.ObjectRef
-	PartitionTableNames []string
-	container           Container
+	AddAffectedRows bool
+	Engine          engine.Engine
+	Ref             *plan.ObjectRef
+	container       Container
 
 	vm.OperatorBase
 }
@@ -96,11 +89,6 @@ func (mergeBlock *MergeBlock) WithEngine(eng engine.Engine) *MergeBlock {
 	return mergeBlock
 }
 
-func (mergeBlock *MergeBlock) WithParitionNames(names []string) *MergeBlock {
-	mergeBlock.PartitionTableNames = append(mergeBlock.PartitionTableNames, names...)
-	return mergeBlock
-}
-
 func (mergeBlock *MergeBlock) WithAddAffectedRows(addAffectedRows bool) *MergeBlock {
 	mergeBlock.AddAffectedRows = addAffectedRows
 	return mergeBlock
@@ -119,6 +107,10 @@ func (mergeBlock *MergeBlock) Reset(proc *process.Process, pipelineFailed bool, 
 
 func (mergeBlock *MergeBlock) Free(proc *process.Process, pipelineFailed bool, err error) {
 	mergeBlock.cleanMp(proc)
+}
+
+func (mergeBlock *MergeBlock) ExecProjection(proc *process.Process, input *batch.Batch) (*batch.Batch, error) {
+	return input, nil
 }
 
 func (mergeBlock *MergeBlock) GetMetaLocBat(src *batch.Batch, proc *process.Process) {
@@ -143,25 +135,12 @@ func (mergeBlock *MergeBlock) GetMetaLocBat(src *batch.Batch, proc *process.Proc
 		typs = append(typs, types.T_binary.ToType())
 	}
 
-	// If the target is a partition table
-	if len(mergeBlock.container.partitionSources) > 0 {
-		// 'i' aligns with partition number
-		for i := range mergeBlock.container.partitionSources {
-			bat := batch.NewWithSize(len(attrs))
-			bat.Attrs = attrs
-			for idx := 0; idx < len(attrs); idx++ {
-				bat.Vecs[idx] = vector.NewVec(typs[idx])
-			}
-			mergeBlock.container.mp[i] = bat
-		}
-	} else {
-		bat := batch.NewWithSize(len(attrs))
-		bat.Attrs = attrs
-		for idx := 0; idx < len(attrs); idx++ {
-			bat.Vecs[idx] = vector.NewVec(typs[idx])
-		}
-		mergeBlock.container.mp[0] = bat
+	bat := batch.NewWithSize(len(attrs))
+	bat.Attrs = attrs
+	for idx := 0; idx < len(attrs); idx++ {
+		bat.Vecs[idx] = vector.NewVec(typs[idx])
 	}
+	mergeBlock.container.mp[0] = bat
 }
 
 func splitObjectStats(mergeBlock *MergeBlock, proc *process.Process,
@@ -199,7 +178,7 @@ func splitObjectStats(mergeBlock *MergeBlock, proc *process.Process,
 		destVec := mergeBlock.container.mp[int(tblIdx[idx])].Vecs[1]
 
 		if needLoad {
-			crs := new(perfcounter.CounterSet)
+			crs := analyzer.GetOpCounterSet()
 			newCtx := perfcounter.AttachS3RequestKey(proc.Ctx, crs)
 
 			// comes from old version cn
@@ -290,6 +269,6 @@ func (mergeBlock *MergeBlock) cleanMp(proc *process.Process) {
 	mergeBlock.container.mp2 = nil
 }
 
-func (mergeBlock *MergeBlock) AffectedRows() uint64 {
+func (mergeBlock *MergeBlock) GetAffectedRows() uint64 {
 	return mergeBlock.container.affectedRows
 }

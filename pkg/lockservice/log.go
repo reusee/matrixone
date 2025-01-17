@@ -18,10 +18,9 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/matrixorigin/matrixone/pkg/common/util"
-
 	"github.com/matrixorigin/matrixone/pkg/common/log"
 	"github.com/matrixorigin/matrixone/pkg/common/runtime"
+	"github.com/matrixorigin/matrixone/pkg/common/util"
 	pb "github.com/matrixorigin/matrixone/pkg/pb/lock"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -528,6 +527,22 @@ func logPingFailed(
 		zap.Error(err))
 }
 
+func logValidTxnFailed(
+	logger *log.MOLogger,
+	txn pb.WaitTxn,
+	err error,
+) {
+	if logger == nil {
+		return
+	}
+
+	logger.Log(
+		"failed to valid txn",
+		getLogOptions(zap.ErrorLevel),
+		zap.String("wait-txn", txn.DebugString()),
+		zap.Error(err))
+}
+
 func logCanLockOnService(
 	logger *log.MOLogger,
 	serviceID string,
@@ -558,7 +573,6 @@ func logLocalBindsInvalid(
 
 func logUnlockTxn(
 	logger *log.MOLogger,
-	serviceID string,
 	txn *activeTxn,
 ) func() {
 	if logger == nil {
@@ -577,7 +591,6 @@ func logUnlockTxn(
 
 func logTxnReadyToClose(
 	logger *log.MOLogger,
-	serviceID string,
 	txn *activeTxn,
 ) {
 	if logger == nil {
@@ -595,7 +608,6 @@ func logTxnReadyToClose(
 
 func logTxnUnlockTable(
 	logger *log.MOLogger,
-	serviceID string,
 	txn *activeTxn,
 	table uint64,
 ) {
@@ -615,7 +627,6 @@ func logTxnUnlockTable(
 
 func logTxnUnlockTableCompleted(
 	logger *log.MOLogger,
-	serviceID string,
 	txn *activeTxn,
 	table uint64,
 	cs *cowSlice,
@@ -639,7 +650,6 @@ func logTxnUnlockTableCompleted(
 
 func logUnlockTableOnLocal(
 	logger *log.MOLogger,
-	serviceID string,
 	txn *activeTxn,
 	bind pb.LockTable,
 ) {
@@ -659,7 +669,6 @@ func logUnlockTableOnLocal(
 
 func logUnlockTableOnRemote(
 	logger *log.MOLogger,
-	serviceID string,
 	txn *activeTxn,
 	bind pb.LockTable,
 ) {
@@ -679,7 +688,6 @@ func logUnlockTableOnRemote(
 
 func logUnlockTableOnRemoteFailed(
 	logger *log.MOLogger,
-	serviceID string,
 	txn *activeTxn,
 	bind pb.LockTable,
 	err error,
@@ -877,6 +885,48 @@ func logWaiterStatusChanged(
 			zap.Stringer("waiter", w),
 			zap.Int("from-state", int(from)),
 			zap.Int("to-state", int(to)),
+		)
+	}
+}
+
+func logRefWaiter(
+	logger *log.MOLogger,
+	info string,
+	txn []byte,
+	w *waiter,
+) {
+	if logger == nil {
+		return
+	}
+
+	if logger.Enabled(zap.InfoLevel) {
+		logger.Log(
+			"ref waiter",
+			getLogOptions(zap.InfoLevel),
+			zap.String("txn", hex.EncodeToString(txn)),
+			zap.String("info", info),
+			zap.String("waiter", fmt.Sprintf("%p", w)),
+		)
+	}
+}
+
+func logCloseWaiter(
+	logger *log.MOLogger,
+	info string,
+	txn []byte,
+	w *waiter,
+) {
+	if logger == nil {
+		return
+	}
+
+	if logger.Enabled(zap.InfoLevel) {
+		logger.Log(
+			"close waiter",
+			getLogOptions(zap.InfoLevel),
+			zap.String("txn", hex.EncodeToString(txn)),
+			zap.String("info", info),
+			zap.String("waiter", fmt.Sprintf("%p", w)),
 		)
 	}
 }

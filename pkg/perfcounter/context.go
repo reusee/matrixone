@@ -91,24 +91,24 @@ func GetS3RequestKey(ctx context.Context) (*CounterSet, bool) {
 	return counter, ok
 }
 
-// Internal executor context key
-type InternalExecutorKey struct{}
+// Background Executor Internal Executor
+type BackgroundExecutorKey struct{}
 
-func AttachInternalExecutorKey(ctx context.Context) context.Context {
-	return context.WithValue(ctx, InternalExecutorKey{}, struct{}{})
+func AttachBackgroundExecutorKey(ctx context.Context) context.Context {
+	return context.WithValue(ctx, BackgroundExecutorKey{}, struct{}{})
 }
 
-// IsInternalExecutor checks if the given context contains the InternalExecutorKey
+// TxnExecutorKey `refers to `TxnExecuter`
+type TxnExecutorKey struct{}
+
+func AttachTxnExecutorKey(ctx context.Context) context.Context {
+	return context.WithValue(ctx, TxnExecutorKey{}, struct{}{})
+}
+
+// IsInternalExecutor checks if the given context contains the TxnExecutorKey
 func IsInternalExecutor(ctx context.Context) bool {
-	_, ok := ctx.Value(InternalExecutorKey{}).(struct{})
+	_, ok := ctx.Value(TxnExecutorKey{}).(struct{})
 	return ok
-}
-
-// Generic executor context key
-type GenericExecutorKey struct{}
-
-func AttachGenericExecutorKey(ctx context.Context) context.Context {
-	return context.WithValue(ctx, GenericExecutorKey{}, struct{}{})
 }
 
 // BuildPlanMarkKey is an empty struct used as a key for attaching a build plan counter to a context.
@@ -133,4 +133,23 @@ type ExecPipelineMarkKey struct{}
 // AttachExecPipelineKey attaches a *CounterSet to the given context with an ExecPipelineMarkKey.
 func AttachExecPipelineKey(ctx context.Context, counter *CounterSet) context.Context {
 	return context.WithValue(ctx, ExecPipelineMarkKey{}, counter)
+}
+
+// ------------------------------------------------------------------------------------------------
+type CalcTableStatsKey struct{}
+
+func AttachCalcTableStatsKey(ctx context.Context) context.Context {
+	return context.WithValue(ctx, CalcTableStatsKey{}, true)
+}
+
+type CalcTableSizeKey struct{}
+
+func AttachCalcTableSizeKey(ctx context.Context) context.Context {
+	return context.WithValue(ctx, CalcTableSizeKey{}, true)
+}
+
+type CalcTableRowsKey struct{}
+
+func AttachCalcTableRowsKey(ctx context.Context) context.Context {
+	return context.WithValue(ctx, CalcTableRowsKey{}, true)
 }

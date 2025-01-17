@@ -376,6 +376,12 @@ func (cc *CatalogCache) GetTable(tbl *TableItem) bool {
 	return find
 }
 
+func (cc *CatalogCache) GetStartTS() types.TS {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	return cc.mu.start
+}
+
 func (cc *CatalogCache) HasNewerVersion(qry *TableChangeQuery) bool {
 	var find bool
 
@@ -386,7 +392,7 @@ func (cc *CatalogCache) HasNewerVersion(qry *TableChangeQuery) bool {
 		Ts:         types.MaxTs().ToTimestamp(), // get the latest version
 	}
 	cc.tables.data.Ascend(key, func(item *TableItem) bool {
-		if item.Name != qry.Name {
+		if item.AccountId != qry.AccountId || item.DatabaseId != qry.DatabaseId || item.Name != qry.Name {
 			return false
 		}
 
@@ -676,7 +682,6 @@ func getTableDef(tblItem *TableItem, coldefs []engine.TableDef) (*plan.TableDef,
 	var properties []*plan.Property
 	var TableType string
 	var Createsql string
-	var partitionInfo *plan.PartitionByDef
 	var viewSql *plan.ViewDef
 	var foreignKeys []*plan.ForeignKeyDef
 	var primarykey *plan.PrimaryKeyDef
@@ -728,23 +733,6 @@ func getTableDef(tblItem *TableItem, coldefs []engine.TableDef) (*plan.TableDef,
 		})
 
 		tableDef = append(tableDef, &engine.CommentDef{Comment: tblItem.Comment})
-	}
-
-	if tblItem.Partitioned > 0 {
-		p := &plan.PartitionByDef{}
-		err := p.UnMarshalPartitionInfo(([]byte)(tblItem.Partition))
-		if err != nil {
-			logutil.Errorf(
-				"catalog-cache error: unmarshal partition metadata information: %v-%v-%v, err: %v",
-				tblItem.AccountId, tblItem.Id, tblItem.Name, err)
-			return nil, nil
-		}
-		partitionInfo = p
-
-		tableDef = append(tableDef, &engine.PartitionDef{
-			Partitioned: tblItem.Partitioned,
-			Partition:   tblItem.Partition,
-		})
 	}
 
 	if tblItem.ViewDef != "" {
@@ -840,11 +828,11 @@ func getTableDef(tblItem *TableItem, coldefs []engine.TableDef) (*plan.TableDef,
 		Createsql:     Createsql,
 		Pkey:          primarykey,
 		ViewSql:       viewSql,
-		Partition:     partitionInfo,
 		Fkeys:         foreignKeys,
 		RefChildTbls:  refChildTbls,
 		ClusterBy:     clusterByDef,
 		Indexes:       indexes,
 		Version:       tblItem.Version,
+		DbId:          tblItem.DatabaseId,
 	}, tableDef
 }

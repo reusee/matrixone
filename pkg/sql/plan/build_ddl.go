@@ -43,12 +43,12 @@ func genDynamicTableDef(ctx CompilerContext, stmt *tree.Select) (*plan.TableDef,
 	var err error
 	switch s := stmt.Select.(type) {
 	case *tree.ParenSelect:
-		stmtPlan, err = runBuildSelectByBinder(plan.Query_SELECT, ctx, s.Select, false, true)
+		stmtPlan, err = bindAndOptimizeSelectQuery(plan.Query_SELECT, ctx, s.Select, false, true)
 		if err != nil {
 			return nil, err
 		}
 	default:
-		stmtPlan, err = runBuildSelectByBinder(plan.Query_SELECT, ctx, stmt, false, true)
+		stmtPlan, err = bindAndOptimizeSelectQuery(plan.Query_SELECT, ctx, stmt, false, true)
 		if err != nil {
 			return nil, err
 		}
@@ -105,12 +105,12 @@ func genViewTableDef(ctx CompilerContext, stmt *tree.Select) (*plan.TableDef, er
 	var err error
 	switch s := stmt.Select.(type) {
 	case *tree.ParenSelect:
-		stmtPlan, err = runBuildSelectByBinder(plan.Query_SELECT, ctx, s.Select, false, true)
+		stmtPlan, err = bindAndOptimizeSelectQuery(plan.Query_SELECT, ctx, s.Select, false, true)
 		if err != nil {
 			return nil, err
 		}
 	default:
-		stmtPlan, err = runBuildSelectByBinder(plan.Query_SELECT, ctx, stmt, false, true)
+		stmtPlan, err = bindAndOptimizeSelectQuery(plan.Query_SELECT, ctx, stmt, false, true)
 		if err != nil {
 			return nil, err
 		}
@@ -134,6 +134,8 @@ func genViewTableDef(ctx CompilerContext, stmt *tree.Select) (*plan.TableDef, er
 
 	// Check alter and change the viewsql.
 	viewSql := ctx.GetRootSql()
+	// remove sql hint
+	viewSql = cleanHint(viewSql)
 	if len(viewSql) != 0 {
 		if viewSql[0] == 'A' {
 			viewSql = strings.Replace(viewSql, "ALTER", "CREATE", 1)
@@ -193,7 +195,7 @@ func genAsSelectCols(ctx CompilerContext, stmt *tree.Select) ([]*ColDef, error) 
 	if s, ok := stmt.Select.(*tree.ParenSelect); ok {
 		stmt = s.Select
 	}
-	if rootId, err = builder.buildSelect(stmt, bindCtx, true); err != nil {
+	if rootId, err = builder.bindSelect(stmt, bindCtx, true); err != nil {
 		return nil, err
 	}
 	rootNode := builder.qry.Nodes[rootId]
@@ -736,12 +738,19 @@ func buildCreateTable(stmt *tree.CreateTable, ctx CompilerContext) (*Plan, error
 		return nil, moerr.NewInternalError(ctx.GetContext(), "rewrite for create table like failed")
 	}
 
+	rawSQL := ""
+	if stmt.PartitionOption != nil {
+		rawSQL = tree.String(stmt, dialect.MYSQL)
+	}
+
 	createTable := &plan.CreateTable{
 		IfNotExists: stmt.IfNotExists,
 		Temporary:   stmt.Temporary,
 		TableDef: &TableDef{
 			Name: string(stmt.Table.ObjectName),
 		},
+		RawSQL:      rawSQL,
+		IsPartition: stmt.PartitionOption != nil,
 	}
 
 	// get database name
@@ -948,16 +957,6 @@ func buildCreateTable(stmt *tree.CreateTable, ctx CompilerContext) (*Plan, error
 		if err != nil {
 			return nil, err
 		}
-		partitionBinder := NewPartitionBinder(builder, bindContext)
-		err = buildPartitionByClause(ctx.GetContext(), partitionBinder, stmt, createTable.TableDef)
-		if err != nil {
-			return nil, err
-		}
-
-		err = addPartitionTableDef(ctx.GetContext(), string(stmt.Table.ObjectName), createTable)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	return &Plan{
@@ -970,77 +969,6 @@ func buildCreateTable(stmt *tree.CreateTable, ctx CompilerContext) (*Plan, error
 			},
 		},
 	}, nil
-}
-
-// addPartitionTableDef constructs the table def for the partition table
-func addPartitionTableDef(ctx context.Context, mainTableName string, createTable *plan.CreateTable) error {
-	//add partition table
-	//there is no index for the partition table
-	//there is no foreign key for the partition table
-	if !util.IsValidNameForPartitionTable(mainTableName) {
-		return moerr.NewInvalidInputf(ctx, "invalid main table name %s", mainTableName)
-	}
-
-	//common properties
-	partitionProps := []*plan.Property{
-		{
-			Key:   catalog.SystemRelAttr_Kind,
-			Value: catalog.SystemPartitionRel,
-		},
-		{
-			Key:   catalog.SystemRelAttr_CreateSQL,
-			Value: "",
-		},
-	}
-	partitionPropsDef := &plan.TableDef_DefType{
-		Def: &plan.TableDef_DefType_Properties{
-			Properties: &plan.PropertiesDef{
-				Properties: partitionProps,
-			},
-		}}
-
-	partitionDef := createTable.TableDef.Partition
-	partitionTableDefs := make([]*TableDef, partitionDef.PartitionNum)
-
-	partitionTableNames := make([]string, partitionDef.PartitionNum)
-	for i := 0; i < int(partitionDef.PartitionNum); i++ {
-		part := partitionDef.Partitions[i]
-		ok, partitionTableName := util.MakeNameOfPartitionTable(part.GetPartitionName(), mainTableName)
-		if !ok {
-			return moerr.NewInvalidInputf(ctx, "invalid partition table name %s", partitionTableName)
-		}
-
-		// save the table name for a partition
-		part.PartitionTableName = partitionTableName
-		partitionTableNames[i] = partitionTableName
-
-		partitionTableDefs[i] = &TableDef{
-			Name: partitionTableName,
-			Cols: createTable.TableDef.Cols, //same as the main table's column defs
-		}
-		partitionTableDefs[i].Pkey = createTable.TableDef.GetPkey()
-		partitionTableDefs[i].Defs = append(partitionTableDefs[i].Defs, partitionPropsDef)
-	}
-	partitionDef.PartitionTableNames = partitionTableNames
-	createTable.PartitionTables = partitionTableDefs
-	return nil
-}
-
-// buildPartitionByClause build partition by clause info and semantic check.
-// Currently, sub partition and partition value verification are not supported
-func buildPartitionByClause(ctx context.Context, partitionBinder *PartitionBinder, stmt *tree.CreateTable, tableDef *TableDef) (err error) {
-	var builder partitionBuilder
-	switch stmt.PartitionOption.PartBy.PType.(type) {
-	case *tree.HashType:
-		builder = &hashPartitionBuilder{}
-	case *tree.KeyType:
-		builder = &keyPartitionBuilder{}
-	case *tree.RangeType:
-		builder = &rangePartitionBuilder{}
-	case *tree.ListType:
-		builder = &listPartitionBuilder{}
-	}
-	return builder.build(ctx, partitionBinder, stmt, tableDef)
 }
 
 func buildTableDefs(stmt *tree.CreateTable, ctx CompilerContext, createTable *plan.CreateTable, asSelectCols []*ColDef) error {
@@ -1291,7 +1219,7 @@ func buildTableDefs(stmt *tree.CreateTable, ctx CompilerContext, createTable *pl
 
 		// insert into new_table select default_val1, default_val2, ..., * from (select clause);
 		var insertSqlBuilder strings.Builder
-		insertSqlBuilder.WriteString(fmt.Sprintf("insert into `%s` select ", createTable.TableDef.Name))
+		insertSqlBuilder.WriteString(fmt.Sprintf("insert into `%s`.`%s` select ", createTable.Database, createTable.TableDef.Name))
 
 		cols := createTable.TableDef.Cols
 		firstCol := true
@@ -1473,6 +1401,7 @@ func buildTableDefs(stmt *tree.CreateTable, ctx CompilerContext, createTable *pl
 		} else {
 			clusterByColName := util.BuildCompositeClusterByColumnName(clusterByKeys)
 			colDef := MakeHiddenColDefByName(clusterByColName)
+			colDef.Default.NullAbility = true
 			createTable.TableDef.Cols = append(createTable.TableDef.Cols, colDef)
 			colMap[clusterByColName] = colDef
 
@@ -1600,6 +1529,7 @@ func getRefAction(typ tree.ReferenceOptionType) plan.ForeignKeyDef_RefAction {
 	}
 }
 
+// buildFullTextIndexTable create a secondary table with schema (doc_id, word, pos) cluster by (word)
 func buildFullTextIndexTable(createTable *plan.CreateTable, indexInfos []*tree.FullTextIndex, colMap map[string]*ColDef, pkeyName string, ctx CompilerContext) error {
 	if pkeyName == "" || pkeyName == catalog.FakePrimaryKeyColName {
 		return moerr.NewInternalErrorNoCtx("primary key cannot be empty for fulltext index")
@@ -1625,7 +1555,7 @@ func buildFullTextIndexTable(createTable *plan.CreateTable, indexInfos []*tree.F
 		if indexInfo.IndexOption != nil && indexInfo.IndexOption.ParserName != "" {
 			// set parser ngram
 			parsername = strings.ToLower(indexInfo.IndexOption.ParserName)
-			if parsername != "ngram" && parsername != "default" && parsername != "json" {
+			if parsername != "ngram" && parsername != "default" && parsername != "json" && parsername != "json_value" {
 				return moerr.NewNotSupported(ctx.GetContext(), fmt.Sprintf("Fulltext parser %s not supported", parsername))
 			}
 		}
@@ -1751,6 +1681,23 @@ func buildFullTextIndexTable(createTable *plan.CreateTable, indexInfos []*tree.F
 			PkeyColName: keyName,
 		}
 
+		tableDef.ClusterBy = &ClusterByDef{
+			Name: "word",
+		}
+
+		properties := []*plan.Property{
+			{
+				Key:   catalog.SystemRelAttr_Kind,
+				Value: catalog.SystemIndexRel,
+			},
+		}
+		tableDef.Defs = append(tableDef.Defs, &plan.TableDef_DefType{
+			Def: &plan.TableDef_DefType_Properties{
+				Properties: &plan.PropertiesDef{
+					Properties: properties,
+				},
+			}})
+
 		// append to createTable.IndexTables and createTable.TableDef
 		createTable.IndexTables = append(createTable.IndexTables, tableDef)
 		createTable.TableDef.Indexes = append(createTable.TableDef.Indexes, indexDef)
@@ -1861,6 +1808,19 @@ func buildUniqueIndexTable(createTable *plan.CreateTable, indexInfos []*tree.Uni
 			}
 			tableDef.Cols = append(tableDef.Cols, colDef)
 		}
+
+		properties := []*plan.Property{
+			{
+				Key:   catalog.SystemRelAttr_Kind,
+				Value: catalog.SystemIndexRel,
+			},
+		}
+		tableDef.Defs = append(tableDef.Defs, &plan.TableDef_DefType{
+			Def: &plan.TableDef_DefType_Properties{
+				Properties: &plan.PropertiesDef{
+					Properties: properties,
+				},
+			}})
 
 		//indexDef.IndexName = indexInfo.Name
 		indexDef.IndexName = indexInfo.GetIndexName()
@@ -1980,6 +1940,20 @@ func buildMasterSecondaryIndexDef(ctx CompilerContext, indexInfo *tree.Index, co
 		}
 		tableDef.Cols = append(tableDef.Cols, pkColDef)
 	}
+
+	properties := []*plan.Property{
+		{
+			Key:   catalog.SystemRelAttr_Kind,
+			Value: catalog.SystemIndexRel,
+		},
+	}
+	tableDef.Defs = append(tableDef.Defs, &plan.TableDef_DefType{
+		Def: &plan.TableDef_DefType_Properties{
+			Properties: &plan.PropertiesDef{
+				Properties: properties,
+			},
+		}})
+
 	if indexInfo.Name == "" {
 		firstPart := indexInfo.KeyParts[0].ColName.ColName()
 		nameCount[firstPart]++
@@ -2129,6 +2103,19 @@ func buildRegularSecondaryIndexDef(ctx CompilerContext, indexInfo *tree.Index, c
 		tableDef.Cols = append(tableDef.Cols, colDef)
 	}
 
+	properties := []*plan.Property{
+		{
+			Key:   catalog.SystemRelAttr_Kind,
+			Value: catalog.SystemIndexRel,
+		},
+	}
+	tableDef.Defs = append(tableDef.Defs, &plan.TableDef_DefType{
+		Def: &plan.TableDef_DefType_Properties{
+			Properties: &plan.PropertiesDef{
+				Properties: properties,
+			},
+		}})
+
 	if indexInfo.Name == "" {
 		firstPart := indexInfo.KeyParts[0].ColName.ColName()
 		nameCount[firstPart]++
@@ -2249,6 +2236,19 @@ func buildIvfFlatSecondaryIndexDef(ctx CompilerContext, indexInfo *tree.Index, c
 			Names:       []string{catalog.SystemSI_IVFFLAT_TblCol_Metadata_key},
 			PkeyColName: catalog.SystemSI_IVFFLAT_TblCol_Metadata_key,
 		}
+
+		properties := []*plan.Property{
+			{
+				Key:   catalog.SystemRelAttr_Kind,
+				Value: catalog.SystemSI_IVFFLAT_TblType_Metadata,
+			},
+		}
+		tableDefs[0].Defs = append(tableDefs[0].Defs, &plan.TableDef_DefType{
+			Def: &plan.TableDef_DefType_Properties{
+				Properties: &plan.PropertiesDef{
+					Properties: properties,
+				},
+			}})
 	}
 
 	// 2. create ivf-flat `centroids` table
@@ -2327,6 +2327,19 @@ func buildIvfFlatSecondaryIndexDef(ctx CompilerContext, indexInfo *tree.Index, c
 			PkeyColName: catalog.CPrimaryKeyColName,
 			CompPkeyCol: tableDefs[1].Cols[3],
 		}
+
+		properties := []*plan.Property{
+			{
+				Key:   catalog.SystemRelAttr_Kind,
+				Value: catalog.SystemSI_IVFFLAT_TblType_Centroids,
+			},
+		}
+		tableDefs[1].Defs = append(tableDefs[1].Defs, &plan.TableDef_DefType{
+			Def: &plan.TableDef_DefType_Properties{
+				Properties: &plan.PropertiesDef{
+					Properties: properties,
+				},
+			}})
 	}
 
 	// 3. create ivf-flat `entries` table
@@ -2424,6 +2437,19 @@ func buildIvfFlatSecondaryIndexDef(ctx CompilerContext, indexInfo *tree.Index, c
 			PkeyColName: catalog.CPrimaryKeyColName,
 			CompPkeyCol: tableDefs[2].Cols[4],
 		}
+
+		properties := []*plan.Property{
+			{
+				Key:   catalog.SystemRelAttr_Kind,
+				Value: catalog.SystemSI_IVFFLAT_TblType_Entries,
+			},
+		}
+		tableDefs[2].Defs = append(tableDefs[2].Defs, &plan.TableDef_DefType{
+			Def: &plan.TableDef_DefType_Properties{
+				Properties: &plan.PropertiesDef{
+					Properties: properties,
+				},
+			}})
 	}
 
 	return indexDefs, tableDefs, nil
@@ -2558,13 +2584,10 @@ func buildTruncateTable(stmt *tree.TruncateTable, ctx CompilerContext) (*Plan, e
 					}
 				} else if indexdef.TableExist && catalog.IsMasterIndexAlgo(indexdef.IndexAlgo) {
 					truncateTable.IndexTableNames = append(truncateTable.IndexTableNames, indexdef.IndexTableName)
+				} else if indexdef.TableExist && catalog.IsFullTextIndexAlgo(indexdef.IndexAlgo) {
+					truncateTable.IndexTableNames = append(truncateTable.IndexTableNames, indexdef.IndexTableName)
 				}
 			}
-		}
-
-		if tableDef.Partition != nil {
-			truncateTable.PartitionTableNames = make([]string, len(tableDef.Partition.PartitionTableNames))
-			copy(truncateTable.PartitionTableNames, tableDef.Partition.PartitionTableNames)
 		}
 	}
 
@@ -2656,8 +2679,14 @@ func buildDropTable(stmt *tree.DropTable, ctx CompilerContext) (*Plan, error) {
 			return nil, moerr.NewInternalError(ctx.GetContext(), "only the sys account can drop the cluster table")
 		}
 
+		ignore := false
+		val := ctx.GetContext().Value(defines.IgnoreForeignKey{})
+		if val != nil {
+			ignore = val.(bool)
+		}
+
 		dropTable.TableId = tableDef.TblId
-		if tableDef.Fkeys != nil {
+		if tableDef.Fkeys != nil && !ignore {
 			for _, fk := range tableDef.Fkeys {
 				if fk.ForeignTbl == 0 {
 					continue
@@ -2668,7 +2697,7 @@ func buildDropTable(stmt *tree.DropTable, ctx CompilerContext) (*Plan, error) {
 
 		// collect child tables that needs remove fk relationships
 		// with the table
-		if tableDef.RefChildTbls != nil {
+		if tableDef.RefChildTbls != nil && !ignore {
 			for _, childTbl := range tableDef.RefChildTbls {
 				if childTbl == 0 {
 					continue
@@ -2684,10 +2713,6 @@ func buildDropTable(stmt *tree.DropTable, ctx CompilerContext) (*Plan, error) {
 					dropTable.IndexTableNames = append(dropTable.IndexTableNames, indexdef.IndexTableName)
 				}
 			}
-		}
-
-		if tableDef.GetPartition() != nil {
-			dropTable.PartitionTableNames = tableDef.GetPartition().GetPartitionTableNames()
 		}
 
 		dropTable.TableDef = tableDef
@@ -2830,6 +2855,7 @@ func buildDropDatabase(stmt *tree.DropDatabase, ctx CompilerContext) (*Plan, err
 	}, nil
 }
 
+// In MySQL, the CREATE INDEX syntax can only create one index instance at a time
 func buildCreateIndex(stmt *tree.CreateIndex, ctx CompilerContext) (*Plan, error) {
 	createIndex := &plan.CreateIndex{}
 	if len(stmt.Table.SchemaName) == 0 {
@@ -3661,18 +3687,10 @@ func buildAlterTableInplace(stmt *tree.AlterTable, ctx CompilerContext) (*Plan, 
 
 	if stmt.PartitionOption != nil {
 		alterPartitionOption := stmt.PartitionOption
-		switch partitionOption := alterPartitionOption.(type) {
+		switch alterPartitionOption.(type) {
 		case *tree.AlterPartitionAddPartitionClause:
-			alterTableAddPartition, err := AddTablePartitions(ctx, alterTable, partitionOption)
-			if err != nil {
-				return nil, err
-			}
-
-			alterTable.Actions = append(alterTable.Actions, &plan.AlterTable_Action{
-				Action: &plan.AlterTable_Action_AddPartition{
-					AddPartition: alterTableAddPartition,
-				},
-			})
+			// TODO: reimplement partition
+			return nil, moerr.NewNotSupported(ctx.GetContext(), "alter table add partition clause")
 		case *tree.AlterPartitionDropPartitionClause:
 			return nil, moerr.NewNotSupported(ctx.GetContext(), "alter table drop partition clause")
 		case *tree.AlterPartitionTruncatePartitionClause:

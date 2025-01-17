@@ -20,10 +20,10 @@ import (
 	"time"
 
 	"github.com/matrixorigin/matrixone/pkg/logutil"
-	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/common"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/logstore/driver"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/logstore/driver/entry"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/logstore/sm"
+	"go.uber.org/zap"
 )
 
 var (
@@ -170,7 +170,7 @@ func (bs *baseStore) onEntries(entries ...any) {
 		// }
 		var err error
 		appender := bs.file.GetAppender()
-		e.Ctx, err = appender.Prepare(e.GetSize(), e.Lsn)
+		e.Ctx, err = appender.Prepare(e.GetSize(), e.DSN)
 		if err != nil {
 			panic(err)
 		}
@@ -254,7 +254,7 @@ func (bs *baseStore) Append(e *entry.Entry) error {
 	bs.flushWgMu.Unlock()
 	bs.mu.Lock()
 	lsn := bs.AllocateLsn()
-	e.Lsn = lsn
+	e.DSN = lsn
 	// if e.IsPrintTime() {
 	// 	logutil.Infof("append entry takes %dms", e.Duration().Milliseconds())
 	// 	e.StartTime()
@@ -267,7 +267,7 @@ func (bs *baseStore) Append(e *entry.Entry) error {
 	return nil
 }
 
-func (bs *baseStore) Replay(h driver.ApplyHandle) error {
+func (bs *baseStore) Replay(ctx context.Context, h driver.ApplyHandle) error {
 	r := newReplayer(h)
 	bs.addrs = r.addrs
 	err := bs.file.Replay(r)
@@ -275,11 +275,11 @@ func (bs *baseStore) Replay(h driver.ApplyHandle) error {
 		return err
 	}
 	bs.onReplay(r)
-	logutil.Info("open-tae", common.OperationField("replay"),
-		common.OperandField("wal"),
-		common.AnyField("backend", "batchstore"),
-		common.AnyField("apply cost", r.applyDuration),
-		common.AnyField("read cost", r.readDuration))
+	logutil.Info(
+		"Replay-Wal-From-LogStore",
+		zap.Duration("apply-cost", r.applyDuration),
+		zap.Duration("read-cost", r.readDuration),
+	)
 	return nil
 }
 
@@ -299,7 +299,7 @@ func (bs *baseStore) Read(lsn uint64) (*entry.Entry, error) {
 func (bs *baseStore) retryGetVersionByGLSN(lsn uint64) (int, error) {
 	ver, err := bs.GetVersionByGLSN(lsn)
 	if err == ErrGroupNotExist || err == ErrLsnNotExist {
-		syncedLsn := bs.GetCurrSeqNum()
+		syncedLsn := bs.GetDSN()
 		if lsn <= syncedLsn {
 			for i := 0; i < 10; i++ {
 				bs.syncBase.commitCond.L.Lock()

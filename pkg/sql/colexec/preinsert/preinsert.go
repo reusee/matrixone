@@ -18,8 +18,6 @@ import (
 	"bytes"
 	"time"
 
-	"go.uber.org/zap"
-
 	"github.com/matrixorigin/matrixone/pkg/catalog"
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 	"github.com/matrixorigin/matrixone/pkg/container/batch"
@@ -30,6 +28,7 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/vm"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae"
 	"github.com/matrixorigin/matrixone/pkg/vm/process"
+	"go.uber.org/zap"
 )
 
 const opName = "preinsert"
@@ -177,13 +176,7 @@ func (preInsert *PreInsert) constructHiddenColBuf(proc *proc, bat *batch.Batch, 
 }
 
 func (preInsert *PreInsert) Call(proc *proc) (vm.CallResult, error) {
-	if err, isCancel := vm.CancelCheck(proc); isCancel {
-		return vm.CancelResult, err
-	}
-
 	analyzer := preInsert.OpAnalyzer
-	analyzer.Start()
-	defer analyzer.Stop()
 
 	result, err := vm.ChildrenCall(preInsert.GetChildren(0), proc, analyzer)
 	if err != nil {
@@ -224,7 +217,6 @@ func (preInsert *PreInsert) Call(proc *proc) (vm.CallResult, error) {
 	}
 
 	result.Batch = preInsert.ctr.buf
-	analyzer.Output(result.Batch)
 	return result, nil
 }
 
@@ -284,26 +276,31 @@ func genAutoIncrCol(bat *batch.Batch, proc *proc, preInsert *PreInsert) error {
 			currentTxn.AddWorkspace(ws)
 			ws.BindTxnOp(currentTxn)
 		}
-		if _, _, rel, err := eng.GetRelationById(proc.Ctx, currentTxn, tableID); err == nil {
-			for col, idx := range needReCheck {
-				vec := bat.GetVector(int32(idx))
-				from, err := proc.GetIncrService().GetLastAllocateTS(proc.Ctx, tableID, col)
-				if err != nil {
-					return err
-				}
-				fromTs := types.TimestampToTS(from)
-				toTs := types.TimestampToTS(proc.Base.TxnOperator.SnapshotTS())
-				if mayChanged, err := rel.PrimaryKeysMayBeModified(proc.Ctx, fromTs, toTs, vec); err == nil {
-					if mayChanged {
-						logutil.Debugf("user may have manually specified the value to be inserted into the auto pk col before this transaction.")
-						return moerr.NewTxnNeedRetry(proc.Ctx)
-					}
-				} else {
-					return err
-				}
-			}
-		} else {
+		db, err := eng.Database(proc.Ctx, preInsert.SchemaName, currentTxn)
+		if err != nil {
 			return err
+		}
+		rel, err := db.Relation(proc.Ctx, preInsert.TableDef.Name, nil)
+		if err != nil {
+			return err
+		}
+
+		for col, idx := range needReCheck {
+			vec := bat.GetVector(int32(idx))
+			from, err := proc.GetIncrService().GetLastAllocateTS(proc.Ctx, tableID, col)
+			if err != nil {
+				return err
+			}
+			fromTs := types.TimestampToTS(from)
+			toTs := types.TimestampToTS(proc.Base.TxnOperator.SnapshotTS())
+			if mayChanged, err := rel.PrimaryKeysMayBeUpserted(proc.Ctx, fromTs, toTs, vec); err == nil {
+				if mayChanged {
+					logutil.Debugf("user may have manually specified the value to be inserted into the auto pk col before this transaction.")
+					return moerr.NewTxnNeedRetry(proc.Ctx)
+				}
+			} else {
+				return err
+			}
 		}
 	}
 

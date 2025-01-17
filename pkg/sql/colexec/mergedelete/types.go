@@ -26,19 +26,15 @@ import (
 var _ vm.Operator = new(MergeDelete)
 
 type container struct {
-	// 1. single table's delete (main table)
-	delSource engine.Relation
-	// 2. partition sub tables
-	partitionSources []engine.Relation
-	affectedRows     uint64
-	bat              *batch.Batch
+	delSource    engine.Relation
+	affectedRows uint64
+	bat          *batch.Batch
 }
 type MergeDelete struct {
-	ctr                 container
-	AddAffectedRows     bool
-	Ref                 *plan.ObjectRef
-	Engine              engine.Engine
-	PartitionTableNames []string
+	ctr             container
+	AddAffectedRows bool
+	Ref             *plan.ObjectRef
+	Engine          engine.Engine
 
 	vm.OperatorBase
 }
@@ -73,11 +69,6 @@ func (mergeDelete *MergeDelete) WithObjectRef(ref *plan.ObjectRef) *MergeDelete 
 	return mergeDelete
 }
 
-func (mergeDelete *MergeDelete) WithParitionNames(names []string) *MergeDelete {
-	mergeDelete.PartitionTableNames = append(mergeDelete.PartitionTableNames, names...)
-	return mergeDelete
-}
-
 func (mergeDelete *MergeDelete) WithEngine(eng engine.Engine) *MergeDelete {
 	mergeDelete.Engine = eng
 	return mergeDelete
@@ -108,6 +99,10 @@ func (mergeDelete *MergeDelete) Free(proc *process.Process, pipelineFailed bool,
 	}
 }
 
-func (mergeDelete *MergeDelete) AffectedRows() uint64 {
+func (mergeDelete *MergeDelete) ExecProjection(proc *process.Process, input *batch.Batch) (*batch.Batch, error) {
+	return input, nil
+}
+
+func (mergeDelete *MergeDelete) GetAffectedRows() uint64 {
 	return mergeDelete.ctr.affectedRows
 }

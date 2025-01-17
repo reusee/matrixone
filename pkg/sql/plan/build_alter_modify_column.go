@@ -22,6 +22,7 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/container/types"
 	"github.com/matrixorigin/matrixone/pkg/pb/plan"
 	"github.com/matrixorigin/matrixone/pkg/sql/parsers/tree"
+	"github.com/matrixorigin/matrixone/pkg/sql/plan/function"
 )
 
 // ModifyColumn Can change a column definition but not its name.
@@ -55,10 +56,6 @@ func ModifyColumn(ctx CompilerContext, alterPlan *plan.AlterTable, spec *tree.Al
 	// Check new column foreign key constraints
 	if err = CheckModifyColumnForeignkeyConstraint(ctx, tableDef, col, newCol); err != nil {
 		return err
-	}
-
-	if isColumnWithPartition(col.Name, tableDef.Partition) {
-		return moerr.NewNotSupported(ctx.GetContext(), "unsupport alter partition part column currently")
 	}
 
 	if err = checkChangeTypeCompatible(ctx.GetContext(), &col.Typ, &newCol.Typ); err != nil {
@@ -101,38 +98,19 @@ func checkModifyNewColumn(ctx context.Context, tableDef *TableDef, oldCol, newCo
 	return nil
 }
 
-// Check if the modify column is associated with the partition key
-func isColumnWithPartition(colName string, partitionDef *PartitionByDef) bool {
-	if partitionDef != nil {
-		if partitionDef.PartitionColumns != nil {
-			for _, column := range partitionDef.PartitionColumns.PartitionColumns {
-				if column == colName {
-					return true
-				}
-			}
-		} else {
-			if strings.EqualFold(partitionDef.PartitionExpr.ExprStr, colName) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // checkChangeTypeCompatible checks whether changes column type to another is compatible and can be changed.
 func checkChangeTypeCompatible(ctx context.Context, origin *plan.Type, to *plan.Type) error {
 	// Deal with the same type.
 	if origin.Id == to.Id {
 		return nil
 	} else {
-		if (origin.Id == int32(types.T_time) || origin.Id == int32(types.T_timestamp) || origin.Id == int32(types.T_date) || origin.Id == int32(types.T_datetime) || origin.Id == int32(types.T_char) || origin.Id == int32(types.T_varchar) || origin.Id == int32(types.T_json) || origin.Id == int32(types.T_uuid)) &&
-			to.Id == int32(types.T_binary) {
-			return moerr.NewNotSupportedf(ctx, "currently unsupport change from original type %v to %v ", origin.Id, to.Id)
+		// The enumeration type has an independent cast function to handle it
+		if origin.Id == int32(types.T_enum) || to.Id == int32(types.T_enum) {
+			return nil
 		}
 
-		if (origin.Id == int32(types.T_binary) || origin.Id == int32(types.T_decimal64) || origin.Id == int32(types.T_decimal128) || origin.Id == int32(types.T_float32) || origin.Id == int32(types.T_float64)) &&
-			(to.Id == int32(types.T_time) || to.Id == int32(types.T_timestamp) || to.Id == int32(types.T_date) || to.Id == int32(types.T_datetime)) {
-			return moerr.NewNotSupportedf(ctx, "currently unsupport change from original type %v to %v ", origin.Id, to.Id)
+		if supported := function.IfTypeCastSupported(types.T(origin.GetId()), types.T(to.GetId())); !supported {
+			return moerr.NewNotSupportedf(ctx, "currently unsupport change from original type %v to %v ", types.T(origin.Id).String(), types.T(to.Id).String())
 		}
 	}
 	return nil

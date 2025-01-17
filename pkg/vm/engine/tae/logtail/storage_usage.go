@@ -37,8 +37,8 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/fileservice"
 	"github.com/matrixorigin/matrixone/pkg/logutil"
 	"github.com/matrixorigin/matrixone/pkg/objectio"
+	"github.com/matrixorigin/matrixone/pkg/objectio/ioutil"
 	v2 "github.com/matrixorigin/matrixone/pkg/util/metric/v2"
-	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/blockio"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/catalog"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/containers"
 	"github.com/tidwall/btree"
@@ -1176,13 +1176,14 @@ func FillUsageBatOfCompacted(
 	meta *SnapshotMeta,
 	accountSnapshots map[uint32][]types.TS,
 	pitrs *PitrInfo,
+	_ int,
 ) {
-	now := time.Now()
+	start := time.Now()
 	var memoryUsed float64
 	usage.EnterProcessing()
 	defer func() {
 		v2.TaskStorageUsageCacheMemUsedGauge.Set(memoryUsed)
-		v2.TaskCompactedCollectUsageDurationHistogram.Observe(time.Since(now).Seconds())
+		v2.TaskCompactedCollectUsageDurationHistogram.Observe(time.Since(start).Seconds())
 		usage.LeaveProcessing()
 	}()
 	objects := data.GetObjectBatchs()
@@ -1404,7 +1405,7 @@ func loadMetaBat(
 		data.PrefetchMetaIdx(ctx, versions[idx], idxes, locations[idx], fs)
 
 		// 1.2. read meta bat
-		reader, err := blockio.NewObjectReader(sid, fs, locations[idx])
+		reader, err := ioutil.NewObjectReader(fs, locations[idx])
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -1436,7 +1437,7 @@ func loadStorageUsageBatch(
 	for it.HasNext() {
 		block := it.Next()
 		schema := checkpointDataReferVersions[version][uint32(batIdx)]
-		reader, err := blockio.NewObjectReader(sid, fs, block.GetLocation())
+		reader, err := ioutil.NewObjectReader(fs, block.GetLocation())
 		if err != nil {
 			return nil, err
 		}

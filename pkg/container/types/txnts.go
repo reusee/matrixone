@@ -107,8 +107,15 @@ func BuildTSForTest(p int64, l uint32) *TS {
 	return &ts
 }
 
+var maxTS = BuildTS(math.MaxInt64, math.MaxUint32)
+var minTS = TS{}
+
 func MaxTs() TS {
-	return BuildTS(math.MaxInt64, math.MaxUint32)
+	return maxTS
+}
+
+func MinTs() TS {
+	return minTS
 }
 
 // Who use this function?
@@ -132,6 +139,16 @@ func (ts *TS) Next() TS {
 
 func (ts TS) ToString() string {
 	return fmt.Sprintf("%d-%d", ts.Physical(), ts.Logical())
+}
+
+func (ts TS) Valid() bool {
+	return ts.Physical() >= 0
+}
+
+func TSSubDuration(ts *TS, d time.Duration) TS {
+	p, l := ts.Physical(), ts.Logical()
+	p -= int64(d)
+	return BuildTS(p, l)
 }
 
 func StringToTS(s string) (ts TS) {

@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -54,6 +53,14 @@ type ObjectStorageArguments struct {
 	RoleSessionName string `json:"-" toml:"role-session-name"`
 	SecurityToken   string `json:"-" toml:"security-token"`
 	SessionToken    string `json:"-" toml:"session-token"`
+
+	// HDFS
+	User                         string `toml:"user"`
+	KerberosServicePrincipleName string `toml:"kerberos-service-principle-name"`
+	KerberosUsername             string `toml:"kerberos-username"`
+	KerberosRealm                string `toml:"kerberos-realm"`
+	KerberosPassword             string `json:"-" toml:"kerberos-password"`
+	KerberosKeytabPath           string `toml:"kerberos-keytab-path"`
 }
 
 func (o ObjectStorageArguments) String() string {
@@ -125,6 +132,20 @@ func (o *ObjectStorageArguments) SetFromString(arguments []string) error {
 		case "token", "session-token":
 			o.SessionToken = value
 
+		case "user":
+			o.User = value
+
+		case "kerberos-service-principle-name":
+			o.KerberosServicePrincipleName = value
+		case "kerberos-username":
+			o.KerberosUsername = value
+		case "kerberos-realm":
+			o.KerberosRealm = value
+		case "kerberos-password":
+			o.KerberosPassword = value
+		case "kerberos-keytab-path":
+			o.KerberosKeytabPath = value
+
 		default:
 			return moerr.NewInvalidInputNoCtxf("invalid S3 argument: %s", pair)
 		}
@@ -179,20 +200,6 @@ func (o *ObjectStorageArguments) validate() error {
 	// role session name
 	if o.RoleSessionName == "" {
 		o.RoleSessionName = "mo-service"
-	}
-
-	// 腾讯云使用 AWS 环境变量配置 key id/secret
-	if strings.Contains(o.Endpoint, "myqcloud.com") {
-		if o.KeyID == "" {
-			if value := os.Getenv("AWS_ACCESS_KEY_ID"); value != "" {
-				o.KeyID = value
-			}
-		}
-		if o.KeySecret == "" {
-			if value := os.Getenv("AWS_SECRET_ACCESS_KEY"); value != "" {
-				o.KeySecret = value
-			}
-		}
 	}
 
 	return nil

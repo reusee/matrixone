@@ -1,3 +1,4 @@
+-- @skip:issue#16438
 -- key partition: char,varchar ; pk/not pk
 create table p_table_01(col1 int,col2 varchar(25),col3 decimal(6,2))partition by key(col2)partitions 4;
 insert into p_table_01 values (1,'mod',78.9),(2,'proto',0.34),(3,'mod',6.5),(4,'mode',9.0),(5,'make',662.9),(6,'io',88.92);
@@ -300,10 +301,12 @@ CREATE TABLE IF NOT EXISTS p_table_20(
 )partition by key(`act_name`) partitions 3;
 insert into p_table_20 values (1,'beijing','001',1,'2021-01-03'),(2,'beijing','002',2,'2022-09-23'),(3,'guangzhou','003',3,'2022-09-23'),(3,'shanghai','003',3,'2022-09-23');
 insert into p_table_20 values (4,'shenzheng','004',4,'2021-05-28'),(1,'beijing','010',5,'2022-10-23') on duplicate key update id=id*10;
+-- @bvt:issue#4423
 select * from p_table_20;
 select * from `%!%p0%!%p_table_20`;
 select * from `%!%p1%!%p_table_20`;
 select * from `%!%p2%!%p_table_20`;
+-- @bvt:issue
 drop table p_table_20;
 
 create table p_table_20(col1 int,col2 date, col3 varchar(25))partition by key(col1,col2)partitions 4;

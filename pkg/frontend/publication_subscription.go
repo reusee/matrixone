@@ -36,19 +36,23 @@ const (
 	// account
 	getAccountIdNamesSql = "select account_id, account_name, status, version, suspended_time from mo_catalog.mo_account where 1=1"
 	// pub
-	insertIntoMoPubsFormat         = `insert into mo_catalog.mo_pubs(pub_name,database_name,database_id,all_table,table_list,account_list,created_time,owner,creator,comment) values ('%s','%s',%d,%t,'%s','%s',now(),%d,%d,'%s');`
-	getPubInfoSql                  = "select pub_name, database_name, database_id, table_list, account_list, created_time, update_time, owner, creator, comment from mo_catalog.mo_pubs where 1=1"
-	updatePubInfoFormat            = `update mo_catalog.mo_pubs set account_list = '%s', comment = '%s', database_name = '%s', database_id = %d, update_time = now(), table_list = '%s' where pub_name = '%s';`
-	updatePubInfoAccountListFormat = `update mo_catalog.mo_pubs set account_list = '%s' where pub_name = '%s';`
-	dropPubFormat                  = `delete from mo_catalog.mo_pubs where pub_name = '%s';`
+	insertIntoMoPubsFormat         = `insert into mo_catalog.mo_pubs (account_id, account_name, pub_name, database_name, database_id, all_table, table_list, account_list, created_time, owner, creator, comment) values (%d, '%s', '%s', '%s', %d, %t, '%s', '%s', now(), %d, %d, '%s');`
+	getAllPubInfoSql               = "select account_id, account_name, pub_name, database_name, database_id, table_list, account_list, created_time, update_time, owner, creator, comment from mo_catalog.mo_pubs"
+	getPubInfoSqlOld               = "select account_id, pub_name, database_name, database_id, table_list, account_list, created_time, update_time, owner, creator, comment from mo_catalog.mo_pubs where account_id = %d"
+	getPubInfoSql                  = "select account_id, account_name, pub_name, database_name, database_id, table_list, account_list, created_time, update_time, owner, creator, comment from mo_catalog.mo_pubs where account_id = %d"
+	updatePubInfoFormat            = `update mo_catalog.mo_pubs set account_list = '%s', comment = '%s', database_name = '%s', database_id = %d, update_time = now(), table_list = '%s' where account_id = %d and pub_name = '%s';`
+	updatePubInfoAccountListFormat = `update mo_catalog.mo_pubs set account_list = '%s' where account_id = %d and pub_name = '%s';`
+	dropPubFormat                  = `delete from mo_catalog.mo_pubs where account_id = %d and pub_name = '%s';`
+	getDbPubCountFormat            = `select count(1) from mo_catalog.mo_pubs where account_id = %d and database_name = '%s';`
 	// sub
-	insertIntoMoSubsFormat                  = "insert into mo_catalog.mo_subs (sub_account_id, pub_account_name, pub_name, pub_database, pub_tables, pub_time, pub_comment, status) values (%d, '%s', '%s', '%s', '%s', now(), '%s', %d)"
-	batchInsertIntoMoSubsFormat             = "insert into mo_catalog.mo_subs (sub_account_id, pub_account_name, pub_name, pub_database, pub_tables, pub_time, pub_comment, status) values %s"
+	insertIntoMoSubsFormat                  = "insert into mo_catalog.mo_subs (sub_account_id, sub_account_name, pub_account_id, pub_account_name, pub_name, pub_database, pub_tables, pub_time, pub_comment, status) values (%d, '%s', %d, '%s', '%s', '%s', '%s', now(), '%s', %d)"
+	batchInsertIntoMoSubsFormat             = "insert into mo_catalog.mo_subs (sub_account_id, sub_account_name, pub_account_id, pub_account_name, pub_name, pub_database, pub_tables, pub_time, pub_comment, status) values %s"
 	batchUpdateMoSubsFormat                 = "update mo_catalog.mo_subs set pub_database='%s', pub_tables='%s', pub_time=now(), pub_comment='%s', status=%d where pub_account_name = '%s' and pub_name = '%s' and sub_account_id in (%s)"
 	batchDeleteMoSubsFormat                 = "delete from mo_catalog.mo_subs where pub_account_name = '%s' and pub_name = '%s' and sub_account_id in (%s)"
-	getSubsSql                              = "select sub_account_id, sub_name, sub_time, pub_account_name, pub_name, pub_database, pub_tables, pub_time, pub_comment, status from mo_catalog.mo_subs where 1=1"
+	getSubsSqlOld                           = "select sub_account_id, sub_name, sub_time, pub_account_name, pub_name, pub_database, pub_tables, pub_time, pub_comment, status from mo_catalog.mo_subs where 1=1"
+	getSubsSql                              = "select sub_account_id, sub_account_name, sub_name, sub_time, pub_account_id, pub_account_name, pub_name, pub_database, pub_tables, pub_time, pub_comment, status from mo_catalog.mo_subs where 1=1"
 	deleteMoSubsRecordsBySubAccountIdFormat = "delete from mo_catalog.mo_subs where sub_account_id = %d"
-
+	// database
 	getDbIdAndTypFormat = `select dat_id,dat_type from mo_catalog.mo_database where datname = '%s' and account_id = %d;`
 )
 
@@ -196,7 +200,7 @@ func createPublication(ctx context.Context, bh BackgroundExec, cp *tree.CreatePu
 		accountNamesStr string
 	)
 
-	accIdInfoMap, accNameInfoMap, err := getAccounts(ctx, bh)
+	accIdInfoMap, accNameInfoMap, err := getAccounts(ctx, bh, false)
 	if err != nil {
 		return
 	}
@@ -244,12 +248,12 @@ func createPublication(ctx context.Context, bh BackgroundExec, cp *tree.CreatePu
 		}
 	}
 
-	sql, err = getSqlForInsertIntoMoPubs(ctx, pubName, dbName, dbId, len(cp.Table) == 0, tablesStr, accountNamesStr, comment, true)
+	sql, err = getSqlForInsertIntoMoPubs(ctx, accountId, accountName, pubName, dbName, dbId, len(cp.Table) == 0, tablesStr, accountNamesStr, comment, true)
 	if err != nil {
 		return
 	}
 
-	if err = bh.Exec(ctx, sql); err != nil {
+	if err = bh.Exec(defines.AttachAccountId(ctx, catalog.System_Account), sql); err != nil {
 		return
 	}
 
@@ -304,9 +308,9 @@ func createPublication(ctx context.Context, bh BackgroundExec, cp *tree.CreatePu
 	}
 	if err = batchInsertMoSubs(
 		ctx, bh,
-		dbName, tablesStr, comment,
-		accountName, pubName,
-		insertSubAccounts,
+		int32(accountId), accountName,
+		pubName, dbName, tablesStr, comment,
+		insertSubAccounts, accIdInfoMap,
 	); err != nil {
 		return
 	}
@@ -340,7 +344,7 @@ func doAlterPublication(ctx context.Context, ses *Session, ap *tree.AlterPublica
 		err = finishTxn(ctx, bh, err)
 	}()
 
-	accIdInfoMap, accNameInfoMap, err := getAccounts(ctx, bh)
+	accIdInfoMap, accNameInfoMap, err := getAccounts(ctx, bh, false)
 	if err != nil {
 		return
 	}
@@ -446,7 +450,7 @@ func doAlterPublication(ctx context.Context, ses *Session, ap *tree.AlterPublica
 	if sql, err = getSqlForUpdatePubInfo(ctx, string(ap.Name), accountNamesStr, comment, dbName, dbId, tablesStr, false); err != nil {
 		return
 	}
-	if err = bh.Exec(ctx, sql); err != nil {
+	if err = bh.Exec(defines.AttachAccountId(ctx, catalog.System_Account), sql); err != nil {
 		return
 	}
 
@@ -514,9 +518,9 @@ func doAlterPublication(ctx context.Context, ses *Session, ap *tree.AlterPublica
 	}
 	if err = batchInsertMoSubs(
 		ctx, bh,
-		dbName, tablesStr, comment,
-		accountName, pubName,
-		insertSubAccounts,
+		int32(accountId), accountName,
+		pubName, dbName, tablesStr, comment,
+		insertSubAccounts, accIdInfoMap,
 	); err != nil {
 		return
 	}
@@ -545,22 +549,12 @@ func doDropPublication(ctx context.Context, ses *Session, dp *tree.DropPublicati
 		err = finishTxn(ctx, bh, err)
 	}()
 
-	return dropPublication(ctx, bh, dp.IfExists, string(dp.Name))
+	return dropPublication(ctx, bh, dp.IfExists, tenantInfo.Tenant, string(dp.Name))
 }
 
 // dropPublication drops a publication, bh should be in a transaction
-func dropPublication(ctx context.Context, bh BackgroundExec, ifExists bool, pubName string) (err error) {
+func dropPublication(ctx context.Context, bh BackgroundExec, ifExists bool, accountName string, pubName string) (err error) {
 	var sql string
-
-	accIdInfoMap, _, err := getAccounts(ctx, bh)
-	if err != nil {
-		return
-	}
-	accountId, err := defines.GetAccountId(ctx)
-	if err != nil {
-		return err
-	}
-	accountName := accIdInfoMap[int32(accountId)].Name
 
 	pub, err := getPubInfo(ctx, bh, pubName)
 	if err != nil {
@@ -576,12 +570,12 @@ func dropPublication(ctx context.Context, bh BackgroundExec, ifExists bool, pubN
 	if sql, err = getSqlForDropPubInfo(ctx, pubName, false); err != nil {
 		return
 	}
-	if err = bh.Exec(ctx, sql); err != nil {
+	if err = bh.Exec(defines.AttachAccountId(ctx, catalog.System_Account), sql); err != nil {
 		return
 	}
 
 	// subAccountName -> SubInfo map
-	subInfos, err := getSubInfosFromPub(ctx, bh, accIdInfoMap[int32(accountId)].Name, pubName, false)
+	subInfos, err := getSubInfosFromPub(ctx, bh, accountName, pubName, false)
 	if err != nil {
 		return err
 	}
@@ -623,9 +617,12 @@ func dropPublication(ctx context.Context, bh BackgroundExec, ifExists bool, pubN
 	return
 }
 
-func getAccounts(ctx context.Context, bh BackgroundExec) (idInfoMap map[int32]*pubsub.AccountInfo, nameInfoMap map[string]*pubsub.AccountInfo, err error) {
+func getAccounts(ctx context.Context, bh BackgroundExec, forUpdate bool) (idInfoMap map[int32]*pubsub.AccountInfo, nameInfoMap map[string]*pubsub.AccountInfo, err error) {
 	ctx = defines.AttachAccountId(ctx, catalog.System_Account)
 	sql := getAccountIdNamesSql
+	if forUpdate {
+		sql += " for update"
+	}
 
 	bh.ClearExecResultSet()
 	if err = bh.Exec(ctx, sql); err != nil {
@@ -689,8 +686,9 @@ func getAccounts(ctx context.Context, bh BackgroundExec) (idInfoMap map[int32]*p
 	return
 }
 
-func extractPubInfosFromExecResult(ctx context.Context, erArray []ExecResult) (pubInfos []*pubsub.PubInfo, err error) {
+func extractPubInfosFromExecResultOld(ctx context.Context, erArray []ExecResult) (pubInfos []*pubsub.PubInfo, err error) {
 	var (
+		accountId       int64
 		pubName         string
 		dbName          string
 		dbId            uint64
@@ -705,44 +703,128 @@ func extractPubInfosFromExecResult(ctx context.Context, erArray []ExecResult) (p
 	)
 	for _, result := range erArray {
 		for i := uint64(0); i < result.GetRowCount(); i++ {
-			if pubName, err = result.GetString(ctx, i, 0); err != nil {
+			if accountId, err = result.GetInt64(ctx, i, 0); err != nil {
 				return
 			}
-			if dbName, err = result.GetString(ctx, i, 1); err != nil {
+			if pubName, err = result.GetString(ctx, i, 1); err != nil {
 				return
 			}
-			if dbId, err = result.GetUint64(ctx, i, 2); err != nil {
+			if dbName, err = result.GetString(ctx, i, 2); err != nil {
 				return
 			}
-			if tablesStr, err = result.GetString(ctx, i, 3); err != nil {
+			if dbId, err = result.GetUint64(ctx, i, 3); err != nil {
 				return
 			}
-			if accountNamesStr, err = result.GetString(ctx, i, 4); err != nil {
+			if tablesStr, err = result.GetString(ctx, i, 4); err != nil {
 				return
 			}
-			if createTime, err = result.GetString(ctx, i, 5); err != nil {
+			if accountNamesStr, err = result.GetString(ctx, i, 5); err != nil {
 				return
 			}
-			if isNull, err = result.ColumnIsNull(ctx, i, 6); err != nil {
+			if createTime, err = result.GetString(ctx, i, 6); err != nil {
+				return
+			}
+			if isNull, err = result.ColumnIsNull(ctx, i, 7); err != nil {
 				return
 			} else if !isNull {
-				if updateTime, err = result.GetString(ctx, i, 6); err != nil {
+				if updateTime, err = result.GetString(ctx, i, 7); err != nil {
 					return
 				}
 			} else {
 				updateTime = ""
 			}
-			if owner, err = result.GetUint64(ctx, i, 7); err != nil {
+			if owner, err = result.GetUint64(ctx, i, 8); err != nil {
 				return
 			}
-			if creator, err = result.GetUint64(ctx, i, 8); err != nil {
+			if creator, err = result.GetUint64(ctx, i, 9); err != nil {
 				return
 			}
-			if comment, err = result.GetString(ctx, i, 9); err != nil {
+			if comment, err = result.GetString(ctx, i, 10); err != nil {
 				return
 			}
 
 			pubInfos = append(pubInfos, &pubsub.PubInfo{
+				PubAccountId:   uint32(accountId),
+				PubName:        pubName,
+				DbName:         dbName,
+				DbId:           dbId,
+				TablesStr:      tablesStr,
+				SubAccountsStr: accountNamesStr,
+				CreateTime:     createTime,
+				UpdateTime:     updateTime,
+				Owner:          uint32(owner),
+				Creator:        uint32(creator),
+				Comment:        comment,
+			})
+		}
+	}
+	return
+}
+
+func extractPubInfosFromExecResult(ctx context.Context, erArray []ExecResult) (pubInfos []*pubsub.PubInfo, err error) {
+	var (
+		accountId       int64
+		accountName     string
+		pubName         string
+		dbName          string
+		dbId            uint64
+		tablesStr       string
+		accountNamesStr string
+		createTime      string
+		updateTime      string
+		owner           uint64
+		creator         uint64
+		comment         string
+		isNull          bool
+	)
+	for _, result := range erArray {
+		for i := uint64(0); i < result.GetRowCount(); i++ {
+			if accountId, err = result.GetInt64(ctx, i, 0); err != nil {
+				return
+			}
+			if accountName, err = result.GetString(ctx, i, 1); err != nil {
+				return
+			}
+			if pubName, err = result.GetString(ctx, i, 2); err != nil {
+				return
+			}
+			if dbName, err = result.GetString(ctx, i, 3); err != nil {
+				return
+			}
+			if dbId, err = result.GetUint64(ctx, i, 4); err != nil {
+				return
+			}
+			if tablesStr, err = result.GetString(ctx, i, 5); err != nil {
+				return
+			}
+			if accountNamesStr, err = result.GetString(ctx, i, 6); err != nil {
+				return
+			}
+			if createTime, err = result.GetString(ctx, i, 7); err != nil {
+				return
+			}
+			if isNull, err = result.ColumnIsNull(ctx, i, 8); err != nil {
+				return
+			} else if !isNull {
+				if updateTime, err = result.GetString(ctx, i, 8); err != nil {
+					return
+				}
+			} else {
+				updateTime = ""
+			}
+			if owner, err = result.GetUint64(ctx, i, 9); err != nil {
+				return
+			}
+			if creator, err = result.GetUint64(ctx, i, 10); err != nil {
+				return
+			}
+			if comment, err = result.GetString(ctx, i, 11); err != nil {
+				return
+			}
+
+			pubInfos = append(pubInfos, &pubsub.PubInfo{
+				PubAccountId:   uint32(accountId),
+				PubAccountName: accountName,
 				PubName:        pubName,
 				DbName:         dbName,
 				DbId:           dbId,
@@ -760,9 +842,25 @@ func extractPubInfosFromExecResult(ctx context.Context, erArray []ExecResult) (p
 }
 
 func getPubInfo(ctx context.Context, bh BackgroundExec, pubName string) (pubInfo *pubsub.PubInfo, err error) {
-	sql := getPubInfoSql + fmt.Sprintf(" and pub_name = '%s'", pubName)
+	accountId, err := defines.GetAccountId(ctx)
+	if err != nil {
+		return
+	}
+
+	accountNameColExists, err := checkColExists(ctx, bh, "mo_catalog", "mo_pubs", "account_name")
+	if err != nil {
+		return
+	}
+
+	var sql string
+	if accountNameColExists {
+		sql = fmt.Sprintf(getPubInfoSql, accountId) + fmt.Sprintf(" and pub_name = '%s'", pubName)
+	} else {
+		sql = fmt.Sprintf(getPubInfoSqlOld, accountId) + fmt.Sprintf(" and pub_name = '%s'", pubName)
+	}
+
 	bh.ClearExecResultSet()
-	if err = bh.Exec(ctx, sql); err != nil {
+	if err = bh.Exec(defines.AttachAccountId(ctx, catalog.System_Account), sql); err != nil {
 		return
 	}
 
@@ -772,16 +870,27 @@ func getPubInfo(ctx context.Context, bh BackgroundExec, pubName string) (pubInfo
 	}
 
 	var pubInfos []*pubsub.PubInfo
-	if pubInfos, err = extractPubInfosFromExecResult(ctx, erArray); err != nil {
-		return
-	} else if len(pubInfos) > 0 {
+	if accountNameColExists {
+		if pubInfos, err = extractPubInfosFromExecResult(ctx, erArray); err != nil {
+			return
+		}
+	} else {
+		if pubInfos, err = extractPubInfosFromExecResultOld(ctx, erArray); err != nil {
+			return
+		}
+	}
+	if len(pubInfos) > 0 {
 		pubInfo = pubInfos[0]
 	}
 	return
 }
 
 func getPubInfos(ctx context.Context, bh BackgroundExec, like string) (pubInfos []*pubsub.PubInfo, err error) {
-	sql := getPubInfoSql
+	accountId, err := defines.GetAccountId(ctx)
+	if err != nil {
+		return
+	}
+	sql := fmt.Sprintf(getPubInfoSql, accountId)
 	if len(like) > 0 {
 		sql += fmt.Sprintf(" and pub_name like '%s' order by pub_name", like)
 	} else {
@@ -789,7 +898,7 @@ func getPubInfos(ctx context.Context, bh BackgroundExec, like string) (pubInfos 
 	}
 
 	bh.ClearExecResultSet()
-	if err = bh.Exec(ctx, sql); err != nil {
+	if err = bh.Exec(defines.AttachAccountId(ctx, catalog.System_Account), sql); err != nil {
 		return
 	}
 
@@ -802,11 +911,14 @@ func getPubInfos(ctx context.Context, bh BackgroundExec, like string) (pubInfos 
 }
 
 func getPubInfosToAllAccounts(ctx context.Context, bh BackgroundExec) (pubInfos []*pubsub.PubInfo, err error) {
-	sql := getPubInfoSql
-	sql += fmt.Sprintf(" and account_list = '%s'", pubsub.AccountAll)
+	accountId, err := defines.GetAccountId(ctx)
+	if err != nil {
+		return
+	}
+	sql := fmt.Sprintf(getPubInfoSql, accountId) + fmt.Sprintf(" and account_list = '%s'", pubsub.AccountAll)
 
 	bh.ClearExecResultSet()
-	if err = bh.Exec(ctx, sql); err != nil {
+	if err = bh.Exec(defines.AttachAccountId(ctx, catalog.System_Account), sql); err != nil {
 		return
 	}
 
@@ -819,9 +931,14 @@ func getPubInfosToAllAccounts(ctx context.Context, bh BackgroundExec) (pubInfos 
 }
 
 func getPubInfosByDbname(ctx context.Context, bh BackgroundExec, dbName string) (pubInfo []*pubsub.PubInfo, err error) {
-	sql := getPubInfoSql + fmt.Sprintf(" and database_name = '%s'", dbName)
+	accountId, err := defines.GetAccountId(ctx)
+	if err != nil {
+		return
+	}
+	sql := fmt.Sprintf(getPubInfoSql, accountId) + fmt.Sprintf(" and database_name = '%s'", dbName)
+
 	bh.ClearExecResultSet()
-	if err = bh.Exec(ctx, sql); err != nil {
+	if err = bh.Exec(defines.AttachAccountId(ctx, catalog.System_Account), sql); err != nil {
 		return
 	}
 
@@ -833,7 +950,24 @@ func getPubInfosByDbname(ctx context.Context, bh BackgroundExec, dbName string) 
 	return extractPubInfosFromExecResult(ctx, erArray)
 }
 
-func extractSubInfosFromExecResult(ctx context.Context, erArray []ExecResult) (subInfos []*pubsub.SubInfo, err error) {
+func getAllPubInfosBySnapshotName(ctx context.Context, bh BackgroundExec, snapshotName string, restoreTs int64) (pubInfo []*pubsub.PubInfo, err error) {
+	getLogger("").Info("getAllPubInfosBySnapshotName", zap.String("snapshotName", snapshotName), zap.Int64("restoreTs", restoreTs))
+	sql := getAllPubInfoSql + fmt.Sprintf(" {MO_TS = %d}", restoreTs)
+
+	bh.ClearExecResultSet()
+	if err = bh.Exec(defines.AttachAccountId(ctx, catalog.System_Account), sql); err != nil {
+		return
+	}
+
+	erArray, err := getResultSet(ctx, bh)
+	if err != nil {
+		return
+	}
+
+	return extractPubInfosFromExecResult(ctx, erArray)
+}
+
+func extractSubInfosFromExecResultOld(ctx context.Context, erArray []ExecResult) (subInfos []*pubsub.SubInfo, err error) {
 	var (
 		subAccountId   int64
 		subName        string
@@ -909,6 +1043,92 @@ func extractSubInfosFromExecResult(ctx context.Context, erArray []ExecResult) (s
 	return
 }
 
+func extractSubInfosFromExecResult(ctx context.Context, erArray []ExecResult) (subInfos []*pubsub.SubInfo, err error) {
+	var (
+		subAccountId   int64
+		subAccountName string
+		subName        string
+		subTime        string
+		pubAccountId   int64
+		pubAccountName string
+		pubName        string
+		pubDbName      string
+		pubTables      string
+		pubTime        string
+		pubComment     string
+		status         int64
+		isNull         bool
+	)
+	for _, result := range erArray {
+		for i := uint64(0); i < result.GetRowCount(); i++ {
+			if subAccountId, err = result.GetInt64(ctx, i, 0); err != nil {
+				return
+			}
+			if subAccountName, err = result.GetString(ctx, i, 1); err != nil {
+				return
+			}
+			if isNull, err = result.ColumnIsNull(ctx, i, 2); err != nil {
+				return
+			} else if !isNull {
+				if subName, err = result.GetString(ctx, i, 2); err != nil {
+					return
+				}
+			} else {
+				subName = ""
+			}
+			if isNull, err = result.ColumnIsNull(ctx, i, 3); err != nil {
+				return
+			} else if !isNull {
+				if subTime, err = result.GetString(ctx, i, 3); err != nil {
+					return
+				}
+			} else {
+				subTime = ""
+			}
+			if pubAccountId, err = result.GetInt64(ctx, i, 4); err != nil {
+				return
+			}
+			if pubAccountName, err = result.GetString(ctx, i, 5); err != nil {
+				return
+			}
+			if pubName, err = result.GetString(ctx, i, 6); err != nil {
+				return
+			}
+			if pubDbName, err = result.GetString(ctx, i, 7); err != nil {
+				return
+			}
+			if pubTables, err = result.GetString(ctx, i, 8); err != nil {
+				return
+			}
+			if pubTime, err = result.GetString(ctx, i, 9); err != nil {
+				return
+			}
+			if pubComment, err = result.GetString(ctx, i, 10); err != nil {
+				return
+			}
+			if status, err = result.GetInt64(ctx, i, 11); err != nil {
+				return
+			}
+
+			subInfos = append(subInfos, &pubsub.SubInfo{
+				SubAccountId:   int32(subAccountId),
+				SubAccountName: subAccountName,
+				SubName:        subName,
+				SubTime:        subTime,
+				PubAccountId:   int32(pubAccountId),
+				PubAccountName: pubAccountName,
+				PubName:        pubName,
+				PubDbName:      pubDbName,
+				PubTables:      pubTables,
+				PubTime:        pubTime,
+				PubComment:     pubComment,
+				Status:         pubsub.SubStatus(status),
+			})
+		}
+	}
+	return
+}
+
 // getSubInfosFromPub return subAccountId -> subInfo map for given (pubAccountName, pubName)
 func getSubInfosFromPub(ctx context.Context, bh BackgroundExec, pubAccountName, pubName string, subscribed bool) (subInfoMap map[int32]*pubsub.SubInfo, err error) {
 	ctx = defines.AttachAccountId(ctx, catalog.System_Account)
@@ -949,14 +1169,26 @@ func getSubInfosFromPub(ctx context.Context, bh BackgroundExec, pubAccountName, 
 func getSubInfosFromSub(ctx context.Context, bh BackgroundExec, subName string) (subInfo []*pubsub.SubInfo, err error) {
 	subAccountId, err := defines.GetAccountId(ctx)
 	if err != nil {
-		return nil, err
+		return
 	}
-	ctx = defines.AttachAccountId(ctx, catalog.System_Account)
 
-	sql := getSubsSql + fmt.Sprintf(" and sub_account_id = %d", subAccountId)
+	subAccountNameColExists, err := checkColExists(ctx, bh, "mo_catalog", "mo_subs", "sub_account_name")
+	if err != nil {
+		return
+	}
+
+	var sql string
+	if subAccountNameColExists {
+		sql = getSubsSql
+	} else {
+		sql = getSubsSqlOld
+	}
+	sql += fmt.Sprintf(" and sub_account_id = %d", subAccountId)
 	if len(subName) > 0 {
 		sql += fmt.Sprintf(" and sub_name = '%s'", subName)
 	}
+
+	ctx = defines.AttachAccountId(ctx, catalog.System_Account)
 	bh.ClearExecResultSet()
 	if err = bh.Exec(ctx, sql); err != nil {
 		return
@@ -967,7 +1199,10 @@ func getSubInfosFromSub(ctx context.Context, bh BackgroundExec, subName string) 
 		return
 	}
 
-	return extractSubInfosFromExecResult(ctx, erArray)
+	if subAccountNameColExists {
+		return extractSubInfosFromExecResult(ctx, erArray)
+	}
+	return extractSubInfosFromExecResultOld(ctx, erArray)
 }
 
 func doShowPublications(ctx context.Context, ses *Session, sp *tree.ShowPublications) (err error) {
@@ -996,7 +1231,7 @@ func doShowPublications(ctx context.Context, ses *Session, sp *tree.ShowPublicat
 		return
 	}
 
-	accIdInfoMap, _, err := getAccounts(ctx, bh)
+	accIdInfoMap, _, err := getAccounts(ctx, bh, false)
 	if err != nil {
 		return
 	}
@@ -1293,27 +1528,31 @@ func getDropAccounts(
 }
 
 func getSqlForUpdatePubInfo(ctx context.Context, pubName string, accountList string, comment string, dbName string, dbId uint64, tablesStr string, checkNameValid bool) (string, error) {
+	accountId, err := defines.GetAccountId(ctx)
+	if err != nil {
+		return "", err
+	}
 	if checkNameValid {
-		err := inputNameIsInvalid(ctx, pubName)
-		if err != nil {
+		if err = inputNameIsInvalid(ctx, pubName); err != nil {
 			return "", err
 		}
 	}
-	return fmt.Sprintf(updatePubInfoFormat, accountList, comment, dbName, dbId, tablesStr, pubName), nil
+	return fmt.Sprintf(updatePubInfoFormat, accountList, comment, dbName, dbId, tablesStr, accountId, pubName), nil
 }
 
 func insertMoSubs(ctx context.Context, bh BackgroundExec, subInfo *pubsub.SubInfo) (err error) {
 	ctx = defines.AttachAccountId(ctx, catalog.System_Account)
-	sql := fmt.Sprintf(insertIntoMoSubsFormat, subInfo.SubAccountId, subInfo.PubAccountName, subInfo.PubName, subInfo.PubDbName, subInfo.PubTables, subInfo.PubComment, subInfo.Status)
+	sql := fmt.Sprintf(insertIntoMoSubsFormat, subInfo.SubAccountId, subInfo.SubAccountName, subInfo.PubAccountId, subInfo.PubAccountName, subInfo.PubName, subInfo.PubDbName, subInfo.PubTables, subInfo.PubComment, subInfo.Status)
 	return bh.Exec(ctx, sql)
 }
 
 func batchInsertMoSubs(
 	ctx context.Context,
 	bh BackgroundExec,
-	pubDbName, pubTables, pubComment string,
-	pubAccountName, pubName string,
+	pubAccountId int32, pubAccountName,
+	pubName, pubDbName, pubTables, pubComment string,
 	accIds []int32,
+	accIdInfoMap map[int32]*pubsub.AccountInfo,
 ) (err error) {
 	if len(accIds) == 0 {
 		return
@@ -1321,13 +1560,13 @@ func batchInsertMoSubs(
 
 	ctx = defines.AttachAccountId(ctx, catalog.System_Account)
 	values := make([]string, 0, len(accIds))
-	// sub_account_id, pub_account_name, pub_name, pub_database, pub_tables, pub_time, pub_comment, status
-	valuesFormat := "(%d, '%s', '%s', '%s', '%s', now(), '%s', %d)"
+	// sub_account_id, sub_account_name, pub_account_id, pub_account_name, pub_name, pub_database, pub_tables, pub_time, pub_comment, status
+	valuesFormat := "(%d, '%s', %d, '%s', '%s', '%s', '%s', now(), '%s', %d)"
 	for _, accId := range accIds {
 		values = append(values, fmt.Sprintf(valuesFormat,
-			accId,
-			pubAccountName, pubName,
-			pubDbName, pubTables, pubComment,
+			accId, accIdInfoMap[accId].Name,
+			pubAccountId, pubAccountName,
+			pubName, pubDbName, pubTables, pubComment,
 			pubsub.SubStatusNormal,
 		))
 	}
@@ -1385,7 +1624,7 @@ func batchDeleteMoSubs(
 	return bh.Exec(ctx, sql)
 }
 
-func getSubscriptionMeta(ctx context.Context, dbName string, ses FeSession, txn TxnOperator) (*plan.SubscriptionMeta, error) {
+func getSubscriptionMeta(ctx context.Context, dbName string, ses FeSession, txn TxnOperator, bh BackgroundExec) (*plan.SubscriptionMeta, error) {
 	dbMeta, err := getPu(ses.GetService()).StorageEngine.Database(ctx, dbName, txn)
 	if err != nil {
 		ses.Errorf(ctx, "Get Subscription database %s meta error: %s", dbName, err.Error())
@@ -1393,20 +1632,16 @@ func getSubscriptionMeta(ctx context.Context, dbName string, ses FeSession, txn 
 	}
 
 	if dbMeta.IsSubscription(ctx) {
-		return checkSubscriptionValid(ctx, ses, dbName)
+		return checkSubscriptionValid(ctx, ses, dbName, bh)
 	}
 	return nil, nil
 }
 
-func checkSubscriptionValidCommon(ctx context.Context, ses FeSession, subName, pubAccountName, pubName string) (subMeta *plan.SubscriptionMeta, err error) {
+func checkSubscriptionValidCommon(ctx context.Context, ses FeSession, subName, pubAccountName, pubName string, bh BackgroundExec) (subMeta *plan.SubscriptionMeta, err error) {
 	start := time.Now()
 	defer func() {
 		v2.CheckSubValidDurationHistogram.Observe(time.Since(start).Seconds())
 	}()
-
-	bh := ses.GetShareTxnBackgroundExec(ctx, false)
-	defer bh.Close()
-
 	var (
 		sql, accStatus string
 		erArray        []ExecResult
@@ -1486,10 +1721,7 @@ func checkSubscriptionValidCommon(ctx context.Context, ses FeSession, subName, p
 	return
 }
 
-func checkSubscriptionValid(ctx context.Context, ses FeSession, dbName string) (*plan.SubscriptionMeta, error) {
-	bh := ses.GetBackgroundExec(ctx)
-	defer bh.Close()
-
+func checkSubscriptionValid(ctx context.Context, ses FeSession, dbName string, bh BackgroundExec) (*plan.SubscriptionMeta, error) {
 	subInfos, err := getSubInfosFromSub(ctx, bh, dbName)
 	if err != nil {
 		return nil, err
@@ -1498,51 +1730,47 @@ func checkSubscriptionValid(ctx context.Context, ses FeSession, dbName string) (
 	}
 
 	subInfo := subInfos[0]
-	return checkSubscriptionValidCommon(ctx, ses, subInfo.SubName, subInfo.PubAccountName, subInfo.PubName)
+	return checkSubscriptionValidCommon(ctx, ses, subInfo.SubName, subInfo.PubAccountName, subInfo.PubName, bh)
 }
 
 func isDbPublishing(ctx context.Context, dbName string, ses FeSession) (ok bool, err error) {
+	if _, isSysDb := sysDatabases[dbName]; isSysDb {
+		return
+	}
+
 	bh := ses.GetShareTxnBackgroundExec(ctx, false)
 	defer bh.Close()
+
 	var (
 		sql     string
 		erArray []ExecResult
 		count   int64
 	)
 
-	if _, isSysDb := sysDatabases[dbName]; isSysDb {
-		return false, err
-	}
-
-	sql, err = getSqlForDbPubCount(ctx, dbName)
-	if err != nil {
-		return false, err
+	if sql, err = getSqlForDbPubCount(ctx, dbName); err != nil {
+		return
 	}
 
 	bh.ClearExecResultSet()
-	err = bh.Exec(ctx, sql)
-	if err != nil {
-		return false, err
-	}
-	erArray, err = getResultSet(ctx, bh)
-	if err != nil {
-		return false, err
-	}
-	if !execResultArrayHasData(erArray) {
-		return false, moerr.NewInternalErrorf(ctx, "there is no publication for database %s", dbName)
-	}
-	count, err = erArray[0].GetInt64(ctx, 0, 0)
-	if err != nil {
-		return false, err
+	if err = bh.Exec(defines.AttachAccountId(ctx, catalog.System_Account), sql); err != nil {
+		return
 	}
 
-	return count > 0, err
+	if erArray, err = getResultSet(ctx, bh); err != nil {
+		return
+	}
+	if !execResultArrayHasData(erArray) {
+		err = moerr.NewInternalErrorf(ctx, "there is no publication for database %s", dbName)
+		return
+	}
+
+	count, err = erArray[0].GetInt64(ctx, 0, 0)
+	ok = count > 0
+	return
 }
 
 func dropSubAccountNameInSubAccounts(ctx context.Context, bh BackgroundExec, pubAccountId int32, pubName, subAccountName string) (err error) {
-	ctx = defines.AttachAccountId(ctx, uint32(pubAccountId))
-
-	pubInfo, err := getPubInfo(ctx, bh, pubName)
+	pubInfo, err := getPubInfo(defines.AttachAccountId(ctx, uint32(pubAccountId)), bh, pubName)
 	if err != nil {
 		return err
 	} else if pubInfo == nil {
@@ -1566,25 +1794,24 @@ func dropSubAccountNameInSubAccounts(ctx context.Context, bh BackgroundExec, pub
 	} else {
 		str = str1 + pubsub.Sep + str2
 	}
+	sql := fmt.Sprintf(updatePubInfoAccountListFormat, str, pubAccountId, pubName)
 
-	sql := fmt.Sprintf(updatePubInfoAccountListFormat, str, pubName)
-	return bh.Exec(ctx, sql)
+	return bh.Exec(defines.AttachAccountId(ctx, catalog.System_Account), sql)
 }
 
-func getSqlForInsertIntoMoPubs(ctx context.Context, pubName, databaseName string, databaseId uint64, allTable bool, tableList, accountList string, comment string, checkNameValid bool) (string, error) {
+func getSqlForInsertIntoMoPubs(ctx context.Context, accountId uint32, accountName string, pubName, databaseName string, databaseId uint64, allTable bool, tableList, accountList string, comment string, checkNameValid bool) (string, error) {
 	if checkNameValid {
-		err := inputNameIsInvalid(ctx, pubName, databaseName)
-		if err != nil {
+		if err := inputNameIsInvalid(ctx, pubName, databaseName); err != nil {
 			return "", err
 		}
 	}
-	return fmt.Sprintf(insertIntoMoPubsFormat, pubName, databaseName, databaseId, allTable, tableList, accountList, defines.GetRoleId(ctx), defines.GetUserId(ctx), comment), nil
+
+	return fmt.Sprintf(insertIntoMoPubsFormat, accountId, accountName, pubName, databaseName, databaseId, allTable, tableList, accountList, defines.GetRoleId(ctx), defines.GetUserId(ctx), comment), nil
 }
 
 func getSqlForGetDbIdAndType(ctx context.Context, dbName string, checkNameValid bool, accountId uint64) (string, error) {
 	if checkNameValid {
-		err := inputNameIsInvalid(ctx, dbName)
-		if err != nil {
+		if err := inputNameIsInvalid(ctx, dbName); err != nil {
 			return "", err
 		}
 	}
@@ -1593,10 +1820,43 @@ func getSqlForGetDbIdAndType(ctx context.Context, dbName string, checkNameValid 
 
 func getSqlForDropPubInfo(ctx context.Context, pubName string, checkNameValid bool) (string, error) {
 	if checkNameValid {
-		err := inputNameIsInvalid(ctx, pubName)
-		if err != nil {
+		if err := inputNameIsInvalid(ctx, pubName); err != nil {
 			return "", err
 		}
 	}
-	return fmt.Sprintf(dropPubFormat, pubName), nil
+
+	accountId, err := defines.GetAccountId(ctx)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(dropPubFormat, accountId, pubName), nil
+}
+
+func getSqlForDbPubCount(ctx context.Context, dbName string) (string, error) {
+	if err := inputNameIsInvalid(ctx, dbName); err != nil {
+		return "", err
+	}
+
+	accountId, err := defines.GetAccountId(ctx)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(getDbPubCountFormat, accountId, dbName), nil
+}
+
+func checkColExists(ctx context.Context, bh BackgroundExec, dbName, tblName, colName string) (exists bool, err error) {
+	sql := fmt.Sprintf("select 1 from mo_catalog.mo_columns where att_database = '%s' and att_relname = '%s' and attname = '%s'", dbName, tblName, colName)
+
+	ctx = defines.AttachAccountId(ctx, catalog.System_Account)
+	bh.ClearExecResultSet()
+	if err = bh.Exec(ctx, sql); err != nil {
+		return
+	}
+
+	erArray, err := getResultSet(ctx, bh)
+	if err != nil {
+		return
+	}
+
+	return execResultArrayHasData(erArray), nil
 }

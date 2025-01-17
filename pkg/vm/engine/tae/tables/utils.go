@@ -22,11 +22,11 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/container/types"
 	"github.com/matrixorigin/matrixone/pkg/container/vector"
 	"github.com/matrixorigin/matrixone/pkg/fileservice"
+	"github.com/matrixorigin/matrixone/pkg/objectio/ioutil"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/db/dbutils"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/index/indexwrapper"
 
 	"github.com/matrixorigin/matrixone/pkg/objectio"
-	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/blockio"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/catalog"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/common"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/containers"
@@ -122,7 +122,7 @@ func LoadPersistedColumnDatas(
 	var err error
 	//Extend lifetime of vectors is without the function.
 	//need to copy. closeFunc will be nil.
-	vecs, _, err = blockio.LoadColumns2(
+	vecs, _, err = ioutil.LoadColumns2(
 		ctx, cols,
 		typs,
 		rt.Fs.Service,
@@ -140,6 +140,7 @@ func LoadPersistedColumnDatas(
 				deletes.Add(uint64(i))
 			}
 		}
+		vecs[len(vecs)-1].Close()
 		vecs = vecs[:len(vecs)-1]
 	}
 	for i, vec := range vecs {

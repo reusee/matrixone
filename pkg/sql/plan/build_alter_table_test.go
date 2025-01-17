@@ -14,7 +14,17 @@
 
 package plan
 
-import "testing"
+import (
+	"context"
+	"fmt"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+
+	"github.com/matrixorigin/matrixone/pkg/container/types"
+	"github.com/matrixorigin/matrixone/pkg/pb/plan"
+	"github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql"
+)
 
 func TestAlterTable1(t *testing.T) {
 	//sql := "ALTER TABLE t1 ADD (d TIMESTAMP, e INT not null);"
@@ -39,4 +49,74 @@ func TestAlterTableAddColumns(t *testing.T) {
 		//`ALTER TABLE t2 ADD c INT PRIMARY KEY PRIMARY KEY PRIMARY KEY;`,
 	}
 	runTestShouldPass(mock, t, sqls, false, false)
+}
+
+func Test_checkChangeTypeCompatible(t *testing.T) {
+	type args struct {
+		ctx    context.Context
+		origin *plan.Type
+		to     *plan.Type
+	}
+
+	tests := []struct {
+		name    string
+		args    args
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "test1",
+			args: args{
+				ctx:    context.Background(),
+				origin: &plan.Type{Id: int32(types.T_binary)},
+				to:     &plan.Type{Id: int32(types.T_json)},
+			},
+			wantErr: assert.Error,
+		},
+		{
+			name: "test2",
+			args: args{
+				ctx:    context.Background(),
+				origin: &plan.Type{Id: int32(types.T_binary)},
+				to:     &plan.Type{Id: int32(types.T_json)},
+			},
+			wantErr: assert.Error,
+		},
+		{
+			name: "test3",
+			args: args{
+				ctx:    context.Background(),
+				origin: &plan.Type{Id: int32(types.T_enum)},
+				to:     &plan.Type{Id: int32(types.T_varchar)},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "test4",
+			args: args{
+				ctx:    context.Background(),
+				origin: &plan.Type{Id: int32(types.T_varchar)},
+				to:     &plan.Type{Id: int32(types.T_enum)},
+			},
+			wantErr: assert.NoError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.wantErr(t, checkChangeTypeCompatible(tt.args.ctx, tt.args.origin, tt.args.to), fmt.Sprintf("checkChangeTypeCompatible(%v, %v, %v)", tt.args.ctx, tt.args.origin, tt.args.to))
+		})
+	}
+}
+
+func buildSingleStmt(opt Optimizer, t *testing.T, sql string) (*Plan, error) {
+	statements, err := mysql.Parse(opt.CurrentContext().GetContext(), sql, 1)
+	if err != nil {
+		return nil, err
+	}
+	// this sql always return single statement
+	context := opt.CurrentContext()
+	plan, err := BuildPlan(context, statements[0], false)
+	if plan != nil {
+		testDeepCopy(plan)
+	}
+	return plan, err
 }

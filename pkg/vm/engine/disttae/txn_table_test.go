@@ -18,14 +18,16 @@ import (
 	"context"
 	"testing"
 
-	"github.com/matrixorigin/matrixone/pkg/pb/timestamp"
-	"github.com/matrixorigin/matrixone/pkg/txn/client"
-
 	"github.com/matrixorigin/matrixone/pkg/common/mpool"
+	"github.com/matrixorigin/matrixone/pkg/common/runtime"
 	"github.com/matrixorigin/matrixone/pkg/container/batch"
 	"github.com/matrixorigin/matrixone/pkg/container/types"
 	"github.com/matrixorigin/matrixone/pkg/container/vector"
 	"github.com/matrixorigin/matrixone/pkg/fileservice"
+	"github.com/matrixorigin/matrixone/pkg/pb/timestamp"
+	"github.com/matrixorigin/matrixone/pkg/txn/client"
+	"github.com/matrixorigin/matrixone/pkg/txn/rpc"
+	"github.com/matrixorigin/matrixone/pkg/vm/engine/disttae/cache"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -44,12 +46,19 @@ func newTxnTableForTest() *txnTable {
 			},
 		),
 	}
+	engine.catalog.Store(cache.NewCatalog())
 	var tnStore DNStore
 	txn := &Transaction{
 		engine:   engine,
 		tnStores: []DNStore{tnStore},
 	}
-	c := client.NewTxnClient("", nil, nil, nil)
+	rt := runtime.DefaultRuntime()
+	s, err := rpc.NewSender(rpc.Config{}, rt)
+	if err != nil {
+		panic(err)
+	}
+	c := client.NewTxnClient("", s)
+	c.Resume()
 	op, _ := c.New(context.Background(), timestamp.Timestamp{})
 	op.AddWorkspace(txn)
 
@@ -59,6 +68,7 @@ func newTxnTableForTest() *txnTable {
 	table := &txnTable{
 		db:         db,
 		primaryIdx: 0,
+		eng:        engine,
 	}
 	return table
 }

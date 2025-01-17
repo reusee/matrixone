@@ -16,6 +16,8 @@ package lockservice
 
 import (
 	"context"
+	"github.com/stretchr/testify/require"
+	"io"
 	"testing"
 	"time"
 
@@ -41,7 +43,7 @@ func TestLockRemote(t *testing.T) {
 					req *pb.Request,
 					resp *pb.Response,
 					cs morpc.ClientSession) {
-					writeResponse(ctx, getLogger(""), cancel, resp, nil, cs)
+					writeResponse(getLogger(""), cancel, resp, nil, cs)
 				},
 			)
 		},
@@ -54,6 +56,39 @@ func TestLockRemote(t *testing.T) {
 			defer txn.Unlock()
 			l.lock(ctx, txn, [][]byte{{1}}, LockOptions{}, func(r pb.Result, err error) {
 				assert.NoError(t, err)
+			})
+			reuse.Free(txn, nil)
+		},
+		func(lt pb.LockTable) {},
+	)
+}
+
+func TestIssue20747(t *testing.T) {
+	runRemoteLockTableTests(
+		t,
+		pb.LockTable{ServiceID: "s1"},
+		func(s Server) {
+			s.RegisterMethodHandler(
+				pb.Method_Lock,
+				func(
+					ctx context.Context,
+					cancel context.CancelFunc,
+					req *pb.Request,
+					resp *pb.Response,
+					cs morpc.ClientSession) {
+					writeResponse(getLogger(""), cancel, resp, io.EOF, cs)
+				},
+			)
+		},
+		func(l *remoteLockTable, s Server) {
+			txnID := []byte("txn1")
+			txn := newActiveTxn(txnID, string(txnID), newFixedSlicePool(32), "")
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+			defer cancel()
+			txn.Lock()
+			defer txn.Unlock()
+			l.lock(ctx, txn, [][]byte{{1}}, LockOptions{}, func(r pb.Result, err error) {
+				require.True(t, moerr.IsMoErrCode(err, moerr.ErrBackendCannotConnect))
 			})
 			reuse.Free(txn, nil)
 		},
@@ -74,7 +109,7 @@ func TestLockRemoteWithNeedUpgrade(t *testing.T) {
 					req *pb.Request,
 					resp *pb.Response,
 					cs morpc.ClientSession) {
-					writeResponse(ctx, getLogger(""), cancel, resp, nil, cs)
+					writeResponse(getLogger(""), cancel, resp, nil, cs)
 				},
 			)
 		},
@@ -109,7 +144,7 @@ func TestUnlockRemote(t *testing.T) {
 					req *pb.Request,
 					resp *pb.Response,
 					cs morpc.ClientSession) {
-					writeResponse(ctx, getLogger(""), cancel, resp, nil, cs)
+					writeResponse(getLogger(""), cancel, resp, nil, cs)
 				},
 			)
 		},
@@ -140,11 +175,11 @@ func TestUnlockRemoteWithRetry(t *testing.T) {
 					cs morpc.ClientSession) {
 					n++
 					if n == 1 {
-						writeResponse(ctx, getLogger(""), cancel, resp, moerr.NewRPCTimeout(ctx), cs)
+						writeResponse(getLogger(""), cancel, resp, moerr.NewRPCTimeout(ctx), cs)
 						return
 					}
 					close(c)
-					writeResponse(ctx, getLogger(""), cancel, resp, nil, cs)
+					writeResponse(getLogger(""), cancel, resp, nil, cs)
 				},
 			)
 			s.RegisterMethodHandler(
@@ -159,7 +194,7 @@ func TestUnlockRemoteWithRetry(t *testing.T) {
 						ServiceID: "s1",
 						Valid:     true,
 					}
-					writeResponse(ctx, getLogger(""), cancel, resp, nil, cs)
+					writeResponse(getLogger(""), cancel, resp, nil, cs)
 				},
 			)
 		},
@@ -196,7 +231,7 @@ func TestRemoteWithBindChanged(t *testing.T) {
 					resp *pb.Response,
 					cs morpc.ClientSession) {
 					resp.NewBind = &newBind
-					writeResponse(ctx, getLogger(""), cancel, resp, nil, cs)
+					writeResponse(getLogger(""), cancel, resp, nil, cs)
 				},
 			)
 
@@ -209,7 +244,7 @@ func TestRemoteWithBindChanged(t *testing.T) {
 					resp *pb.Response,
 					cs morpc.ClientSession) {
 					resp.NewBind = &newBind
-					writeResponse(ctx, getLogger(""), cancel, resp, nil, cs)
+					writeResponse(getLogger(""), cancel, resp, nil, cs)
 				},
 			)
 
@@ -222,7 +257,7 @@ func TestRemoteWithBindChanged(t *testing.T) {
 					resp *pb.Response,
 					cs morpc.ClientSession) {
 					resp.NewBind = &newBind
-					writeResponse(ctx, getLogger(""), cancel, resp, nil, cs)
+					writeResponse(getLogger(""), cancel, resp, nil, cs)
 				},
 			)
 		},

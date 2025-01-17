@@ -21,6 +21,7 @@ import (
 	"unsafe"
 
 	"github.com/google/uuid"
+	"github.com/matrixorigin/matrixone/pkg/common/util"
 )
 
 /*
@@ -322,9 +323,7 @@ func (o *Objectid) String() string {
 	return fmt.Sprintf("%v_%d", o.Segment().String(), o.Offset())
 }
 func (o *Objectid) ShortStringEx() string {
-	var shortuuid [12]byte
-	hex.Encode(shortuuid[:], o[10:16])
-	return string(shortuuid[:])
+	return fmt.Sprintf("%v_%d", o.Segment().ShortString(), o.Offset())
 }
 func (o *Objectid) Offset() uint16 {
 	filen := DecodeUint16(o[UuidSize:ObjectBytesSize])
@@ -360,4 +359,10 @@ func (o *Objectid) LT(other *Objectid) bool {
 }
 func (o *Objectid) GT(other *Objectid) bool {
 	return o.Compare(other) > 0
+}
+
+func (o *Objectid) Copy(offset uint16) Objectid {
+	ret := *o
+	copy(ret[SegmentidSize:], util.UnsafeToBytes(&offset))
+	return ret
 }

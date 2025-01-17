@@ -217,7 +217,7 @@ func withCheckpointData(t *testing.T, f func(
 	opts.Fs = newTestFS()
 	db := testutil.NewTestEngine(ctx, "datasync", t, opts)
 	defer func() {
-		opts.Fs.Close()
+		opts.Fs.Close(ctx)
 		_ = db.Close()
 	}()
 
@@ -1070,8 +1070,14 @@ func TestCompleteData(t *testing.T) {
 			err := c.completeData(ctx)
 			assert.NoError(t, err)
 			files, err := fileservice.SortedList(c.dstFS.List(ctx, ""))
+			var count int
+			for i := range files {
+				if !files[i].IsDir && files[i].Size < 10 {
+					count++
+				}
+			}
 			assert.NoError(t, err)
-			assert.Equal(t, 35+(150-102), len(files))
+			assert.Equal(t, 150-102, count)
 			requiredLsn, err := c.logClient.getRequiredLsn(ctx)
 			assert.NoError(t, err)
 			assert.Equal(t, uint64(103+(150-102)-1), requiredLsn)

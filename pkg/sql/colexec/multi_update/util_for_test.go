@@ -22,8 +22,10 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/matrixorigin/matrixone/pkg/catalog"
+	"github.com/matrixorigin/matrixone/pkg/common/mpool"
 	"github.com/matrixorigin/matrixone/pkg/container/batch"
 	"github.com/matrixorigin/matrixone/pkg/container/types"
+	"github.com/matrixorigin/matrixone/pkg/container/vector"
 	"github.com/matrixorigin/matrixone/pkg/defines"
 	"github.com/matrixorigin/matrixone/pkg/fileservice"
 	mock_frontend "github.com/matrixorigin/matrixone/pkg/frontend/test"
@@ -57,22 +59,17 @@ func runTestCases(t *testing.T, proc *process.Process, tcs []*testCase) {
 	var err error
 	var res vm.CallResult
 
-	dupBatchs := func(bats []*batch.Batch) []*batch.Batch {
-		ret := make([]*batch.Batch, len(bats))
-		for i, bat := range bats {
-			ret[i], _ = bat.Dup(proc.GetMPool())
-		}
-		return ret
-	}
-
-	// logutil.Info("begin to run multi_update test")
 	for _, tc := range tcs {
-		child := colexec.NewMockOperator().WithBatchs(dupBatchs(tc.inputBatchs))
+		child := colexec.NewMockOperator().WithBatchs(tc.inputBatchs)
 		tc.op.AppendChild(child)
 		err = tc.op.Prepare(proc)
+		// use small Threshold for ut
+		if tc.op.ctr.s3Writer != nil {
+			tc.op.ctr.s3Writer.flushThreshold = 2 * mpool.MB
+		}
 		require.NoError(t, err)
 		for {
-			res, err = tc.op.Call(proc)
+			res, err = vm.Exec(tc.op, proc)
 			if tc.expectErr {
 				require.Error(t, err)
 				break
@@ -92,16 +89,21 @@ func runTestCases(t *testing.T, proc *process.Process, tcs []*testCase) {
 			continue
 		}
 		require.NoError(t, err)
-		require.Equal(t, tc.op.GetAffectedRows(), tc.affectedRows)
+		require.Equal(t, tc.affectedRows, tc.op.GetAffectedRows())
 
+		child.ResetBatchs()
 		tc.op.Children[0].Reset(proc, false, nil)
 		tc.op.Reset(proc, false, nil)
 
-		child.ResetBatchs(proc, tc.inputBatchs)
+		child.WithBatchs(tc.inputBatchs)
 		err = tc.op.Prepare(proc)
+		// use small Threshold for ut
+		if tc.op.ctr.s3Writer != nil {
+			tc.op.ctr.s3Writer.flushThreshold = 2 * mpool.MB
+		}
 		require.NoError(t, err)
 		for {
-			res, err = tc.op.Call(proc)
+			res, err = vm.Exec(tc.op, proc)
 			if res.Batch == nil || res.Status == vm.ExecStop {
 				break
 			}
@@ -113,7 +115,7 @@ func runTestCases(t *testing.T, proc *process.Process, tcs []*testCase) {
 		tc.op.Free(proc, false, nil)
 	}
 
-	proc.GetFileService().Close()
+	proc.GetFileService().Close(proc.Ctx)
 	proc.Free()
 	require.Equal(t, int64(0), proc.GetMPool().CurrNB())
 }
@@ -189,7 +191,7 @@ func prepareTestEng(ctrl *gomock.Controller) engine.Engine {
 	return eng
 }
 
-func getTestMainTable(isPartition bool) (*plan.ObjectRef, *plan.TableDef) {
+func getTestMainTable() (*plan.ObjectRef, *plan.TableDef) {
 	objRef := &plan.ObjectRef{Schema: 1, Obj: 1, SchemaName: "test", ObjName: "t1"}
 
 	tableDef := &plan.TableDef{
@@ -221,17 +223,10 @@ func getTestMainTable(isPartition bool) (*plan.ObjectRef, *plan.TableDef) {
 	tableDef.Name2ColIndex["d"] = 3
 	tableDef.Name2ColIndex[catalog.Row_ID] = 4
 
-	if isPartition {
-		tableDef.Partition = &plan.PartitionByDef{
-			Type:                pbPlan.PartitionType_KEY,
-			PartitionTableNames: []string{"t1_part_1", "t1_part_2", "t1_part_3"},
-		}
-	}
-
 	return objRef, tableDef
 }
 
-func getTestUniqueIndexTable(uniqueTblName string, isPartition bool) (*plan.ObjectRef, *plan.TableDef) {
+func getTestUniqueIndexTable(uniqueTblName string) (*plan.ObjectRef, *plan.TableDef) {
 	uniqueObjRef := &plan.ObjectRef{Schema: 1, Obj: 2, SchemaName: "test", ObjName: uniqueTblName}
 	uniqueTableDef := &plan.TableDef{
 		TblId:  1,
@@ -260,17 +255,10 @@ func getTestUniqueIndexTable(uniqueTblName string, isPartition bool) (*plan.Obje
 	uniqueTableDef.Name2ColIndex[catalog.IndexTablePrimaryColName] = 1
 	uniqueTableDef.Name2ColIndex[catalog.Row_ID] = 2
 
-	if isPartition {
-		uniqueTableDef.Partition = &plan.PartitionByDef{
-			Type:                pbPlan.PartitionType_KEY,
-			PartitionTableNames: []string{"t1_uk_part_1", "t1_uk_part_2", "t1_uk_part_3"},
-		}
-	}
-
 	return uniqueObjRef, uniqueTableDef
 }
 
-func getTestSecondaryIndexTable(secondaryIdxTblName string, isPartition bool) (*plan.ObjectRef, *plan.TableDef) {
+func getTestSecondaryIndexTable(secondaryIdxTblName string) (*plan.ObjectRef, *plan.TableDef) {
 	secondaryIdxObjRef := &plan.ObjectRef{Schema: 1, Obj: 2, SchemaName: "test", ObjName: secondaryIdxTblName}
 	secondaryIdxTableDef := &plan.TableDef{
 		TblId:  1,
@@ -297,13 +285,6 @@ func getTestSecondaryIndexTable(secondaryIdxTblName string, isPartition bool) (*
 	secondaryIdxTableDef.Name2ColIndex[catalog.IndexTablePrimaryColName] = 1
 	secondaryIdxTableDef.Name2ColIndex[catalog.Row_ID] = 2
 
-	if isPartition {
-		secondaryIdxTableDef.Partition = &plan.PartitionByDef{
-			Type:                pbPlan.PartitionType_KEY,
-			PartitionTableNames: []string{"t1_sk_part_1", "t1_sk_part_2", "t1_sk_part_3"},
-		}
-	}
-
 	return secondaryIdxObjRef, secondaryIdxTableDef
 }
 
@@ -312,13 +293,13 @@ func buildTestCase(
 	eng engine.Engine,
 	inputBats []*batch.Batch,
 	affectRows uint64,
-	toWriteS3 bool) *testCase {
+	action UpdateAction) *testCase {
 
 	retCase := &testCase{
 		op: &MultiUpdate{
 			ctr:                    container{},
 			MultiUpdateCtx:         multiUpdateCtxs,
-			ToWriteS3:              toWriteS3,
+			Action:                 action,
 			IsOnduplicateKeyUpdate: false,
 			Engine:                 eng,
 			OperatorBase: vm.OperatorBase{
@@ -345,18 +326,23 @@ func makeTestPkArray(from int64, rowCount int) []int64 {
 	return val
 }
 
-func makeTestPartitionArray(rowCount int, partitionCount int) []int32 {
-	val := make([]int32, rowCount)
-	for i := 0; i < rowCount; i++ {
-		val[i] = int32(i / partitionCount)
-	}
-	return val
-}
-
 func makeTestVarcharArray(rowCount int) []string {
 	val := make([]string, rowCount)
 	for i := 0; i < rowCount; i++ {
 		val[i] = strconv.Itoa(i)
 	}
 	return val
+}
+
+func makeTestRowIDVector(m *mpool.MPool, objectID *types.Objectid, blockNum uint16, rowCount int) *vector.Vector {
+	blockID := types.NewBlockidWithObjectID(objectID, blockNum+1000)
+	vec := vector.NewVec(types.T_Rowid.ToType())
+	for i := 0; i < rowCount; i++ {
+		rowID := types.NewRowid(blockID, uint32(i)+1)
+		if err := vector.AppendFixed(vec, *rowID, false, m); err != nil {
+			vec.Free(m)
+			return nil
+		}
+	}
+	return vec
 }

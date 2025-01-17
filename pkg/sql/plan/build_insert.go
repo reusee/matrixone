@@ -19,18 +19,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/matrixorigin/matrixone/pkg/catalog"
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
 	"github.com/matrixorigin/matrixone/pkg/config"
 	"github.com/matrixorigin/matrixone/pkg/container/batch"
-	"github.com/matrixorigin/matrixone/pkg/container/nulls"
 	"github.com/matrixorigin/matrixone/pkg/container/types"
-	"github.com/matrixorigin/matrixone/pkg/container/vector"
 	"github.com/matrixorigin/matrixone/pkg/pb/plan"
 	"github.com/matrixorigin/matrixone/pkg/sql/parsers/tree"
-	"github.com/matrixorigin/matrixone/pkg/sql/plan/function"
-	"github.com/matrixorigin/matrixone/pkg/sql/plan/rule"
 	"github.com/matrixorigin/matrixone/pkg/sql/util"
 	v2 "github.com/matrixorigin/matrixone/pkg/util/metric/v2"
 )
@@ -81,6 +76,9 @@ func buildInsert(stmt *tree.Insert, ctx CompilerContext, isReplace bool, isPrepa
 	builder.haveOnDuplicateKey = len(stmt.OnDuplicateUpdate) > 0
 	if stmt.IsRestore {
 		builder.isRestore = true
+		if stmt.IsRestoreByTs {
+			builder.isRestoreByTs = true
+		}
 		oldSnapshot := builder.compCtx.GetSnapshot()
 		builder.compCtx.SetSnapshot(&Snapshot{
 			Tenant: &plan.SnapshotTenant{
@@ -197,7 +195,7 @@ func buildInsert(stmt *tree.Insert, ctx CompilerContext, isReplace bool, isPrepa
 			attrs = append(attrs, col.GetOriginCaseName())
 		}
 		attrs = append(attrs, catalog.Row_ID)
-		uniqueColWithIdx := GetUniqueColAndIdxFromTableDef(tableDef)
+		uniqueColWithIdx, _ := GetUniqueColAndIdxFromTableDef(tableDef)
 		uniqueColCheckExpr, err := GenUniqueColCheckExpr(ctx.GetContext(), tableDef, uniqueColWithIdx, int(insertColCount))
 		if err != nil {
 			return nil, err
@@ -344,10 +342,11 @@ func buildInsert(stmt *tree.Insert, ctx CompilerContext, isReplace bool, isPrepa
 // The function returns the list of insert columns and an error, if any.
 func getInsertColsFromStmt(ctx context.Context, stmt *tree.Insert, tableDef *TableDef) ([]string, error) {
 	var insertColsName []string
-	colToIdx := make(map[string]int)
+	colToIdx := make(map[string]int32)
 	for i, col := range tableDef.Cols {
-		colToIdx[col.Name] = i
+		colToIdx[col.Name] = int32(i)
 	}
+	tableDef.Name2ColIndex = colToIdx
 	if stmt.Columns == nil {
 		for _, col := range tableDef.Cols {
 			if col.Name != catalog.FakePrimaryKeyColName {
@@ -380,6 +379,7 @@ func getInsertColsFromStmt(ctx context.Context, stmt *tree.Insert, tableDef *Tab
 //
 // NOTE : For hidden tables created by UNIQUE INDEX, the situation is more subtle.
 //  5. for hidden table created by unique index, need to contain the inserted data column
+//     for 3 and 5, after valuescan refactor, insert batch is construct in compile , so we can't get batch  here, return false directly
 //
 // Otherwise, the primary key filter cannot be used.
 func canUsePkFilter(builder *QueryBuilder, ctx CompilerContext, stmt *tree.Insert, tableDef *TableDef, insertColsName []string, uniqueIndexDef *IndexDef) bool {
@@ -413,39 +413,7 @@ func canUsePkFilter(builder *QueryBuilder, ctx CompilerContext, stmt *tree.Inser
 	}
 
 	if used4UniqueIndex {
-		// verify that all cols that make up the unique index exist and no value is null
-		uSet := make(map[string]bool)
-		for _, n := range uniqueIndexDef.Parts {
-			uSet[n] = true
-		}
-		uCnt := len(uSet)
-
-		var bat *batch.Batch
-		proc := ctx.GetProcess()
-		node := builder.qry.Nodes[0]
-		if node.Uuid == nil {
-			return false // TODO(jensenojs): issue14726
-		}
-
-		if builder.isPrepareStatement {
-			bat = proc.GetPrepareBatch()
-		} else {
-			bat = proc.GetValueScanBatch(uuid.UUID(node.Uuid))
-		}
-
-		for i, n := range insertColsName {
-			if _, ok := uSet[n]; ok {
-				uCnt--
-				uniqueVec := bat.Vecs[i]
-				if nulls.Any(uniqueVec.GetNulls()) {
-					// has at least one values is null, then can not use pk filter, break conditon 5
-					return false
-				}
-			}
-		}
-		if uCnt != 0 {
-			return false // at least one column that make up the unique index is NOT exist , break condtion 5
-		}
+		return false
 	} else {
 		// check for auto increment primary key
 		pkPos, pkTyp := getPkPos(tableDef, true)
@@ -480,55 +448,10 @@ func canUsePkFilter(builder *QueryBuilder, ctx CompilerContext, stmt *tree.Inser
 			}
 
 			if autoIncIdx != -1 {
-				var bat *batch.Batch
-				proc := ctx.GetProcess()
-				node := builder.qry.Nodes[0]
-				if node.Uuid == nil {
-					return false // TODO(jensenojs): issue14726
-				}
-				if builder.isPrepareStatement {
-					bat = proc.GetPrepareBatch()
-				} else {
-					bat = proc.GetValueScanBatch(uuid.UUID(node.Uuid))
-				}
-				autoPkVec := bat.Vecs[autoIncIdx]
-				if nulls.Any(autoPkVec.GetNulls()) {
-					// has at least one values is null, then can not use pk filter, break conditon 2
-					return false
-				}
+				return false
 			}
 		} else if pkTyp.AutoIncr { // single auto incr primary key
-			var bat *batch.Batch
-
-			autoIncIdx := -1
-			for i, name := range insertColsName {
-				if tableDef.Pkey.PkeyColName == name {
-					autoIncIdx = i
-					break
-				}
-			}
-
-			if autoIncIdx == -1 {
-				// have no auto pk col in values, break condition 2
-				return false
-			} else {
-				proc := ctx.GetProcess()
-				node := builder.qry.Nodes[0]
-				if node.Uuid == nil {
-					return false // TODO(jensenojs): issue14726
-				}
-				if builder.isPrepareStatement {
-					bat = proc.GetPrepareBatch()
-				} else {
-					bat = proc.GetValueScanBatch(uuid.UUID(node.Uuid))
-				}
-
-				autoPkVec := bat.Vecs[autoIncIdx]
-				if nulls.Any(autoPkVec.GetNulls()) {
-					// has at least one values is null, then can not use pk filter, break conditon 2
-					return false
-				}
-			}
+			return false
 		}
 	}
 
@@ -585,34 +508,6 @@ type locationMap struct {
 	isUnique bool
 }
 
-// getPkOrderInValues returns a map, that
-//
-//	The key   of this map is the order(ignore non-pk cols) in which the primary key columns are inserted in INSERT VALUE SQL
-//	The value of this map is the order(ignore non-pk cols) in which the primary key columns are inserted intableDef.Pkey.Names(NOT TableDef.Cols!)
-//
-// e.g
-//
-//	create table t1 (a int, b int, c int, d int, primary key(a, c, b));
-//	insert into t1(a, b, c, d) value (1, 2, 3, 4) ;
-//	        (a, b, c) -> (a, c, b)  => pkOrderInValues[0] = 0, pkOrderInValues[1] = 2, pkOrderInValues[2] = 1
-//	insert into t1(d, a, b, c) value (4, 1, 2, 3) ;
-//	        (a, b, c) -> (a, c, b)  => pkOrderInValues[0] = 0, pkOrderInValues[1] = 2, pkOrderInValues[2] = 1
-//	insert into t1(b, d, a, c) value (2, 4, 1, 3) ;
-//			(b, a, c) -> (a, c, b)  => pkOrderInValues[0] = 2, pkOrderInValues[1] = 0, pkOrderInValues[2] = 1
-//	insert into t1(c, b, d, a) value (3, 2, 4, 1) ;
-//			(c, b, a) -> (a, c, b)  => pkOrderInValues[0] = 2, pkOrderInValues[1] = 1, pkOrderInValues[2] = 0
-func (p *locationMap) getPkOrderInValues(insertColsNameFromStmt []string) map[int]int {
-	pkOrderInValues := make(map[int]int)
-	i := 0
-	for _, name := range insertColsNameFromStmt {
-		if pkInfo, ok := p.m[name]; ok {
-			pkOrderInValues[i] = pkInfo.order
-			i++
-		}
-	}
-	return pkOrderInValues
-}
-
 // need to check if the primary key filter can be used before calling this function.
 // also need to consider both origin table and hidden table for unique key
 func newLocationMap(tableDef *TableDef, uniqueIndexDef *IndexDef) *locationMap {
@@ -649,25 +544,13 @@ func newLocationMap(tableDef *TableDef, uniqueIndexDef *IndexDef) *locationMap {
 }
 
 func getPkValueExpr(builder *QueryBuilder, ctx CompilerContext, tableDef *TableDef, lmap *locationMap, insertColsNameFromStmt []string) (pkFilterExprs []*Expr, err error) {
-	var bat *batch.Batch
 	var pkLocationInfo orderAndIdx
 	var ok bool
-	var colTyp Type
+	var col *ColDef
 	proc := ctx.GetProcess()
 	node := builder.qry.Nodes[0]
 	isCompound := len(lmap.m) > 1
 	forUniqueHiddenTable := lmap.isUnique
-
-	if builder.isPrepareStatement {
-		bat = proc.GetPrepareBatch()
-	} else {
-		bat = proc.GetValueScanBatch(uuid.UUID(node.Uuid))
-	}
-	rowsCount := bat.RowCount()
-
-	if rowsCount > 1 && len(bat.Vecs) > 0 && bat.Vecs[0].AllNull() {
-		return nil, nil
-	}
 
 	// insert pk col with default value, skip build pk filter expr
 	insertColMap := make(map[string]bool)
@@ -683,65 +566,25 @@ func getPkValueExpr(builder *QueryBuilder, ctx CompilerContext, tableDef *TableD
 	// colExprs will store the constant value expressions (or UUID value) for each primary key column by the order in insert value SQL
 	// that is, the key part of pkPosInValues, more info see the comment of func getPkOrderInValues
 	colExprs := make([][]*Expr, len(lmap.m))
+	rowsCount := len(node.RowsetData.Cols[0].Data)
 	// If the expression is nil, it creates a constant expression with either the UUID value or a constant value.
 	for idx, name := range insertColsNameFromStmt {
-		var varcharTyp Type
 		if pkLocationInfo, ok = lmap.m[name]; !ok {
 			continue
 		}
 
+		col = tableDef.Cols[tableDef.Name2ColIndex[name]]
 		valExprs := make([]*Expr, rowsCount)
-		rowTyp := bat.Vecs[idx].GetType()
-		colTyp = makePlan2Type(rowTyp)
 
-		if rowTyp.Oid == types.T_uuid {
-			typ := types.T_varchar.ToType()
-			varcharTyp = MakePlan2Type(&typ)
-		}
-
-		for _, data := range node.RowsetData.Cols[idx].Data {
+		for i, data := range node.RowsetData.Cols[idx].Data {
 			rowExpr := DeepCopyExpr(data.Expr)
-			e, err := forceCastExpr(builder.GetContext(), rowExpr, colTyp)
+			e, err := forceCastExpr(builder.GetContext(), rowExpr, col.Typ)
 			if err != nil {
 				return nil, err
 			}
-			valExprs[data.RowPos] = e
+			valExprs[i] = e
 		}
 
-		for i := 0; i < rowsCount; i++ {
-			if valExprs[i] == nil {
-				// handles UUID types specifically by creating a VARCHAR type and casting the UUID to a string.
-				if bat.Vecs[idx].GetType().Oid == types.T_uuid {
-					// we have not uuid type in plan.Const. so use string & cast string to uuid
-					val := vector.MustFixedColWithTypeCheck[types.Uuid](bat.Vecs[idx])[i]
-					constExpr := &plan.Expr{
-						Typ: varcharTyp,
-						Expr: &plan.Expr_Lit{
-							Lit: &plan.Literal{
-								Value: &plan.Literal_Sval{
-									Sval: val.String(),
-								},
-							},
-						},
-					}
-					valExprs[i], err = appendCastBeforeExpr(proc.Ctx, constExpr, colTyp, false)
-					if err != nil {
-						return nil, err
-					}
-				} else {
-					constExpr := rule.GetConstantValue(bat.Vecs[idx], true, uint64(i))
-					if constExpr == nil {
-						return nil, err
-					}
-					valExprs[i] = &plan.Expr{
-						Typ: colTyp,
-						Expr: &plan.Expr_Lit{
-							Lit: constExpr,
-						},
-					}
-				}
-			}
-		}
 		colExprs[pkLocationInfo.order] = valExprs
 	}
 
@@ -758,7 +601,7 @@ func getPkValueExpr(builder *QueryBuilder, ctx CompilerContext, tableDef *TableD
 		}
 
 		pkExpr := &plan.Expr{
-			Typ: colTyp,
+			Typ: col.Typ,
 			Expr: &plan.Expr_Col{
 				Col: &ColRef{
 					ColPos: 0,
@@ -821,7 +664,7 @@ func getPkValueExpr(builder *QueryBuilder, ctx CompilerContext, tableDef *TableD
 				pkExpr,
 				serialExpr,
 			})
-		} else if rowsCount <= 3 {
+		} else {
 			inArgs := make([]*plan.Expr, rowsCount)
 			for i := range inArgs {
 				serialArgs := make([]*plan.Expr, len(colExprs))
@@ -842,41 +685,6 @@ func getPkValueExpr(builder *QueryBuilder, ctx CompilerContext, tableDef *TableD
 					},
 				},
 			})
-		} else {
-			names := make([]string, len(lmap.m))
-			for n, p := range lmap.m {
-				names[p.order] = n
-			}
-			bat.Attrs = insertColsNameFromStmt
-			toSerialBatch := bat.GetSubBatch(names)
-			// serialize
-			//  __cpkey__ in (serial(a1,b1,c1,d1),serial(a2,b2,c2,d2),xxx)
-			// processing composite primary key
-			vec, err := function.RunFunctionDirectly(proc, function.SerialFunctionEncodeID,
-				toSerialBatch.Vecs,
-				toSerialBatch.RowCount())
-			if err != nil {
-				return nil, err
-			}
-			vecLength := vec.Length()
-			vec.InplaceSortAndCompact()
-			data, err := vec.MarshalBinary()
-			vec.Free(proc.Mp())
-			if err != nil {
-				return nil, err
-			}
-			filterExpr, _ = BindFuncExprImplByPlanExpr(builder.GetContext(), "in", []*Expr{
-				pkExpr,
-				{
-					Typ: pkExpr.Typ,
-					Expr: &plan.Expr_Vec{
-						Vec: &plan.LiteralVec{
-							Len:  int32(vecLength),
-							Data: data,
-						},
-					},
-				},
-			})
 		}
 	}
 
@@ -886,64 +694,6 @@ func getPkValueExpr(builder *QueryBuilder, ctx CompilerContext, tableDef *TableD
 	}
 
 	return []*Expr{filterExpr}, nil
-}
-
-// ------------------- partition relatived -------------------
-
-// remapPartitionExpr Remap partition expression column references
-func remapPartitionExpr(builder *QueryBuilder, tableDef *TableDef, pkPosInValues map[int]int) *Expr {
-	if builder.qry.Nodes[0].NodeType != plan.Node_VALUE_SCAN {
-		return nil
-	}
-
-	if tableDef.Partition == nil {
-		return nil
-	} else {
-		partitionExpr := DeepCopyExpr(tableDef.Partition.PartitionExpression)
-		if remapPartExprColRef(partitionExpr, pkPosInValues, tableDef) {
-			return partitionExpr
-		}
-		return nil
-	}
-}
-
-// remapPartExprColRef Remap partition expression column references
-func remapPartExprColRef(expr *Expr, colMap map[int]int, tableDef *TableDef) bool {
-	switch ne := expr.Expr.(type) {
-	case *plan.Expr_Col:
-		cPos := ne.Col.ColPos
-		if ids, ok := colMap[int(cPos)]; ok {
-			ne.Col.RelPos = 0
-			ne.Col.ColPos = int32(ids)
-			ne.Col.Name = tableDef.Cols[cPos].Name
-		} else {
-			return false
-		}
-
-	case *plan.Expr_F:
-		for _, arg := range ne.F.GetArgs() {
-			if res := remapPartExprColRef(arg, colMap, tableDef); !res {
-				return false
-			}
-		}
-
-	case *plan.Expr_W:
-		if res := remapPartExprColRef(ne.W.WindowFunc, colMap, tableDef); !res {
-			return false
-		}
-
-		for _, arg := range ne.W.PartitionBy {
-			if res := remapPartExprColRef(arg, colMap, tableDef); !res {
-				return false
-			}
-		}
-		for _, order := range ne.W.OrderBy {
-			if res := remapPartExprColRef(order.Expr, colMap, tableDef); !res {
-				return false
-			}
-		}
-	}
-	return true
 }
 
 func getRewriteToReplaceStmt(tableDef *TableDef, stmt *tree.Insert, info *dmlSelectInfo, isPrepareStmt bool) *tree.Replace {

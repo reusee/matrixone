@@ -35,35 +35,8 @@ func NewMemCache(
 	name string,
 ) *MemCache {
 
-	postSetFn := func(key fscache.CacheKey, value fscache.Data) {
-		value.Retain()
-
-		if callbacks != nil {
-			for _, fn := range callbacks.PostSet {
-				fn(key, value)
-			}
-		}
-	}
-
-	postGetFn := func(key fscache.CacheKey, value fscache.Data) {
-		value.Retain()
-
-		if callbacks != nil {
-			for _, fn := range callbacks.PostGet {
-				fn(key, value)
-			}
-		}
-	}
-
-	postEvictFn := func(key fscache.CacheKey, value fscache.Data) {
-		value.Release()
-
-		if callbacks != nil {
-			for _, fn := range callbacks.PostEvict {
-				fn(key, value)
-			}
-		}
-	}
+	inuseBytes, capacityBytes := metric.GetFsCacheBytesGauge(name, "mem")
+	capacityBytes.Set(float64(capacity()))
 
 	capacityFunc := func() int64 {
 		// read from global hint
@@ -73,12 +46,85 @@ func NewMemCache(
 		// fallback
 		return capacity()
 	}
+
+	postSetFn := func(ctx context.Context, key fscache.CacheKey, value fscache.Data, size int64) {
+		// events
+		LogEvent(ctx, str_memory_cache_post_set_begin)
+		defer LogEvent(ctx, str_memory_cache_post_set_end)
+
+		// retain
+		value.Retain()
+
+		// metrics
+		LogEvent(ctx, str_update_metrics_begin)
+		inuseBytes.Add(float64(size))
+		capacityBytes.Set(float64(capacityFunc()))
+		LogEvent(ctx, str_update_metrics_end)
+
+		// callbacks
+		if callbacks != nil {
+			LogEvent(ctx, str_memory_cache_callbacks_begin)
+			for _, fn := range callbacks.PostSet {
+				fn(key, value)
+			}
+			LogEvent(ctx, str_memory_cache_callbacks_end)
+		}
+	}
+
+	postGetFn := func(ctx context.Context, key fscache.CacheKey, value fscache.Data, size int64) {
+		// events
+		LogEvent(ctx, str_memory_cache_post_get_begin)
+		defer LogEvent(ctx, str_memory_cache_post_get_end)
+
+		// retain
+		value.Retain()
+
+		// callbacks
+		if callbacks != nil {
+			LogEvent(ctx, str_memory_cache_callbacks_begin)
+			for _, fn := range callbacks.PostGet {
+				fn(key, value)
+			}
+			LogEvent(ctx, str_memory_cache_callbacks_end)
+		}
+	}
+
+	postEvictFn := func(ctx context.Context, key fscache.CacheKey, value fscache.Data, size int64) {
+		// events
+		LogEvent(ctx, str_memory_cache_post_evict_begin)
+		defer LogEvent(ctx, str_memory_cache_post_evict_end)
+
+		// relaese
+		value.Release()
+
+		// metrics
+		LogEvent(ctx, str_update_metrics_begin)
+		inuseBytes.Add(float64(-size))
+		capacityBytes.Set(float64(capacityFunc()))
+		LogEvent(ctx, str_update_metrics_end)
+
+		// callbacks
+		if callbacks != nil {
+			LogEvent(ctx, str_memory_cache_callbacks_begin)
+			for _, fn := range callbacks.PostEvict {
+				fn(key, value)
+			}
+			LogEvent(ctx, str_memory_cache_callbacks_end)
+		}
+	}
+
 	dataCache := fifocache.NewDataCache(capacityFunc, postSetFn, postGetFn, postEvictFn)
 
-	return &MemCache{
+	ret := &MemCache{
 		cache:       dataCache,
 		counterSets: counterSets,
 	}
+
+	if name != "" {
+		allMemoryCaches.Store(ret, name)
+	}
+
+	return ret
 }
 
 var _ IOVectorCache = new(MemCache)
@@ -97,6 +143,7 @@ func (m *MemCache) Read(
 	var numHit, numRead int64
 	defer func() {
 		metric.FSReadHitMemCounter.Add(float64(numHit))
+		metric.FSReadReadMemCounter.Add(float64(numRead))
 		perfcounter.Update(ctx, func(c *perfcounter.CounterSet) {
 			c.FileService.Cache.Read.Add(numRead)
 			c.FileService.Cache.Hit.Add(numHit)
@@ -161,13 +208,15 @@ func (m *MemCache) Update(
 			Sz:     entry.Size,
 		}
 
+		LogEvent(ctx, str_set_memory_cache_entry_begin)
 		m.cache.Set(ctx, key, entry.CachedData)
+		LogEvent(ctx, str_set_memory_cache_entry_end)
 	}
 	return nil
 }
 
-func (m *MemCache) Flush() {
-	m.cache.Flush()
+func (m *MemCache) Flush(ctx context.Context) {
+	m.cache.Flush(ctx)
 }
 
 func (m *MemCache) DeletePaths(
@@ -178,11 +227,11 @@ func (m *MemCache) DeletePaths(
 	return nil
 }
 
-func (m *MemCache) Evict(done chan int64) {
-	m.cache.Evict(done)
+func (m *MemCache) Evict(ctx context.Context, done chan int64) {
+	m.cache.Evict(ctx, done)
 }
 
-func (m *MemCache) Close() {
-	m.Flush()
+func (m *MemCache) Close(ctx context.Context) {
+	m.Flush(ctx)
 	allMemoryCaches.Delete(m)
 }

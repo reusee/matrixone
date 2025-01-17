@@ -57,13 +57,7 @@ func (projection *Projection) Prepare(proc *process.Process) (err error) {
 }
 
 func (projection *Projection) Call(proc *process.Process) (vm.CallResult, error) {
-	if err, isCancel := vm.CancelCheck(proc); isCancel {
-		return vm.CancelResult, err
-	}
-
 	analyzer := projection.OpAnalyzer
-	analyzer.Start()
-	defer analyzer.Stop()
 
 	result, err := vm.ChildrenCall(projection.GetChildren(0), proc, analyzer)
 	if err != nil {
@@ -77,8 +71,9 @@ func (projection *Projection) Call(proc *process.Process) (vm.CallResult, error)
 
 	// keep shuffleIDX unchanged
 	projection.ctr.buf.ShuffleIDX = bat.ShuffleIDX
+	batches := []*batch.Batch{bat}
 	for i := range projection.ctr.projExecutors {
-		vec, err := projection.ctr.projExecutors[i].Eval(proc, []*batch.Batch{bat}, nil)
+		vec, err := projection.ctr.projExecutors[i].Eval(proc, batches, nil)
 		if err != nil {
 			return vm.CancelResult, err
 		}
@@ -93,6 +88,5 @@ func (projection *Projection) Call(proc *process.Process) (vm.CallResult, error)
 	projection.ctr.buf.SetRowCount(bat.RowCount())
 
 	result.Batch = projection.ctr.buf
-	analyzer.Output(result.Batch)
 	return result, nil
 }

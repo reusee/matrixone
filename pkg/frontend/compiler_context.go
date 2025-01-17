@@ -33,6 +33,7 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/common/pubsub"
 	"github.com/matrixorigin/matrixone/pkg/container/types"
 	"github.com/matrixorigin/matrixone/pkg/defines"
+	"github.com/matrixorigin/matrixone/pkg/objectio/ioutil"
 	"github.com/matrixorigin/matrixone/pkg/pb/plan"
 	pb "github.com/matrixorigin/matrixone/pkg/pb/statsinfo"
 	"github.com/matrixorigin/matrixone/pkg/perfcounter"
@@ -44,7 +45,6 @@ import (
 	v2 "github.com/matrixorigin/matrixone/pkg/util/metric/v2"
 	"github.com/matrixorigin/matrixone/pkg/util/trace/impl/motrace/statistic"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine"
-	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/blockio"
 	"github.com/matrixorigin/matrixone/pkg/vm/engine/tae/common"
 	"github.com/matrixorigin/matrixone/pkg/vm/process"
 )
@@ -273,6 +273,19 @@ func (tcc *TxnCompilerContext) GetConfig(varName string, dbName string, tblName 
 	return "", moerr.NewInternalErrorf(tcc.GetContext(), "The variable '%s' is not a valid database level variable", varName)
 }
 
+// for system_metrics.metric and system.statement_info,
+// it is special under the no sys account, should switch into the sys account first.
+func ShouldSwitchToSysAccount(dbName string, tableName string) bool {
+	if dbName == catalog.MO_SYSTEM && tableName == catalog.MO_STATEMENT {
+		return true
+	}
+
+	if dbName == catalog.MO_SYSTEM_METRICS && (tableName == catalog.MO_METRIC || tableName == catalog.MO_SQL_STMT_CU) {
+		return true
+	}
+	return false
+}
+
 // getRelation returns the context (maybe updated) and the relation
 func (tcc *TxnCompilerContext) getRelation(dbName string, tableName string, sub *plan.SubscriptionMeta, snapshot *plan2.Snapshot) (context.Context, engine.Relation, error) {
 	dbName, _, err := tcc.ensureDatabaseIsNotEmpty(dbName, false, snapshot)
@@ -309,13 +322,7 @@ func (tcc *TxnCompilerContext) getRelation(dbName string, tableName string, sub 
 		dbName = sub.DbName
 	}
 
-	//for system_metrics.metric and system.statement_info,
-	//it is special under the no sys account, should switch into the sys account first.
-	if dbName == catalog.MO_SYSTEM && tableName == catalog.MO_STATEMENT {
-		tempCtx = defines.AttachAccountId(tempCtx, uint32(sysAccountID))
-	}
-
-	if dbName == catalog.MO_SYSTEM_METRICS && (tableName == catalog.MO_METRIC || tableName == catalog.MO_SQL_STMT_CU) {
+	if ShouldSwitchToSysAccount(dbName, tableName) {
 		tempCtx = defines.AttachAccountId(tempCtx, uint32(sysAccountID))
 	}
 
@@ -451,26 +458,6 @@ func (tcc *TxnCompilerContext) ResolveSubscriptionTableById(tableId uint64, subM
 	return obj, tableDef
 }
 
-func (tcc *TxnCompilerContext) checkTableDefChange(dbName string, tableName string, originTblId uint64, originVersion uint32) (bool, error) {
-	// In order to be compatible with various GUI clients and BI tools, lower case db and table name if it's a mysql system table
-	if slices.Contains(mysql.CaseInsensitiveDbs, strings.ToLower(dbName)) {
-		dbName = strings.ToLower(dbName)
-		tableName = strings.ToLower(tableName)
-	}
-
-	dbName, sub, err := tcc.ensureDatabaseIsNotEmpty(dbName, true, nil)
-	if err != nil || sub != nil && !pubsub.InSubMetaTables(sub, tableName) {
-		return false, err
-	}
-
-	ctx, table, err := tcc.getRelation(dbName, tableName, sub, nil)
-	if err != nil {
-		return false, moerr.NewNoSuchTableNoCtx(dbName, tableName)
-	}
-
-	return table.GetTableDef(ctx).Version != originVersion || table.GetTableID(ctx) != originTblId, nil
-}
-
 func (tcc *TxnCompilerContext) Resolve(dbName string, tableName string, snapshot *plan2.Snapshot) (*plan2.ObjectRef, *plan2.TableDef) {
 	start := time.Now()
 	defer func() {
@@ -519,6 +506,48 @@ func (tcc *TxnCompilerContext) Resolve(dbName string, tableName string, snapshot
 			TenantId: pubAccountId,
 		}
 	}
+	return obj, tableDef
+}
+
+func (tcc *TxnCompilerContext) ResolveIndexTableByRef(
+	ref *plan.ObjectRef,
+	tblName string,
+	snapshot *plan2.Snapshot,
+) (*plan2.ObjectRef, *plan2.TableDef) {
+	start := time.Now()
+	defer func() {
+		end := time.Since(start).Seconds()
+		v2.TxnStatementResolveDurationHistogram.Observe(end)
+		v2.TotalResolveDurationHistogram.Observe(end)
+	}()
+
+	// no need to ensureDatabaseIsNotEmpty
+
+	var subMeta *plan.SubscriptionMeta
+	if ref.PubInfo != nil {
+		subMeta = &plan.SubscriptionMeta{
+			AccountId: ref.PubInfo.TenantId,
+		}
+	}
+
+	ctx, table, err := tcc.getRelation(ref.SchemaName, tblName, subMeta, snapshot)
+	if err != nil {
+		return nil, nil
+	}
+
+	obj := &plan2.ObjectRef{
+		SchemaName:       ref.SchemaName,
+		ObjName:          tblName,
+		Obj:              int64(table.GetTableID(ctx)),
+		SubscriptionName: ref.SubscriptionName,
+		PubInfo:          ref.PubInfo,
+	}
+
+	tableDef := table.CopyTableDef(ctx)
+	if tableDef.IsTemporary {
+		tableDef.Name = tblName
+	}
+
 	return obj, tableDef
 }
 
@@ -813,11 +842,11 @@ func (tcc *TxnCompilerContext) GetPrimaryKeyDef(dbName string, tableName string,
 }
 
 func (tcc *TxnCompilerContext) Stats(obj *plan2.ObjectRef, snapshot *plan2.Snapshot) (*pb.StatsInfo, error) {
-	stats := statistic.StatsInfoFromContext(tcc.execCtx.reqCtx)
+	statser := statistic.StatsInfoFromContext(tcc.execCtx.reqCtx)
 	start := time.Now()
 	defer func() {
 		v2.TxnStatementStatsDurationHistogram.Observe(time.Since(start).Seconds())
-		stats.AddBuildPlanStatsConsumption(time.Since(start))
+		statser.AddBuildPlanStatsConsumption(time.Since(start))
 	}()
 
 	dbName := obj.GetSchemaName()
@@ -850,69 +879,11 @@ func (tcc *TxnCompilerContext) Stats(obj *plan2.ObjectRef, snapshot *plan2.Snaps
 	if !needUpdate {
 		return cached, nil
 	}
-	tableDefs, err := table.TableDefs(ctx)
+
+	newCtx := perfcounter.AttachCalcTableStatsKey(ctx)
+	statsInfo, err := table.Stats(newCtx, true)
 	if err != nil {
-		return nil, err
-	}
-	var partitionInfo *plan.PartitionByDef
-	for _, def := range tableDefs {
-		if partitionDef, ok := def.(*engine.PartitionDef); ok {
-			if partitionDef.Partitioned > 0 {
-				p := &plan.PartitionByDef{}
-				err = p.UnMarshalPartitionInfo(([]byte)(partitionDef.Partition))
-				if err != nil {
-					return nil, err
-				}
-				partitionInfo = p
-			}
-			break
-		}
-	}
-
-	var statsInfo *pb.StatsInfo
-	// This is a partition table.
-	if partitionInfo != nil {
-		crs := new(perfcounter.CounterSet)
-		statsInfo = plan2.NewStatsInfo()
-		for _, partitionTable := range partitionInfo.PartitionTableNames {
-			parCtx, parTable, err := tcc.getRelation(dbName, partitionTable, sub, snapshot)
-			if err != nil {
-				return cached, err
-			}
-			newParCtx := perfcounter.AttachS3RequestKey(parCtx, crs)
-			parStats, err := parTable.Stats(newParCtx, true)
-			if err != nil {
-				return cached, err
-			}
-			statsInfo.Merge(parStats)
-		}
-
-		stats.AddBuildPlanStatsS3Request(statistic.S3Request{
-			List:      crs.FileService.S3.List.Load(),
-			Head:      crs.FileService.S3.Head.Load(),
-			Put:       crs.FileService.S3.Put.Load(),
-			Get:       crs.FileService.S3.Get.Load(),
-			Delete:    crs.FileService.S3.Delete.Load(),
-			DeleteMul: crs.FileService.S3.DeleteMulti.Load(),
-		})
-
-	} else {
-		crs := new(perfcounter.CounterSet)
-		newCtx := perfcounter.AttachS3RequestKey(ctx, crs)
-
-		statsInfo, err = table.Stats(newCtx, true)
-		if err != nil {
-			return cached, err
-		}
-
-		stats.AddBuildPlanStatsS3Request(statistic.S3Request{
-			List:      crs.FileService.S3.List.Load(),
-			Head:      crs.FileService.S3.Head.Load(),
-			Put:       crs.FileService.S3.Put.Load(),
-			Get:       crs.FileService.S3.Get.Load(),
-			Delete:    crs.FileService.S3.Delete.Load(),
-			DeleteMul: crs.FileService.S3.DeleteMulti.Load(),
-		})
+		return cached, err
 	}
 
 	if statsInfo != nil {
@@ -929,52 +900,26 @@ func (tcc *TxnCompilerContext) UpdateStatsInCache(tid uint64, s *pb.StatsInfo) {
 // statsInCache get the *pb.StatsInfo from session cache. If the info is nil, just return nil and false,
 // else, check if the info needs to be updated.
 func (tcc *TxnCompilerContext) statsInCache(ctx context.Context, dbName string, table engine.Relation, snapshot *plan2.Snapshot) (*pb.StatsInfo, bool) {
+	statser := statistic.StatsInfoFromContext(tcc.execCtx.reqCtx)
+	start := time.Now()
+	defer func() {
+		statser.AddStatsStatsInCacheDuration(time.Since(start))
+	}()
+
 	s := tcc.GetStatsCache().GetStatsInfo(table.GetTableID(ctx), true)
 	if s == nil {
 		return nil, false
 	}
 
-	var partitionInfo *plan2.PartitionByDef
-	engineDefs, err := table.TableDefs(ctx)
-	if err != nil {
-		return nil, false
-	}
-	for _, def := range engineDefs {
-		if partitionDef, ok := def.(*engine.PartitionDef); ok {
-			if partitionDef.Partitioned > 0 {
-				p := &plan2.PartitionByDef{}
-				err = p.UnMarshalPartitionInfo(([]byte)(partitionDef.Partition))
-				if err != nil {
-					return nil, false
-				}
-				partitionInfo = p
-			}
-		}
-	}
-
 	second := time.Now().Unix()
 	var diff int64 = 3
-	if partitionInfo != nil {
-		diff = 30
-	}
 	if s.ApproxObjectNumber > 0 && second-s.TimeSecond < diff {
 		// do not call ApproxObjectsNum within a short time limit
 		return s, false
 	}
 	s.TimeSecond = second
 
-	approxNumObjects := 0
-	if partitionInfo != nil {
-		for _, PartitionTableName := range partitionInfo.PartitionTableNames {
-			_, ptable, err := tcc.getRelation(dbName, PartitionTableName, nil, snapshot)
-			if err != nil {
-				return nil, false
-			}
-			approxNumObjects += ptable.ApproxObjectsNum(ctx)
-		}
-	} else {
-		approxNumObjects = table.ApproxObjectsNum(ctx)
-	}
+	approxNumObjects := table.ApproxObjectsNum(ctx)
 	if approxNumObjects == 0 {
 		return nil, false
 	}
@@ -995,7 +940,7 @@ func (tcc *TxnCompilerContext) GetQueryResultMeta(uuid string) ([]*plan.ColDef, 
 	// get file size
 	path := catalog.BuildQueryResultMetaPath(proc.GetSessionInfo().Account, uuid)
 	// read meta's meta
-	reader, err := blockio.NewFileReader(proc.GetService(), proc.Base.FileService, path)
+	reader, err := ioutil.NewFileReader(proc.Base.FileService, path)
 	if err != nil {
 		return nil, "", err
 	}
@@ -1025,6 +970,11 @@ func (tcc *TxnCompilerContext) GetQueryResultMeta(uuid string) ([]*plan.ColDef, 
 	// paths
 	vec = bats[0].Vecs[1]
 	str := vec.GetStringAt(0)
+
+	// lower col name
+	for _, col := range r.ResultCols {
+		col.Name = strings.ToLower(col.Name)
+	}
 	return r.ResultCols, str, nil
 }
 
@@ -1044,11 +994,15 @@ func (tcc *TxnCompilerContext) GetSubscriptionMeta(dbName string, snapshot *plan
 		}
 	}
 
-	return getSubscriptionMeta(tempCtx, dbName, tcc.GetSession(), txn)
+	bh := tcc.execCtx.ses.GetShareTxnBackgroundExec(tempCtx, false)
+	defer bh.Close()
+	return getSubscriptionMeta(tempCtx, dbName, tcc.GetSession(), txn, bh)
 }
 
 func (tcc *TxnCompilerContext) CheckSubscriptionValid(subName, accName, pubName string) error {
-	_, err := checkSubscriptionValidCommon(tcc.GetContext(), tcc.GetSession(), subName, accName, pubName)
+	bh := tcc.execCtx.ses.GetShareTxnBackgroundExec(tcc.GetContext(), false)
+	defer bh.Close()
+	_, err := checkSubscriptionValidCommon(tcc.GetContext(), tcc.GetSession(), subName, accName, pubName, bh)
 	return err
 }
 

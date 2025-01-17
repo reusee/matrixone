@@ -38,7 +38,6 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/pb/plan"
 	"github.com/matrixorigin/matrixone/pkg/pb/timestamp"
 	"github.com/matrixorigin/matrixone/pkg/perfcounter"
-	"github.com/matrixorigin/matrixone/pkg/sql/colexec"
 	"github.com/matrixorigin/matrixone/pkg/sql/compile"
 	"github.com/matrixorigin/matrixone/pkg/sql/models"
 	"github.com/matrixorigin/matrixone/pkg/sql/parsers/dialect/mysql"
@@ -48,6 +47,7 @@ import (
 	"github.com/matrixorigin/matrixone/pkg/util"
 	metric "github.com/matrixorigin/matrixone/pkg/util/metric/v2"
 	"github.com/matrixorigin/matrixone/pkg/util/trace/impl/motrace"
+	"github.com/matrixorigin/matrixone/pkg/util/trace/impl/motrace/statistic"
 	"github.com/matrixorigin/matrixone/pkg/vm/process"
 )
 
@@ -187,6 +187,8 @@ const (
 	FPRestartCDC
 	FPResumeCDC
 	FPShowCDC
+	FPCommitUnsafeBeforeRollbackWhenCommitPanic
+	FPShowRecoveryWindow
 )
 
 type (
@@ -216,7 +218,14 @@ type ComputationWrapper interface {
 
 	GetUUID() []byte
 
+	// RecordExecPlan records the execution plan and calculates CU resources, and stores them into statementinfo
 	RecordExecPlan(ctx context.Context, phyPlan *models.PhyPlan) error
+
+	// RecordCompoundStmt calculates the CU resources of composite statements, and stores them into statementinfo
+	RecordCompoundStmt(ctx context.Context, statsBytes statistic.StatsArray) error
+
+	// StatsCompositeSubStmtResource Statistics on CU resources of sub statements in composite statements
+	StatsCompositeSubStmtResource(ctx context.Context) (statsByte statistic.StatsArray)
 
 	SetExplainBuffer(buf *bytes.Buffer)
 
@@ -228,6 +237,7 @@ type ComputationWrapper interface {
 	ResetPlanAndStmt(stmt tree.Statement)
 	Free()
 	ParamVals() []any
+	BinaryExecute() (bool, string) //binary execute for COM_STMT_EXECUTE
 }
 
 type ColumnInfo interface {
@@ -263,16 +273,13 @@ type PrepareStmt struct {
 	ParamTypes     []byte
 	ColDefData     [][]byte
 	IsCloudNonuser bool
-	IsInsertValues bool
-	InsertBat      *batch.Batch
 	proc           *process.Process
-
-	exprList [][]colexec.ExpressionExecutor
 
 	params              *vector.Vector
 	getFromSendLongData map[int]struct{}
 
 	compile *compile.Compile
+	Ts      timestamp.Timestamp
 }
 
 /*
@@ -332,6 +339,10 @@ func execResultArrayHasData(arr []ExecResult) bool {
 	return len(arr) != 0 && arr[0].GetRowCount() != 0
 }
 
+type BackgroundExecOption struct {
+	fromRealUser bool
+}
+
 // BackgroundExec executes the sql in background session without network output.
 type BackgroundExec interface {
 	Close()
@@ -340,6 +351,8 @@ type BackgroundExec interface {
 	ExecStmt(context.Context, tree.Statement) error
 	GetExecResultSet() []interface{}
 	ClearExecResultSet()
+	GetExecStatsArray() statistic.StatsArray
+	SetRestore(b bool)
 
 	GetExecResultBatches() []*batch.Batch
 	ClearExecResultBatches()
@@ -375,17 +388,7 @@ func (prepareStmt *PrepareStmt) Close() {
 	if prepareStmt.params != nil {
 		prepareStmt.params.Free(prepareStmt.proc.Mp())
 	}
-	if prepareStmt.InsertBat != nil {
-		prepareStmt.InsertBat.Clean(prepareStmt.proc.Mp())
-		prepareStmt.InsertBat = nil
-	}
-	if prepareStmt.exprList != nil {
-		for _, exprs := range prepareStmt.exprList {
-			for _, expr := range exprs {
-				expr.Free()
-			}
-		}
-	}
+
 	if prepareStmt.compile != nil {
 		prepareStmt.compile.FreeOperator()
 		prepareStmt.compile.SetIsPrepare(false)
@@ -467,7 +470,7 @@ type FeSession interface {
 	GetAccountId() uint32
 	GetTenantInfo() *TenantInfo
 	GetConfig(ctx context.Context, varName, dbName, tblName string) (any, error)
-	GetBackgroundExec(ctx context.Context) BackgroundExec
+	GetBackgroundExec(ctx context.Context, opts ...*BackgroundExecOption) BackgroundExec
 	GetRawBatchBackgroundExec(ctx context.Context) BackgroundExec
 	GetGlobalSysVars() *SystemVariables
 	GetGlobalSysVar(name string) (interface{}, error)
@@ -536,6 +539,7 @@ type FeSession interface {
 	GetStaticTxnInfo() string
 	GetShareTxnBackgroundExec(ctx context.Context, newRawBatch bool) BackgroundExec
 	GetMySQLParser() *mysql.MySQLParser
+	InitBackExec(txnOp TxnOperator, db string, callBack outputCallBackFunc, opts ...*BackgroundExecOption) BackgroundExec
 	SessionLogger
 }
 
@@ -551,6 +555,7 @@ type SessionLogger interface {
 	Warnf(ctx context.Context, msg string, args ...any)
 	Fatalf(ctx context.Context, msg string, args ...any)
 	Debugf(ctx context.Context, msg string, args ...any)
+	LogDebug() bool
 	GetLogger() SessionLogger
 }
 
@@ -621,7 +626,6 @@ func (execCtx *ExecCtx) Close() {
 //	batch.Batch
 type outputCallBackFunc func(FeSession, *ExecCtx, *batch.Batch, *perfcounter.CounterSet) error
 
-// TODO: shared component among the session implmentation
 type feSessionImpl struct {
 	pool          *mpool.MPool
 	buf           *buffer.Buffer
@@ -682,6 +686,16 @@ type feSessionImpl struct {
 	// Default is false, means that the network connection should be closed.
 	reserveConn bool
 	service     string
+
+	//fromRealUser distinguish the sql that the user inputs from the one
+	//that the internal or background program executes
+	fromRealUser bool
+
+	//isRestore denotes the session is used to restore the snapshot
+	isRestore bool
+
+	//isRestoreFail
+	isRestoreFail bool
 }
 
 func (ses *feSessionImpl) GetService() string {
@@ -723,13 +737,29 @@ func (ses *feSessionImpl) ExitRunSql() {
 	}
 }
 
+// Close releases all reference.
+// close txn handler also
 func (ses *feSessionImpl) Close() {
 	if ses.respr != nil && !ses.reserveConn {
 		ses.respr.Close()
 	}
+	ses.Reset()
+}
+
+// Reset release resources like buffer,memory,handles,etc.
+//
+//		It also reserves some necessary resources that are carefully designed.
+//	 	does not close txn handler here.
+func (ses *feSessionImpl) Reset() {
+	if ses == nil {
+		return
+	}
+	ses.Clear()
+
 	ses.mrs = nil
 	if ses.txnHandler != nil {
 		ses.txnHandler.Close()
+		ses.txnHandler = nil
 	}
 	if ses.txnCompileCtx != nil {
 		ses.txnCompileCtx.Close()
@@ -751,8 +781,10 @@ func (ses *feSessionImpl) Close() {
 		ses.buf = nil
 	}
 	ses.upstream = nil
+	ses.fromRealUser = false
 }
 
+// Clear clean result only
 func (ses *feSessionImpl) Clear() {
 	if ses == nil {
 		return
@@ -994,6 +1026,7 @@ func (ses *Session) SetGlobalSysVar(ctx context.Context, name string, val interf
 		return moerr.NewInternalErrorNoCtx(errorSystemVariableIsReadOnly())
 	}
 
+	// special handle for validate_password.policy
 	if policy, ok := val.(string); ok && name == validatePasswordPolicyTag {
 		if strings.ToLower(policy) == validatePasswordPolicyLow {
 			// convert to 0
@@ -1001,6 +1034,14 @@ func (ses *Session) SetGlobalSysVar(ctx context.Context, name string, val interf
 		} else if strings.ToLower(policy) == validatePasswordPolicyMed {
 			// convert to 1
 			val = int64(1)
+		}
+	}
+
+	// special check for invited_nodes
+	if invitedlist, ok := val.(string); ok && name == InvitedNodes {
+		err = checkInvitedNodes(ctx, invitedlist)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -1130,6 +1171,30 @@ func (ses *Session) GetDebugString() string {
 	return ses.debugStr
 }
 
+func (ses *Session) SetRestore(b bool) {
+	ses.mu.Lock()
+	defer ses.mu.Unlock()
+	ses.isRestore = b
+}
+
+func (ses *Session) IsRestore() bool {
+	ses.mu.Lock()
+	defer ses.mu.Unlock()
+	return ses.isRestore
+}
+
+func (ses *Session) SetRestoreFail(b bool) {
+	ses.mu.Lock()
+	defer ses.mu.Unlock()
+	ses.isRestoreFail = b
+}
+
+func (ses *Session) IsRestoreFail() bool {
+	ses.mu.Lock()
+	defer ses.mu.Unlock()
+	return ses.isRestoreFail
+}
+
 type PropertyID int
 
 const (
@@ -1212,6 +1277,7 @@ type MysqlWriter interface {
 	WriteTextRow() error
 	WriteBinaryRow() error
 	WriteResultSetRow(mrs *MysqlResultSet, count uint64) error
+	WriteResultSetRow2(mrs *MysqlResultSet, colSlices *ColumnSlices, count uint64) error
 	WriteResponse(context.Context, *Response) error
 	WritePrepareResponse(ctx context.Context, stmt *PrepareStmt) error
 	WriteLocalInfileRequest(filepath string) error

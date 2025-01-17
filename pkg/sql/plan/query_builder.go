@@ -24,11 +24,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	"github.com/matrixorigin/matrixone/pkg/catalog"
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
-	"github.com/matrixorigin/matrixone/pkg/container/batch"
 	"github.com/matrixorigin/matrixone/pkg/container/types"
-	"github.com/matrixorigin/matrixone/pkg/container/vector"
 	"github.com/matrixorigin/matrixone/pkg/logutil"
 	"github.com/matrixorigin/matrixone/pkg/pb/plan"
 	"github.com/matrixorigin/matrixone/pkg/pb/timestamp"
@@ -62,28 +61,34 @@ func NewQueryBuilder(queryType plan.Query_StatementType, ctx CompilerContext, is
 		nextTag:            0,
 		mysqlCompatible:    mysqlCompatible,
 		tag2Table:          make(map[int32]*TableDef),
+		tag2NodeID:         make(map[int32]int32),
 		isPrepareStatement: isPrepareStatement,
 		deleteNode:         make(map[uint64]int32),
 		skipStats:          skipStats,
 	}
 }
 
+func (builder *QueryBuilder) remapSingleColRef(col *plan.ColRef, colMap map[[2]int32][2]int32, remapInfo *RemapInfo) error {
+	mapID := [2]int32{col.RelPos, col.ColPos}
+	if ids, ok := colMap[mapID]; ok {
+		col.RelPos = ids[0]
+		col.ColPos = ids[1]
+		col.Name = builder.nameByColRef[mapID]
+	} else {
+		var keys []string
+		for k := range colMap {
+			keys = append(keys, fmt.Sprintf("%v", k))
+		}
+		mapKeys := fmt.Sprintf("{ %s }", strings.Join(keys, ", "))
+		return moerr.NewParseErrorf(builder.GetContext(), "remapInfo %s ; can't find column %v in context's map %s", remapInfo.String(), mapID, mapKeys)
+	}
+	return nil
+}
+
 func (builder *QueryBuilder) remapColRefForExpr(expr *Expr, colMap map[[2]int32][2]int32, remapInfo *RemapInfo) error {
 	switch ne := expr.Expr.(type) {
 	case *plan.Expr_Col:
-		mapID := [2]int32{ne.Col.RelPos, ne.Col.ColPos}
-		if ids, ok := colMap[mapID]; ok {
-			ne.Col.RelPos = ids[0]
-			ne.Col.ColPos = ids[1]
-			ne.Col.Name = builder.nameByColRef[mapID]
-		} else {
-			var keys []string
-			for k := range colMap {
-				keys = append(keys, fmt.Sprintf("%v", k))
-			}
-			mapKeys := fmt.Sprintf("{ %s }", strings.Join(keys, ", "))
-			return moerr.NewParseErrorf(builder.GetContext(), "remapInfo %s ; can't find column %v in context's map %s", remapInfo.String(), mapID, mapKeys)
-		}
+		return builder.remapSingleColRef(ne.Col, colMap, remapInfo)
 
 	case *plan.Expr_F:
 		for _, arg := range ne.F.GetArgs() {
@@ -97,12 +102,6 @@ func (builder *QueryBuilder) remapColRefForExpr(expr *Expr, colMap map[[2]int32]
 		if err != nil {
 			return err
 		}
-		//for _, arg := range ne.W.PartitionBy {
-		//	err = builder.remapColRefForExpr(arg, colMap)
-		//	if err != nil {
-		//		return err
-		//	}
-		//}
 		for _, order := range ne.W.OrderBy {
 			err = builder.remapColRefForExpr(order.Expr, colMap, remapInfo)
 			if err != nil {
@@ -462,6 +461,16 @@ func (builder *QueryBuilder) remapAllColRefs(nodeID int32, step int32, colRefCnt
 			increaseRefCnt(expr, 1, colRefCnt)
 		}
 
+		if node.DedupJoinCtx != nil {
+			for _, col := range node.DedupJoinCtx.OldColList {
+				colRefCnt[[2]int32{col.RelPos, col.ColPos}]++
+			}
+
+			for _, expr := range node.DedupJoinCtx.UpdateColExprList {
+				increaseRefCnt(expr, 1, colRefCnt)
+			}
+		}
+
 		internalMap := make(map[[2]int32][2]int32)
 
 		leftID := node.Children[0]
@@ -492,6 +501,30 @@ func (builder *QueryBuilder) remapAllColRefs(nodeID int32, step int32, colRefCnt
 			if err != nil {
 				return nil, err
 			}
+		}
+
+		remapInfo.tip = "DedupJoinCtx"
+		if node.DedupJoinCtx != nil {
+			for i, col := range node.DedupJoinCtx.OldColList {
+				colRefCnt[[2]int32{col.RelPos, col.ColPos}]--
+				err := builder.remapSingleColRef(&node.DedupJoinCtx.OldColList[i], internalMap, &remapInfo)
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			for idx, expr := range node.DedupJoinCtx.UpdateColExprList {
+				increaseRefCnt(expr, -1, colRefCnt)
+				remapInfo.srcExprIdx = idx
+				err := builder.remapColRefForExpr(expr, internalMap, &remapInfo)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+
+		if node.JoinType == plan.Node_DEDUP && len(node.DedupColTypes) == 0 {
+			node.DedupColTypes = []plan.Type{node.OnList[0].GetF().Args[0].Typ}
 		}
 
 		childProjList := builder.qry.Nodes[leftID].ProjectList
@@ -810,10 +843,6 @@ func (builder *QueryBuilder) remapAllColRefs(nodeID int32, step int32, colRefCnt
 		timeTag := node.BindingTags[0]
 		groupTag := node.BindingTags[1]
 
-		for i, expr := range node.FilterList {
-			builder.remapWindowClause(expr, timeTag, int32(i))
-		}
-
 		// order by
 		idx := 0
 		increaseRefCnt(node.OrderBy[0].Expr, -1, colRefCnt)
@@ -932,11 +961,13 @@ func (builder *QueryBuilder) remapAllColRefs(nodeID int32, step int32, colRefCnt
 			increaseRefCnt(expr, 1, colRefCnt)
 		}
 
+		// remap children node
 		childRemapping, err := builder.remapAllColRefs(node.Children[0], step, colRefCnt, colRefBool, sinkColRef)
 		if err != nil {
 			return nil, err
 		}
 
+		// append children projection list
 		childProjList := builder.qry.Nodes[node.Children[0]].ProjectList
 		for i, globalRef := range childRemapping.localToGlobal {
 			if colRefCnt[globalRef] == 0 {
@@ -960,10 +991,22 @@ func (builder *QueryBuilder) remapAllColRefs(nodeID int32, step int32, colRefCnt
 		windowTag := node.BindingTags[0]
 		l := len(childProjList)
 
+		// In the window function node,
+		// the filtering conditions also need to be remapped
 		for _, expr := range node.FilterList {
-			builder.remapWindowClause(expr, windowTag, int32(l))
+			// get col pos from remap info
+			err = builder.remapWindowClause(
+				expr,
+				windowTag,
+				int32(l),
+				childRemapping.globalToLocal,
+				&remapInfo)
+			if err != nil {
+				return nil, err
+			}
 		}
 
+		// remap all window function
 		remapInfo.tip = "WinSpecList"
 		for idx, expr := range node.WinSpecList {
 			increaseRefCnt(expr, -1, colRefCnt)
@@ -973,7 +1016,7 @@ func (builder *QueryBuilder) remapAllColRefs(nodeID int32, step int32, colRefCnt
 				return nil, err
 			}
 
-			globalRef := [2]int32{windowTag, int32(node.GetWindowIdx())}
+			globalRef := [2]int32{windowTag, node.GetWindowIdx()}
 			if colRefCnt[globalRef] == 0 {
 				continue
 			}
@@ -1343,38 +1386,47 @@ func (builder *QueryBuilder) remapAllColRefs(nodeID int32, step int32, colRefCnt
 
 	case plan.Node_LOCK_OP:
 		preNode := builder.qry.Nodes[node.Children[0]]
-		pkexpr := &plan.Expr{
-			Typ: node.LockTargets[0].GetPrimaryColTyp(),
-			Expr: &plan.Expr_Col{
-				Col: &plan.ColRef{
-					RelPos: node.BindingTags[1],
-					ColPos: node.LockTargets[0].PrimaryColIdxInBat,
+
+		var pkExprs, partExprs []*plan.Expr
+		var oldPkPos, oldPartPos [][2]int32
+		for _, lockTarget := range node.LockTargets {
+			pkExpr := &plan.Expr{
+				// Typ: node.LockTargets[0].GetPrimaryColTyp(),
+				Expr: &plan.Expr_Col{
+					Col: &plan.ColRef{
+						RelPos: lockTarget.PrimaryColRelPos,
+						ColPos: lockTarget.PrimaryColIdxInBat,
+					},
 				},
-			},
+			}
+			increaseRefCnt(pkExpr, 1, colRefCnt)
+			pkExprs = append(pkExprs, pkExpr)
+			oldPkPos = append(oldPkPos, [2]int32{lockTarget.PrimaryColRelPos, lockTarget.PrimaryColIdxInBat})
+
+			partExprs = append(partExprs, nil)
+			oldPartPos = append(oldPartPos, [2]int32{-1, -1})
 		}
-		oldPos := [2]int32{node.BindingTags[1], node.LockTargets[0].PrimaryColIdxInBat}
-		increaseRefCnt(pkexpr, 1, colRefCnt)
+
 		childRemapping, err := builder.remapAllColRefs(node.Children[0], step, colRefCnt, colRefBool, sinkColRef)
 		if err != nil {
 			return nil, err
 		}
 
-		tableDef := node.GetTableDef()
-		if tableDef.Partition != nil {
-			partitionIdx := len(preNode.ProjectList)
-			partitionExpr := DeepCopyExpr(tableDef.Partition.PartitionExpression)
-			preNode.ProjectList = append(preNode.ProjectList, partitionExpr)
+		for pkIdx, pkExpr := range pkExprs {
+			if newPos, ok := childRemapping.globalToLocal[oldPkPos[pkIdx]]; ok {
+				node.LockTargets[pkIdx].PrimaryColRelPos = newPos[0]
+				node.LockTargets[pkIdx].PrimaryColIdxInBat = newPos[1]
+			}
+			increaseRefCnt(pkExpr, -1, colRefCnt)
 
-			partTableIDs, _ := getPartTableIdsAndNames(builder.compCtx, preNode.GetObjRef(), tableDef)
-			node.LockTargets[0].IsPartitionTable = true
-			node.LockTargets[0].PartitionTableIds = partTableIDs
-			node.LockTargets[0].FilterColIdxInBat = int32(partitionIdx)
+			if partExprs[pkIdx] != nil {
+				if newPos, ok := childRemapping.globalToLocal[oldPartPos[pkIdx]]; ok {
+					node.LockTargets[pkIdx].FilterColRelPos = newPos[0]
+					node.LockTargets[pkIdx].FilterColIdxInBat = newPos[1]
+				}
+				increaseRefCnt(partExprs[pkIdx], -1, colRefCnt)
+			}
 		}
-
-		if newPos, ok := childRemapping.globalToLocal[oldPos]; ok {
-			node.LockTargets[0].PrimaryColIdxInBat = newPos[1]
-		}
-		increaseRefCnt(pkexpr, -1, colRefCnt)
 
 		for i, globalRef := range childRemapping.localToGlobal {
 			if colRefCnt[globalRef] == 0 {
@@ -1389,22 +1441,6 @@ func (builder *QueryBuilder) remapAllColRefs(nodeID int32, step int32, colRefCnt
 						RelPos: 0,
 						ColPos: int32(i),
 						Name:   builder.nameByColRef[globalRef],
-					},
-				},
-			})
-		}
-
-		if len(node.ProjectList) == 0 {
-			if len(childRemapping.localToGlobal) > 0 {
-				remapping.addColRef(childRemapping.localToGlobal[0])
-			}
-
-			node.ProjectList = append(node.ProjectList, &plan.Expr{
-				Typ: preNode.ProjectList[0].Typ,
-				Expr: &plan.Expr_Col{
-					Col: &plan.ColRef{
-						RelPos: 0,
-						ColPos: 0,
 					},
 				},
 			})
@@ -1475,6 +1511,174 @@ func (builder *QueryBuilder) remapAllColRefs(nodeID int32, step int32, colRefCnt
 			if err != nil {
 				return nil, err
 			}
+		}
+
+	case plan.Node_INSERT, plan.Node_DELETE:
+		childRemapping, err := builder.remapAllColRefs(node.Children[0], step, colRefCnt, colRefBool, sinkColRef)
+		if err != nil {
+			return nil, err
+		}
+
+		childProjList := builder.qry.Nodes[node.Children[0]].ProjectList
+		for i, globalRef := range childRemapping.localToGlobal {
+			if colRefCnt[globalRef] == 0 {
+				continue
+			}
+
+			remapping.addColRef(globalRef)
+
+			node.ProjectList = append(node.ProjectList, &plan.Expr{
+				Typ: childProjList[i].Typ,
+				Expr: &plan.Expr_Col{
+					Col: &plan.ColRef{
+						RelPos: 0,
+						ColPos: int32(i),
+						Name:   builder.nameByColRef[globalRef],
+					},
+				},
+			})
+		}
+
+		if len(node.ProjectList) == 0 {
+			if len(childRemapping.localToGlobal) > 0 {
+				remapping.addColRef(childRemapping.localToGlobal[0])
+			}
+
+			node.ProjectList = append(node.ProjectList, &plan.Expr{
+				Typ: childProjList[0].Typ,
+				Expr: &plan.Expr_Col{
+					Col: &plan.ColRef{
+						RelPos: 0,
+						ColPos: 0,
+					},
+				},
+			})
+		}
+
+	case plan.Node_MULTI_UPDATE:
+		for _, updateCtx := range node.UpdateCtxList {
+			for _, col := range updateCtx.InsertCols {
+				colRefCnt[[2]int32{col.RelPos, col.ColPos}]++
+			}
+
+			for _, col := range updateCtx.DeleteCols {
+				colRefCnt[[2]int32{col.RelPos, col.ColPos}]++
+			}
+		}
+
+		childRemapping, err := builder.remapAllColRefs(node.Children[0], step, colRefCnt, colRefBool, sinkColRef)
+		if err != nil {
+			return nil, err
+		}
+
+		remapInfo.tip = "UpdateCtxList"
+		for idx, updateCtx := range node.UpdateCtxList {
+			remapInfo.srcExprIdx = idx
+			for i, col := range updateCtx.InsertCols {
+				colRefCnt[[2]int32{col.RelPos, col.ColPos}]--
+				err := builder.remapSingleColRef(&updateCtx.InsertCols[i], childRemapping.globalToLocal, &remapInfo)
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			for i, col := range updateCtx.DeleteCols {
+				colRefCnt[[2]int32{col.RelPos, col.ColPos}]--
+				err := builder.remapSingleColRef(&updateCtx.DeleteCols[i], childRemapping.globalToLocal, &remapInfo)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+
+		childProjList := builder.qry.Nodes[node.Children[0]].ProjectList
+		for i, globalRef := range childRemapping.localToGlobal {
+			if colRefCnt[globalRef] == 0 {
+				continue
+			}
+
+			remapping.addColRef(globalRef)
+
+			node.ProjectList = append(node.ProjectList, &plan.Expr{
+				Typ: childProjList[i].Typ,
+				Expr: &plan.Expr_Col{
+					Col: &plan.ColRef{
+						RelPos: 0,
+						ColPos: int32(i),
+						Name:   builder.nameByColRef[globalRef],
+					},
+				},
+			})
+		}
+
+		if len(node.ProjectList) == 0 {
+			if len(childRemapping.localToGlobal) > 0 {
+				remapping.addColRef(childRemapping.localToGlobal[0])
+			}
+
+			node.ProjectList = append(node.ProjectList, &plan.Expr{
+				Typ: childProjList[0].Typ,
+				Expr: &plan.Expr_Col{
+					Col: &plan.ColRef{
+						RelPos: 0,
+						ColPos: 0,
+					},
+				},
+			})
+		}
+
+	case plan.Node_PRE_INSERT:
+		childRemapping, err := builder.remapAllColRefs(node.Children[0], step, colRefCnt, colRefBool, sinkColRef)
+		if err != nil {
+			return nil, err
+		}
+
+		childProjList := builder.qry.Nodes[node.Children[0]].ProjectList
+		for i, globalRef := range childRemapping.localToGlobal {
+			if colRefCnt[globalRef] == 0 {
+				continue
+			}
+
+			remapping.addColRef(globalRef)
+
+			node.ProjectList = append(node.ProjectList, &plan.Expr{
+				Typ: childProjList[i].Typ,
+				Expr: &plan.Expr_Col{
+					Col: &plan.ColRef{
+						RelPos: 0,
+						ColPos: int32(i),
+						Name:   builder.nameByColRef[globalRef],
+					},
+				},
+			})
+		}
+
+		if node.PreInsertCtx.CompPkeyExpr != nil {
+			globalRef := [2]int32{node.BindingTags[0], 0}
+			remapping.addColRef(globalRef)
+
+			node.ProjectList = append(node.ProjectList, &plan.Expr{
+				Typ: node.PreInsertCtx.CompPkeyExpr.Typ,
+				Expr: &plan.Expr_Col{
+					Col: &plan.ColRef{
+						RelPos: -1,
+						ColPos: 0,
+					},
+				},
+			})
+		} else if node.PreInsertCtx.ClusterByExpr != nil {
+			globalRef := [2]int32{node.BindingTags[0], 0}
+			remapping.addColRef(globalRef)
+
+			node.ProjectList = append(node.ProjectList, &plan.Expr{
+				Typ: node.PreInsertCtx.ClusterByExpr.Typ,
+				Expr: &plan.Expr_Col{
+					Col: &plan.ColRef{
+						RelPos: -1,
+						ColPos: 0,
+					},
+				},
+			})
 		}
 
 	default:
@@ -1580,7 +1784,33 @@ func (builder *QueryBuilder) rewriteStarApproxCount(nodeID int32) {
 	}
 }
 
+func (builder *QueryBuilder) removeUnnecessaryProjections(nodeID int32) int32 {
+	node := builder.qry.Nodes[nodeID]
+	if len(node.Children) == 0 {
+		return nodeID
+	}
+
+	for i, childID := range node.Children {
+		node.Children[i] = builder.removeUnnecessaryProjections(childID)
+	}
+
+	if node.NodeType != plan.Node_PROJECT {
+		return nodeID
+	}
+	childNodeID := node.Children[0]
+	childNode := builder.qry.Nodes[childNodeID]
+	if len(childNode.ProjectList) != 0 {
+		return nodeID
+	}
+	if childNode.NodeType == plan.Node_JOIN {
+		return nodeID
+	}
+	childNode.ProjectList = node.ProjectList
+	return childNodeID
+}
+
 func (builder *QueryBuilder) createQuery() (*Query, error) {
+	var err error
 	colRefBool := make(map[[2]int32]bool)
 	sinkColRef := make(map[[2]int32]int)
 
@@ -1625,7 +1855,6 @@ func (builder *QueryBuilder) createQuery() (*Query, error) {
 		// XXX: This will be removed soon, after merging implementation of all hash-join operators
 		builder.swapJoinChildren(rootID)
 		ReCalcNodeStats(rootID, builder, true, true, true)
-		builder.partitionPrune(rootID)
 
 		determineHashOnPK(rootID, builder)
 		determineShuffleMethod(rootID, builder)
@@ -1635,7 +1864,10 @@ func (builder *QueryBuilder) createQuery() (*Query, error) {
 		}
 		// after determine shuffle, be careful when calling ReCalcNodeStats again.
 		// needResetHashMapStats should always be false from here
-		rootID = builder.applyIndices(rootID, colRefCnt, make(map[[2]int32]*plan.Expr))
+		rootID, err = builder.applyIndices(rootID, colRefCnt, make(map[[2]int32]*plan.Expr))
+		if err != nil {
+			return nil, err
+		}
 		ReCalcNodeStats(rootID, builder, true, false, false)
 
 		builder.generateRuntimeFilters(rootID)
@@ -1651,6 +1883,9 @@ func (builder *QueryBuilder) createQuery() (*Query, error) {
 
 		builder.rewriteStarApproxCount(rootID)
 
+		if builder.qry.StmtType != plan.Query_SELECT {
+			builder.updateLocksOnDemand(rootID)
+		}
 		rootNode := builder.qry.Nodes[rootID]
 
 		for j := range rootNode.ProjectList {
@@ -1669,15 +1904,23 @@ func (builder *QueryBuilder) createQuery() (*Query, error) {
 	for i := len(builder.qry.Steps) - 1; i >= 0; i-- {
 		rootID := builder.qry.Steps[i]
 		rootNode := builder.qry.Nodes[rootID]
-		resultTag := rootNode.BindingTags[0]
 		colRefCnt := make(map[[2]int32]int)
-		for j := range rootNode.ProjectList {
-			colRefCnt[[2]int32{resultTag, int32(j)}] = 1
+		if len(rootNode.BindingTags) > 0 {
+			resultTag := rootNode.BindingTags[0]
+			for j := range rootNode.ProjectList {
+				colRefCnt[[2]int32{resultTag, int32(j)}] = 1
+			}
 		}
-		_, err := builder.remapAllColRefs(rootID, int32(i), colRefCnt, colRefBool, sinkColRef)
+		_, err = builder.remapAllColRefs(rootID, int32(i), colRefCnt, colRefBool, sinkColRef)
 		if err != nil {
 			return nil, err
 		}
+		builder.qry.Steps[i] = builder.removeUnnecessaryProjections(rootID)
+	}
+
+	err = builder.lockTableIfLockNoRowsAtTheEndForDelAndUpdate()
+	if err != nil {
+		return nil, err
 	}
 
 	//for i := 1; i < len(builder.qry.Steps); i++ {
@@ -1703,7 +1946,7 @@ func (builder *QueryBuilder) buildUnion(stmt *tree.UnionClause, astOrderBy tree.
 		case *tree.Select:
 			if sltClause, ok := sltStmt.Select.(*tree.SelectClause); ok {
 				sltClause.Distinct = true
-				return builder.buildSelect(sltStmt, ctx, isRoot)
+				return builder.bindSelect(sltStmt, ctx, isRoot)
 			} else {
 				// rewrite sltStmt to select distinct * from (sltStmt) a
 				tmpSltStmt := &tree.Select{
@@ -1729,14 +1972,14 @@ func (builder *QueryBuilder) buildUnion(stmt *tree.UnionClause, astOrderBy tree.
 					Limit:   astLimit,
 					OrderBy: astOrderBy,
 				}
-				return builder.buildSelect(tmpSltStmt, ctx, isRoot)
+				return builder.bindSelect(tmpSltStmt, ctx, isRoot)
 			}
 
 		case *tree.SelectClause:
 			if !sltStmt.Distinct {
 				sltStmt.Distinct = true
 			}
-			return builder.buildSelect(&tree.Select{Select: sltStmt, Limit: astLimit, OrderBy: astOrderBy}, ctx, isRoot)
+			return builder.bindSelect(&tree.Select{Select: sltStmt, Limit: astLimit, OrderBy: astOrderBy}, ctx, isRoot)
 		}
 	}
 
@@ -1751,14 +1994,13 @@ func (builder *QueryBuilder) buildUnion(stmt *tree.UnionClause, astOrderBy tree.
 		subCtx := NewBindContext(builder, ctx)
 		subCtx.unionSelect = subCtx.initSelect
 		if slt, ok := sltStmt.(*tree.Select); ok {
-			nodeID, err = builder.buildSelect(slt, subCtx, isRoot)
+			nodeID, err = builder.bindSelect(slt, subCtx, isRoot)
 		} else {
-			nodeID, err = builder.buildSelect(&tree.Select{Select: sltStmt}, subCtx, isRoot)
+			nodeID, err = builder.bindSelect(&tree.Select{Select: sltStmt}, subCtx, isRoot)
 		}
 		if err != nil {
 			return 0, err
 		}
-		ctx.views = append(ctx.views, subCtx.views...)
 
 		if idx == 0 {
 			projectLength = len(builder.qry.Nodes[nodeID].ProjectList)
@@ -1908,6 +2150,7 @@ func (builder *QueryBuilder) buildUnion(stmt *tree.UnionClause, astOrderBy tree.
 		ctx.aliasMap[v] = &aliasItem{
 			idx: int32(i),
 		}
+		ctx.aliasFrequency[v]++
 		builder.nameByColRef[[2]int32{ctx.projectTag, int32(i)}] = v
 	}
 	for i, expr := range firstSelectProjectNode.ProjectList {
@@ -2069,7 +2312,222 @@ func (bc *BindContext) generateForceWinSpecList() ([]*plan.Expr, error) {
 	return windowsSpecList, nil
 }
 
-func (builder *QueryBuilder) buildSelect(stmt *tree.Select, ctx *BindContext, isRoot bool) (int32, error) {
+func (builder *QueryBuilder) bindNoRecursiveCte(
+	ctx *BindContext,
+	s *tree.Select,
+	cteRef *CTERef,
+	table string) (nodeID int32, err error) {
+	subCtx := NewBindContext(builder, ctx)
+	subCtx.normalCTE = true
+	subCtx.maskedCTEs = cteRef.maskedCTEs
+	subCtx.cteName = table
+	subCtx.snapshot = cteRef.snapshot
+	subCtx.recordCteInBinding(table, cteRef)
+	cteRef.isRecursive = false
+
+	oldSnapshot := builder.compCtx.GetSnapshot()
+	builder.compCtx.SetSnapshot(subCtx.snapshot)
+	nodeID, err = builder.bindSelect(s, subCtx, false)
+	builder.compCtx.SetSnapshot(oldSnapshot)
+	if err != nil {
+		return
+	}
+
+	if subCtx.hasSingleRow {
+		ctx.hasSingleRow = true
+	}
+
+	cols := cteRef.ast.Name.Cols
+
+	if len(cols) > 0 && (len(cols) != len(builder.qry.Nodes[nodeID].ProjectList) ||
+		len(cols) != len(subCtx.headings)) {
+		return 0, moerr.NewSyntaxErrorf(builder.GetContext(), "table %q has %d columns available but %d columns specified", table, len(builder.qry.Nodes[nodeID].ProjectList), len(cteRef.ast.Name.Cols))
+	}
+
+	for i, col := range cols {
+		subCtx.headings[i] = string(col)
+	}
+	return nodeID, nil
+}
+
+func (builder *QueryBuilder) bindRecursiveCte(
+	ctx *BindContext,
+	s *tree.Select,
+	cteRef *CTERef,
+	table string,
+	left *tree.SelectStatement,
+	stmts []tree.SelectStatement,
+	checkOnly bool,
+) (nodeID int32, err error) {
+	if len(s.OrderBy) > 0 {
+		return 0, moerr.NewParseError(builder.GetContext(), "not support ORDER BY in recursive cte")
+	}
+	// initial statement
+	initCtx := NewBindContext(builder, ctx)
+	initCtx.initSelect = true
+	initCtx.sinkTag = builder.genNewTag()
+	initLastNodeID, err1 := builder.bindSelect(&tree.Select{Select: *left}, initCtx, false)
+	if err1 != nil {
+		err = err1
+		return
+	}
+	projects := builder.qry.Nodes[builder.qry.Nodes[initLastNodeID].Children[0]].ProjectList
+	// recursive statement
+	recursiveLastNodeID := initLastNodeID
+	initSourceStep := int32(len(builder.qry.Steps))
+	recursiveSteps := make([]int32, len(stmts))
+	recursiveNodeIDs := make([]int32, len(stmts))
+
+	for i, r := range stmts {
+		subCtx := NewBindContext(builder, ctx)
+		subCtx.maskedCTEs = cteRef.maskedCTEs
+		subCtx.cteName = table
+		subCtx.recSelect = true
+		subCtx.sinkTag = initCtx.sinkTag
+		subCtx.cteByName = make(map[string]*CTERef)
+		subCtx.cteByName[table] = cteRef
+		err = builder.addBinding(initLastNodeID, *cteRef.ast.Name, subCtx)
+		if err != nil {
+			return
+		}
+		_ = builder.appendStep(recursiveLastNodeID)
+		subCtx.recRecursiveScanNodeId = appendRecursiveScanNode(builder, subCtx, initSourceStep, subCtx.sinkTag)
+		recursiveNodeIDs[i] = subCtx.recRecursiveScanNodeId
+		recursiveSteps[i] = int32(len(builder.qry.Steps))
+		recursiveLastNodeID, err = builder.bindSelect(&tree.Select{Select: r}, subCtx, false)
+		if err != nil {
+			return
+		}
+		if !checkOnly {
+			// some check
+			n := builder.qry.Nodes[builder.qry.Nodes[recursiveLastNodeID].Children[0]]
+			if len(projects) != len(n.ProjectList) {
+				return 0, moerr.NewParseErrorf(builder.GetContext(), "recursive cte %s projection error", table)
+			}
+			for i := range n.ProjectList {
+				projTyp := projects[i].GetTyp()
+				n.ProjectList[i], err = makePlan2CastExpr(builder.GetContext(), n.ProjectList[i], projTyp)
+				if err != nil {
+					return
+				}
+			}
+			if subCtx.hasSingleRow {
+				ctx.hasSingleRow = true
+			}
+
+			cols := cteRef.ast.Name.Cols
+
+			if len(cols) > len(subCtx.headings) {
+				return 0, moerr.NewSyntaxErrorf(builder.GetContext(), "table %q has %d columns available but %d columns specified", table, len(subCtx.headings), len(cols))
+			}
+
+			for i, col := range cols {
+				subCtx.headings[i] = string(col)
+			}
+		}
+	}
+	if checkOnly {
+		builder.qry.Steps = builder.qry.Steps[:0]
+		return
+	}
+
+	// union all statement
+	var limitExpr *Expr
+	var offsetExpr *Expr
+	if s.Limit != nil {
+		limitBinder := NewLimitBinder(builder, ctx)
+		if s.Limit.Offset != nil {
+			offsetExpr, err = limitBinder.BindExpr(s.Limit.Offset, 0, true)
+			if err != nil {
+				return 0, err
+			}
+		}
+		if s.Limit.Count != nil {
+			limitExpr, err = limitBinder.BindExpr(s.Limit.Count, 0, true)
+			if err != nil {
+				return 0, err
+			}
+
+			if cExpr, ok := limitExpr.Expr.(*plan.Expr_Lit); ok {
+				if c, ok := cExpr.Lit.Value.(*plan.Literal_U64Val); ok {
+					ctx.hasSingleRow = c.U64Val == 1
+				}
+			}
+		}
+	}
+
+	_ = builder.appendStep(recursiveLastNodeID)
+	nodeID = appendCTEScanNode(builder, ctx, initSourceStep, initCtx.sinkTag)
+	if limitExpr != nil || offsetExpr != nil {
+		node := builder.qry.Nodes[nodeID]
+		node.Limit = limitExpr
+		node.Offset = offsetExpr
+	}
+	for i := 0; i < len(recursiveSteps); i++ {
+		builder.qry.Nodes[nodeID].SourceStep = append(builder.qry.Nodes[nodeID].SourceStep, recursiveSteps[i])
+	}
+	curStep := int32(len(builder.qry.Steps))
+	for _, id := range recursiveNodeIDs {
+		builder.qry.Nodes[id].SourceStep[0] = curStep
+	}
+	unionAllLastNodeID := appendSinkNodeWithTag(builder, ctx, nodeID, ctx.sinkTag)
+	builder.qry.Nodes[unionAllLastNodeID].RecursiveSink = true
+
+	// final statement
+	ctx.finalSelect = true
+	ctx.sinkTag = initCtx.sinkTag
+	err = builder.addBinding(initLastNodeID, *cteRef.ast.Name, ctx)
+	if err != nil {
+		return
+	}
+	sourceStep := builder.appendStep(unionAllLastNodeID)
+	nodeID = appendSinkScanNodeWithTag(builder, ctx, sourceStep, initCtx.sinkTag)
+	return
+}
+
+func (builder *QueryBuilder) bindCte(
+	ctx *BindContext,
+	stmt tree.NodeFormatter,
+	cteRef *CTERef,
+	table string,
+	checkOnly bool,
+) (nodeID int32, err error) {
+	var s *tree.Select
+	switch stmt := cteRef.ast.Stmt.(type) {
+	case *tree.Select:
+		s = getSelectTree(stmt)
+	case *tree.ParenSelect:
+		s = getSelectTree(stmt.Select)
+	default:
+		err = moerr.NewParseErrorf(builder.GetContext(), "unexpected statement: '%v'", tree.String(stmt, dialect.MYSQL))
+		return
+	}
+
+	var left *tree.SelectStatement
+	var stmts []tree.SelectStatement
+	left, err = builder.splitRecursiveMember(&s.Select, table, &stmts)
+	if err != nil {
+		return 0, err
+	}
+	isR := len(stmts) > 0
+
+	if isR && !cteRef.isRecursive {
+		err = moerr.NewParseErrorf(builder.GetContext(), "not declare RECURSIVE: '%v'", tree.String(stmt, dialect.MYSQL))
+	} else if !isR {
+		nodeID, err = builder.bindNoRecursiveCte(ctx, s, cteRef, table)
+		if err != nil {
+			return 0, err
+		}
+	} else {
+		nodeID, err = builder.bindRecursiveCte(ctx, s, cteRef, table, left, stmts, checkOnly)
+		if err != nil {
+			return 0, err
+		}
+	}
+	return
+}
+
+func (builder *QueryBuilder) preprocessCte(stmt *tree.Select, ctx *BindContext) error {
 	// preprocess CTEs
 	if stmt.With != nil {
 		ctx.cteByName = make(map[string]*CTERef)
@@ -2081,7 +2539,7 @@ func (builder *QueryBuilder) buildSelect(stmt *tree.Select, ctx *BindContext, is
 
 			name := string(cte.Name.Alias)
 			if _, ok := ctx.cteByName[name]; ok {
-				return 0, moerr.NewSyntaxErrorf(builder.GetContext(), "WITH query name %q specified more than once", name)
+				return moerr.NewSyntaxErrorf(builder.GetContext(), "WITH query name %q specified more than once", name)
 			}
 
 			var maskedCTEs map[string]bool
@@ -2092,7 +2550,7 @@ func (builder *QueryBuilder) buildSelect(stmt *tree.Select, ctx *BindContext, is
 				}
 			}
 
-			maskedNames = append(maskedNames, name)
+			maskedNames[i] = name
 
 			ctx.cteByName[name] = &CTERef{
 				ast:         cte,
@@ -2101,98 +2559,44 @@ func (builder *QueryBuilder) buildSelect(stmt *tree.Select, ctx *BindContext, is
 			}
 		}
 
-		// Try to do binding for CTE at declaration
+		/*
+			Try to do binding for CTE at declaration.
+
+			CORNER CASE:
+
+				create table t2 (a int, b int);
+				create table t3 (a int);
+
+				//mo and postgrsql, oracle, sqlserver, mysql will report error about t3 not in FROM
+				//but duckdb will not report error. duckdb treat it as related subquery on t3.
+				with qn as (select * from t2 where t2.b=t3.a)
+				select * from t3 where exists (select * from qn);
+		*/
 		for _, cte := range stmt.With.CTEs {
 
 			table := string(cte.Name.Alias)
 			cteRef := ctx.cteByName[table]
 
-			var err error
-			var s *tree.Select
-			switch stmt := cte.Stmt.(type) {
-			case *tree.Select:
-				s = stmt
-
-			case *tree.ParenSelect:
-				s = stmt.Select
-
-			default:
-				return 0, moerr.NewParseErrorf(builder.GetContext(), "unexpected statement: '%v'", tree.String(stmt, dialect.MYSQL))
-			}
-
-			var left *tree.SelectStatement
-			var stmts []tree.SelectStatement
-			left, err = builder.splitRecursiveMember(&s.Select, table, &stmts)
+			_, err := builder.bindCte(ctx, stmt, cteRef, table, true)
 			if err != nil {
-				return 0, err
-			}
-			isR := len(stmts) > 0
-
-			if isR && !cteRef.isRecursive {
-				return 0, moerr.NewParseErrorf(builder.GetContext(), "not declare RECURSIVE: '%v'", tree.String(stmt, dialect.MYSQL))
-			} else if !isR {
-				subCtx := NewBindContext(builder, ctx)
-				subCtx.normalCTE = true
-				subCtx.cteName = table
-				subCtx.maskedCTEs = cteRef.maskedCTEs
-				cteRef.isRecursive = false
-
-				oldSnapshot := builder.compCtx.GetSnapshot()
-				builder.compCtx.SetSnapshot(subCtx.snapshot)
-				nodeID, err := builder.buildSelect(s, subCtx, false)
-				builder.compCtx.SetSnapshot(oldSnapshot)
-				if err != nil {
-					return 0, err
-				}
-				if len(cteRef.ast.Name.Cols) > 0 && len(cteRef.ast.Name.Cols) != len(builder.qry.Nodes[nodeID].ProjectList) {
-					return 0, moerr.NewSyntaxErrorf(builder.GetContext(), "table %q has %d columns available but %d columns specified", table, len(builder.qry.Nodes[nodeID].ProjectList), len(cteRef.ast.Name.Cols))
-				}
-				ctx.views = append(ctx.views, subCtx.views...)
-			} else {
-				initCtx := NewBindContext(builder, ctx)
-				initCtx.initSelect = true
-				initCtx.sinkTag = builder.genNewTag()
-				initCtx.isTryBindingCTE = true
-				initLastNodeID, err := builder.buildSelect(&tree.Select{Select: *left}, initCtx, false)
-				if err != nil {
-					return 0, err
-				}
-				if len(cteRef.ast.Name.Cols) > 0 && len(cteRef.ast.Name.Cols) != len(builder.qry.Nodes[initLastNodeID].ProjectList) {
-					return 0, moerr.NewSyntaxErrorf(builder.GetContext(), "table %q has %d columns available but %d columns specified", table, len(builder.qry.Nodes[initLastNodeID].ProjectList), len(cteRef.ast.Name.Cols))
-				}
-				//ctx.views = append(ctx.views, initCtx.views...)
-
-				recursiveNodeId := initLastNodeID
-				for _, r := range stmts {
-					subCtx := NewBindContext(builder, ctx)
-					subCtx.maskedCTEs = cteRef.maskedCTEs
-					subCtx.recSelect = true
-					subCtx.sinkTag = builder.genNewTag()
-					subCtx.isTryBindingCTE = true
-					subCtx.cteByName = make(map[string]*CTERef)
-					subCtx.cteByName[table] = cteRef
-					err = builder.addBinding(initLastNodeID, *cteRef.ast.Name, subCtx)
-					if err != nil {
-						return 0, err
-					}
-					sourceStep := builder.appendStep(recursiveNodeId)
-					nodeID := appendRecursiveScanNode(builder, subCtx, sourceStep, subCtx.sinkTag)
-					subCtx.recRecursiveScanNodeId = nodeID
-					recursiveNodeId, err = builder.buildSelect(&tree.Select{Select: r}, subCtx, false)
-					if err != nil {
-						return 0, err
-					}
-					//ctx.views = append(ctx.views, subCtx.views...)
-				}
-				builder.qry.Steps = builder.qry.Steps[:0]
+				return err
 			}
 		}
+	}
+	return nil
+}
+
+func (builder *QueryBuilder) bindSelect(stmt *tree.Select, ctx *BindContext, isRoot bool) (int32, error) {
+	var err error
+	// preprocess CTEs
+	err = builder.preprocessCte(stmt, ctx)
+	if err != nil {
+		return 0, err
 	}
 
 	var clause *tree.SelectClause
 	var valuesClause *tree.ValuesClause
 	var nodeID int32
-	var err error
 	astOrderBy := stmt.OrderBy
 	astLimit := stmt.Limit
 	astTimeWindow := stmt.TimeWindow
@@ -2222,6 +2626,13 @@ func (builder *QueryBuilder) buildSelect(stmt *tree.Select, ctx *BindContext, is
 				astLimit = selectClause.Select.Limit
 			}
 			stmt = selectClause.Select
+
+			//stmt may be replaced above.
+			//do preprocess CTEs again
+			err = builder.preprocessCte(stmt, ctx)
+			if err != nil {
+				return 0, err
+			}
 		} else {
 			break
 		}
@@ -2309,12 +2720,10 @@ func (builder *QueryBuilder) buildSelect(stmt *tree.Select, ctx *BindContext, is
 	var timeWindowGroup *plan.Expr
 
 	if clause == nil {
-		proc := builder.compCtx.GetProcess()
 		rowCount := len(valuesClause.Rows)
 		if len(valuesClause.Rows) == 0 {
 			return 0, moerr.NewInternalError(builder.GetContext(), "values statement have not rows")
 		}
-		bat := batch.NewWithSize(len(valuesClause.Rows[0]))
 		strTyp := plan.Type{
 			Id:          int32(types.T_text),
 			NotNullable: false,
@@ -2344,14 +2753,8 @@ func (builder *QueryBuilder) buildSelect(stmt *tree.Select, ctx *BindContext, is
 		}
 		ctx.binder = NewWhereBinder(builder, ctx)
 		for i := 0; i < colCount; i++ {
-			vec := vector.NewVec(types.T_text.ToType())
-			bat.Vecs[i] = vec
 			rowSetData.Cols[i] = &plan.ColData{}
 			for j := 0; j < rowCount; j++ {
-				if err := vector.AppendBytes(vec, nil, true, proc.Mp()); err != nil {
-					bat.Clean(proc.Mp())
-					return 0, err
-				}
 				planExpr, err := ctx.binder.BindExpr(valuesClause.Rows[j][i], 0, true)
 				if err != nil {
 					return 0, err
@@ -2361,9 +2764,7 @@ func (builder *QueryBuilder) buildSelect(stmt *tree.Select, ctx *BindContext, is
 					return 0, err
 				}
 				rowSetData.Cols[i].Data = append(rowSetData.Cols[i].Data, &plan.RowsetExpr{
-					RowPos: int32(j),
-					Expr:   planExpr,
-					Pos:    -1,
+					Expr: planExpr,
 				})
 			}
 
@@ -2379,7 +2780,6 @@ func (builder *QueryBuilder) buildSelect(stmt *tree.Select, ctx *BindContext, is
 				Typ:   strTyp,
 			}
 		}
-		bat.SetRowCount(rowCount)
 		nodeUUID, _ := uuid.NewV7()
 		nodeID = builder.appendNode(&plan.Node{
 			NodeType:     plan.Node_VALUE_SCAN,
@@ -2389,11 +2789,6 @@ func (builder *QueryBuilder) buildSelect(stmt *tree.Select, ctx *BindContext, is
 			Uuid:         nodeUUID[:],
 			NotCacheable: true,
 		}, ctx)
-		if builder.isPrepareStatement {
-			proc.SetPrepareBatch(bat)
-		} else {
-			proc.SetValueScanBatch(nodeUUID, bat)
-		}
 
 		if err = builder.addBinding(nodeID, tree.AliasClause{Alias: "_valuescan"}, ctx); err != nil {
 			return 0, err
@@ -2425,19 +2820,12 @@ func (builder *QueryBuilder) buildSelect(stmt *tree.Select, ctx *BindContext, is
 		}
 
 		// build FROM clause
-		nodeID, err = builder.buildFrom(clause.From.Tables, ctx)
+		nodeID, err = builder.buildFrom(clause.From.Tables, ctx, isRoot)
 		if err != nil {
 			return 0, err
 		}
 
 		ctx.binder = NewWhereBinder(builder, ctx)
-		if !ctx.isTryBindingCTE {
-			if ctx.initSelect {
-				clause.Exprs = append(clause.Exprs, makeZeroRecursiveLevel())
-			} else if ctx.recSelect {
-				clause.Exprs = append(clause.Exprs, makePlusRecursiveLevel(ctx.cteName, ctx.lower))
-			}
-		}
 		// unfold stars and generate headings
 		selectList, err = appendSelectList(builder, ctx, selectList, clause.Exprs...)
 		if err != nil {
@@ -2451,20 +2839,22 @@ func (builder *QueryBuilder) buildSelect(stmt *tree.Select, ctx *BindContext, is
 		if builder.isForUpdate {
 			tableDef := builder.qry.Nodes[nodeID].GetTableDef()
 			pkPos, pkTyp := getPkPos(tableDef, false)
+			lastTag := builder.qry.Nodes[nodeID].BindingTags[0]
 			lockTarget := &plan.LockTarget{
 				TableId:            tableDef.TblId,
 				PrimaryColIdxInBat: int32(pkPos),
+				PrimaryColRelPos:   lastTag,
 				PrimaryColTyp:      pkTyp,
 				Block:              true,
 				RefreshTsIdxInBat:  -1, //unsupport now
-				FilterColIdxInBat:  -1, //unsupport now
 			}
+
 			lockNode = &Node{
 				NodeType:    plan.Node_LOCK_OP,
 				Children:    []int32{nodeID},
 				TableDef:    tableDef,
 				LockTargets: []*plan.LockTarget{lockTarget},
-				BindingTags: []int32{builder.genNewTag(), builder.qry.Nodes[nodeID].BindingTags[0]},
+				BindingTags: []int32{builder.genNewTag()},
 			}
 
 			if astLimit == nil {
@@ -2474,22 +2864,6 @@ func (builder *QueryBuilder) buildSelect(stmt *tree.Select, ctx *BindContext, is
 
 		// rewrite right join to left join
 		builder.rewriteRightJoinToLeftJoin(nodeID)
-
-		if !ctx.isTryBindingCTE && ctx.recSelect {
-			f := &tree.FuncExpr{
-				Func: tree.FuncName2ResolvableFunctionReference(tree.NewUnresolvedColName(moCheckRecursionLevelFun)),
-				Exprs: tree.Exprs{tree.NewComparisonExpr(
-					tree.LESS_THAN,
-					tree.NewUnresolvedName(tree.NewCStr(ctx.cteName, ctx.lower), tree.NewCStr(moRecursiveLevelCol, 1)),
-					tree.NewNumVal(int64(moDefaultRecursionMax), fmt.Sprintf("%d", moDefaultRecursionMax), false, tree.P_int64),
-				)},
-			}
-			if clause.Where != nil {
-				clause.Where = &tree.Where{Type: tree.AstWhere, Expr: tree.NewAndExpr(clause.Where.Expr, f)}
-			} else {
-				clause.Where = &tree.Where{Type: tree.AstWhere, Expr: f}
-			}
-		}
 		if clause.Where != nil {
 			whereList, err := splitAndBindCondition(clause.Where.Expr, NoAlias, ctx)
 			if err != nil {
@@ -2551,7 +2925,18 @@ func (builder *QueryBuilder) buildSelect(stmt *tree.Select, ctx *BindContext, is
 					idx:     int32(i),
 					astExpr: selectList[i].Expr,
 				}
+				ctx.aliasFrequency[selectList[i].As.Compare()]++
 			}
+
+			field := SelectField{
+				ast: selectList[i].Expr,
+				pos: int32(i),
+			}
+
+			if selectList[i].As != nil && !selectList[i].As.Empty() {
+				field.aliasName = selectList[i].As.Compare()
+			}
+			ctx.projectByAst = append(ctx.projectByAst, field)
 		}
 
 		if astTimeWindow != nil {
@@ -3254,9 +3639,6 @@ func appendSelectList(
 				return nil, err
 			}
 			for i, name := range names {
-				if ctx.finalSelect && name == moRecursiveLevelCol {
-					continue
-				}
 				selectList = append(selectList, cols[i])
 				ctx.headings = append(ctx.headings, name)
 			}
@@ -3408,6 +3790,9 @@ func (builder *QueryBuilder) appendNode(node *plan.Node, ctx *BindContext) int32
 	builder.qry.Nodes = append(builder.qry.Nodes, node)
 	builder.ctxByNode = append(builder.ctxByNode, ctx)
 	ReCalcNodeStats(nodeID, builder, false, true, true)
+	for _, tag := range node.BindingTags {
+		builder.tag2NodeID[tag] = nodeID
+	}
 	return nodeID
 }
 
@@ -3424,7 +3809,7 @@ func (builder *QueryBuilder) rewriteRightJoinToLeftJoin(nodeID int32) {
 	}
 }
 
-func (builder *QueryBuilder) buildFrom(stmt tree.TableExprs, ctx *BindContext) (int32, error) {
+func (builder *QueryBuilder) buildFrom(stmt tree.TableExprs, ctx *BindContext, isRoot bool) (int32, error) {
 	if len(stmt) == 1 {
 		return builder.buildTable(stmt[0], ctx, -1, nil)
 	}
@@ -3556,6 +3941,70 @@ func getSelectTree(s *tree.Select) *tree.Select {
 	}
 }
 
+func (builder *QueryBuilder) bindView(
+	ctx *BindContext,
+	tableDef *TableDef,
+	snapshot *Snapshot,
+	obj *ObjectRef,
+	schema, table string,
+) (nodeID int32, err error) {
+	viewDefString := tableDef.ViewSql.View
+	if viewDefString == "" {
+		return 0, nil
+	}
+	viewCtx := NewBindContext(builder, nil)
+	viewCtx.snapshot = snapshot
+	viewCtx.lower = ctx.lower
+
+	viewData := ViewData{}
+	err = json.Unmarshal([]byte(viewDefString), &viewData)
+	if err != nil {
+		return 0, err
+	}
+
+	originStmts, err := mysql.Parse(builder.GetContext(), viewData.Stmt, ctx.lower)
+	defer func() {
+		for _, s := range originStmts {
+			s.Free()
+		}
+	}()
+	if err != nil {
+		return 0, err
+	}
+	viewStmt, ok := originStmts[0].(*tree.CreateView)
+
+	// No createview stmt, check alterview stmt.
+	if !ok {
+		alterstmt, ok := originStmts[0].(*tree.AlterView)
+		viewStmt = &tree.CreateView{}
+		if !ok {
+			return 0, moerr.NewParseError(builder.GetContext(), "can not get view statement")
+		}
+		viewStmt.Name = alterstmt.Name
+		viewStmt.ColNames = alterstmt.ColNames
+		viewStmt.AsSource = alterstmt.AsSource
+	}
+
+	defaultDatabase := viewData.DefaultDatabase
+	if obj.PubInfo != nil {
+		defaultDatabase = obj.SubscriptionName
+	}
+	viewCtx.defaultDatabase = defaultDatabase
+
+	if viewCtx.viewInBinding(schema, table, viewStmt) {
+		return 0, moerr.NewParseErrorf(builder.GetContext(), "view %s reference itself", table)
+	}
+	viewCtx.cteName = table
+
+	nodeID, err = builder.bindSelect(viewStmt.AsSource, viewCtx, false)
+	if err != nil {
+		return
+	}
+	ctx.recordViews([]string{schema + "#" + table})
+	ctx.recordViews(viewCtx.views)
+	return
+}
+
 func (builder *QueryBuilder) buildTable(stmt tree.TableExpr, ctx *BindContext, preNodeId int32, leftCtx *BindContext) (nodeID int32, err error) {
 	switch tbl := stmt.(type) {
 	case *tree.Select:
@@ -3563,7 +4012,7 @@ func (builder *QueryBuilder) buildTable(stmt tree.TableExpr, ctx *BindContext, p
 			return 0, moerr.NewInternalError(builder.GetContext(), "not support select from derived table for update")
 		}
 		subCtx := NewBindContext(builder, ctx)
-		nodeID, err = builder.buildSelect(tbl, subCtx, false)
+		nodeID, err = builder.bindSelect(tbl, subCtx, false)
 		if subCtx.isCorrelated {
 			return 0, moerr.NewNYI(builder.GetContext(), "correlated subquery in FROM clause")
 		}
@@ -3571,7 +4020,6 @@ func (builder *QueryBuilder) buildTable(stmt tree.TableExpr, ctx *BindContext, p
 		if subCtx.hasSingleRow {
 			ctx.hasSingleRow = true
 		}
-		ctx.views = append(ctx.views, subCtx.views...)
 
 	case *tree.TableName:
 		schema := string(tbl.SchemaName)
@@ -3613,190 +4061,17 @@ func (builder *QueryBuilder) buildTable(stmt tree.TableExpr, ctx *BindContext, p
 		} else if len(schema) == 0 {
 			cteRef := ctx.findCTE(table)
 			if cteRef != nil {
+				if ctx.cteInBinding(table) {
+					return 0, moerr.NewParseErrorf(builder.GetContext(), "cte %s reference itself", table)
+				}
 				if ctx.recSelect {
 					nodeID = ctx.recRecursiveScanNodeId
 					return
 				}
 
-				var s *tree.Select
-				switch stmt := cteRef.ast.Stmt.(type) {
-				case *tree.Select:
-					s = getSelectTree(stmt)
-				case *tree.ParenSelect:
-					s = getSelectTree(stmt.Select)
-				default:
-					err = moerr.NewParseErrorf(builder.GetContext(), "unexpected statement: '%v'", tree.String(stmt, dialect.MYSQL))
-					return
-				}
-
-				var left *tree.SelectStatement
-				var stmts []tree.SelectStatement
-				left, err = builder.splitRecursiveMember(&s.Select, table, &stmts)
+				nodeID, err = builder.bindCte(ctx, stmt, cteRef, table, false)
 				if err != nil {
 					return 0, err
-				}
-				isR := len(stmts) > 0
-
-				if isR && !cteRef.isRecursive {
-					err = moerr.NewParseErrorf(builder.GetContext(), "not declare RECURSIVE: '%v'", tree.String(stmt, dialect.MYSQL))
-				} else if !isR {
-					subCtx := NewBindContext(builder, ctx)
-					subCtx.maskedCTEs = cteRef.maskedCTEs
-					subCtx.cteName = table
-					subCtx.snapshot = cteRef.snapshot
-					//reset defaultDatabase
-					if len(cteRef.defaultDatabase) > 0 {
-						subCtx.defaultDatabase = cteRef.defaultDatabase
-					}
-					cteRef.isRecursive = false
-
-					oldSnapshot := builder.compCtx.GetSnapshot()
-					builder.compCtx.SetSnapshot(subCtx.snapshot)
-					nodeID, err = builder.buildSelect(s, subCtx, false)
-					builder.compCtx.SetSnapshot(oldSnapshot)
-					if err != nil {
-						return
-					}
-
-					if subCtx.hasSingleRow {
-						ctx.hasSingleRow = true
-					}
-					ctx.views = append(ctx.views, subCtx.views...)
-
-					cols := cteRef.ast.Name.Cols
-
-					if len(cols) > len(subCtx.headings) {
-						return 0, moerr.NewSyntaxErrorf(builder.GetContext(), "table %q has %d columns available but %d columns specified", table, len(subCtx.headings), len(cols))
-					}
-
-					for i, col := range cols {
-						subCtx.headings[i] = string(col)
-					}
-				} else {
-					if len(s.OrderBy) > 0 {
-						return 0, moerr.NewParseError(builder.GetContext(), "not support ORDER BY in recursive cte")
-					}
-					// initial statement
-					initCtx := NewBindContext(builder, ctx)
-					initCtx.initSelect = true
-					initCtx.sinkTag = builder.genNewTag()
-					initLastNodeID, err1 := builder.buildSelect(&tree.Select{Select: *left}, initCtx, false)
-					if err1 != nil {
-						err = err1
-						return
-					}
-					projects := builder.qry.Nodes[builder.qry.Nodes[initLastNodeID].Children[0]].ProjectList
-					// recursive statement
-					recursiveLastNodeID := initLastNodeID
-					initSourceStep := int32(len(builder.qry.Steps))
-					recursiveSteps := make([]int32, len(stmts))
-					recursiveNodeIDs := make([]int32, len(stmts))
-					if len(cteRef.ast.Name.Cols) > 0 {
-						cteRef.ast.Name.Cols = append(cteRef.ast.Name.Cols, moRecursiveLevelCol)
-					}
-
-					for i, r := range stmts {
-						subCtx := NewBindContext(builder, ctx)
-						subCtx.maskedCTEs = cteRef.maskedCTEs
-						subCtx.cteName = table
-						if len(cteRef.defaultDatabase) > 0 {
-							subCtx.defaultDatabase = cteRef.defaultDatabase
-						}
-						subCtx.recSelect = true
-						subCtx.sinkTag = initCtx.sinkTag
-						subCtx.cteByName = make(map[string]*CTERef)
-						subCtx.cteByName[table] = cteRef
-						err = builder.addBinding(initLastNodeID, *cteRef.ast.Name, subCtx)
-						if err != nil {
-							return
-						}
-						_ = builder.appendStep(recursiveLastNodeID)
-						subCtx.recRecursiveScanNodeId = appendRecursiveScanNode(builder, subCtx, initSourceStep, subCtx.sinkTag)
-						recursiveNodeIDs[i] = subCtx.recRecursiveScanNodeId
-						recursiveSteps[i] = int32(len(builder.qry.Steps))
-						recursiveLastNodeID, err = builder.buildSelect(&tree.Select{Select: r}, subCtx, false)
-						if err != nil {
-							return
-						}
-						// some check
-						n := builder.qry.Nodes[builder.qry.Nodes[recursiveLastNodeID].Children[0]]
-						if len(projects) != len(n.ProjectList) {
-							return 0, moerr.NewParseErrorf(builder.GetContext(), "recursive cte %s projection error", table)
-						}
-						for i := range n.ProjectList {
-							projTyp := projects[i].GetTyp()
-							n.ProjectList[i], err = makePlan2CastExpr(builder.GetContext(), n.ProjectList[i], projTyp)
-							if err != nil {
-								return
-							}
-						}
-						if subCtx.hasSingleRow {
-							ctx.hasSingleRow = true
-						}
-
-						cols := cteRef.ast.Name.Cols
-
-						if len(cols) > len(subCtx.headings) {
-							return 0, moerr.NewSyntaxErrorf(builder.GetContext(), "table %q has %d columns available but %d columns specified", table, len(subCtx.headings), len(cols))
-						}
-
-						for i, col := range cols {
-							subCtx.headings[i] = string(col)
-						}
-					}
-					// union all statement
-					var limitExpr *Expr
-					var offsetExpr *Expr
-					if s.Limit != nil {
-						limitBinder := NewLimitBinder(builder, ctx)
-						if s.Limit.Offset != nil {
-							offsetExpr, err = limitBinder.BindExpr(s.Limit.Offset, 0, true)
-							if err != nil {
-								return 0, err
-							}
-						}
-						if s.Limit.Count != nil {
-							limitExpr, err = limitBinder.BindExpr(s.Limit.Count, 0, true)
-							if err != nil {
-								return 0, err
-							}
-
-							if cExpr, ok := limitExpr.Expr.(*plan.Expr_Lit); ok {
-								if c, ok := cExpr.Lit.Value.(*plan.Literal_U64Val); ok {
-									ctx.hasSingleRow = c.U64Val == 1
-								}
-							}
-						}
-					}
-
-					_ = builder.appendStep(recursiveLastNodeID)
-					nodeID = appendCTEScanNode(builder, ctx, initSourceStep, initCtx.sinkTag)
-					if limitExpr != nil || offsetExpr != nil {
-						node := builder.qry.Nodes[nodeID]
-						node.Limit = limitExpr
-						node.Offset = offsetExpr
-					}
-					for i := 0; i < len(recursiveSteps); i++ {
-						builder.qry.Nodes[nodeID].SourceStep = append(builder.qry.Nodes[nodeID].SourceStep, recursiveSteps[i])
-					}
-					curStep := int32(len(builder.qry.Steps))
-					for _, id := range recursiveNodeIDs {
-						// builder.qry.Nodes[id].SourceStep = append(builder.qry.Nodes[id].SourceStep, curStep)
-						builder.qry.Nodes[id].SourceStep[0] = curStep
-					}
-					unionAllLastNodeID := appendSinkNodeWithTag(builder, ctx, nodeID, ctx.sinkTag)
-					builder.qry.Nodes[unionAllLastNodeID].RecursiveSink = true
-
-					// final statement
-					ctx.finalSelect = true
-					ctx.sinkTag = initCtx.sinkTag
-					err = builder.addBinding(initLastNodeID, *cteRef.ast.Name, ctx)
-					if err != nil {
-						return
-					}
-					sourceStep := builder.appendStep(unionAllLastNodeID)
-					nodeID = appendSinkScanNodeWithTag(builder, ctx, sourceStep, initCtx.sinkTag)
-					// builder.qry.Nodes[nodeID].SourceStep = append(builder.qry.Nodes[nodeID].SourceStep, initSourceStep)
 				}
 
 				break
@@ -3878,85 +4153,17 @@ func (builder *QueryBuilder) buildTable(stmt tree.TableExpr, ctx *BindContext, p
 			nodeType = plan.Node_SOURCE_SCAN
 		} else if tableDef.TableType == catalog.SystemViewRel {
 			if yes, dbOfView, nameOfView := builder.compCtx.GetBuildingAlterView(); yes {
-				currentDB := schema
-				if currentDB == "" {
-					currentDB = builder.compCtx.DefaultDatabase()
-				}
-				if dbOfView == currentDB && nameOfView == table {
+				if dbOfView == schema && nameOfView == table {
 					return 0, moerr.NewInternalErrorf(builder.GetContext(), "there is a recursive reference to the view %s", nameOfView)
 				}
 			}
-			// set view statment to CTE
-			viewDefString := tableDef.ViewSql.View
 
-			if viewDefString != "" {
-				if ctx.cteByName == nil {
-					ctx.cteByName = make(map[string]*CTERef)
-				}
-
-				viewData := ViewData{}
-				err := json.Unmarshal([]byte(viewDefString), &viewData)
-				if err != nil {
-					return 0, err
-				}
-
-				originStmts, err := mysql.Parse(builder.GetContext(), viewData.Stmt, 1)
-				defer func() {
-					for _, s := range originStmts {
-						s.Free()
-					}
-				}()
-				if err != nil {
-					return 0, err
-				}
-				viewStmt, ok := originStmts[0].(*tree.CreateView)
-
-				// No createview stmt, check alterview stmt.
-				if !ok {
-					alterstmt, ok := originStmts[0].(*tree.AlterView)
-					viewStmt = &tree.CreateView{}
-					if !ok {
-						return 0, moerr.NewParseError(builder.GetContext(), "can not get view statement")
-					}
-					viewStmt.Name = alterstmt.Name
-					viewStmt.ColNames = alterstmt.ColNames
-					viewStmt.AsSource = alterstmt.AsSource
-				}
-
-				viewName := viewStmt.Name.ObjectName
-				var maskedCTEs map[string]bool
-				if len(ctx.cteByName) > 0 {
-					maskedCTEs = make(map[string]bool)
-					for name := range ctx.cteByName {
-						maskedCTEs[name] = true
-					}
-				}
-				defaultDatabase := viewData.DefaultDatabase
-				if obj.PubInfo != nil {
-					defaultDatabase = obj.SubscriptionName
-				}
-				ctx.cteByName[string(viewName)] = &CTERef{
-					ast: &tree.CTE{
-						Name: &tree.AliasClause{
-							Alias: viewName,
-							Cols:  viewStmt.ColNames,
-						},
-						Stmt: viewStmt.AsSource,
-					},
-					defaultDatabase: defaultDatabase,
-					maskedCTEs:      maskedCTEs,
-					snapshot:        snapshot,
-				}
-				// consist with frontend.genKey()
-				ctx.views = append(ctx.views, schema+"#"+table)
-
-				newTableName := tree.NewTableName(viewName, tree.ObjectNamePrefix{
-					CatalogName:     tbl.CatalogName, // TODO unused now, if used in some code, that will be save in view
-					SchemaName:      tree.Identifier(""),
-					ExplicitCatalog: false,
-					ExplicitSchema:  false,
-				}, nil)
-				return builder.buildTable(newTableName, ctx, preNodeId, leftCtx)
+			nodeID, err = builder.bindView(ctx, tableDef, snapshot, obj, schema, table)
+			if err != nil {
+				return 0, err
+			}
+			if nodeID != 0 {
+				return nodeID, nil
 			}
 		}
 
@@ -4196,7 +4403,7 @@ func (builder *QueryBuilder) addBinding(nodeID int32, alias tree.AliasClause, ct
 		projects := subCtx.projects
 
 		if len(alias.Cols) > len(headings) {
-			return moerr.NewSyntaxErrorf(builder.GetContext(), "11111 table %q has %d columns available but %d columns specified", alias.Alias, len(headings), len(alias.Cols))
+			return moerr.NewSyntaxErrorf(builder.GetContext(), "table %q has %d columns available but %d columns specified", alias.Alias, len(headings), len(alias.Cols))
 		}
 
 		table = subCtx.cteName
@@ -4255,7 +4462,7 @@ func (builder *QueryBuilder) addBinding(nodeID int32, alias tree.AliasClause, ct
 }
 
 func (builder *QueryBuilder) buildJoinTable(tbl *tree.JoinTableExpr, ctx *BindContext) (int32, error) {
-	var joinType plan.Node_JoinType
+	joinType := plan.Node_INNER
 
 	switch tbl.JoinType {
 	case tree.JOIN_TYPE_CROSS, tree.JOIN_TYPE_INNER, tree.JOIN_TYPE_NATURAL:
@@ -4268,6 +4475,8 @@ func (builder *QueryBuilder) buildJoinTable(tbl *tree.JoinTableExpr, ctx *BindCo
 		joinType = plan.Node_RIGHT
 	case tree.JOIN_TYPE_FULL:
 		joinType = plan.Node_OUTER
+	case tree.JOIN_TYPE_DEDUP:
+		joinType = plan.Node_DEDUP
 	}
 
 	leftCtx := NewBindContext(builder, ctx)
@@ -4277,7 +4486,6 @@ func (builder *QueryBuilder) buildJoinTable(tbl *tree.JoinTableExpr, ctx *BindCo
 	if err != nil {
 		return 0, err
 	}
-	ctx.views = append(ctx.views, leftCtx.views...)
 
 	if _, ok := tbl.Right.(*tree.TableFunction); ok {
 		return 0, moerr.NewSyntaxError(builder.GetContext(), "Every table function must have an alias")
@@ -4286,7 +4494,6 @@ func (builder *QueryBuilder) buildJoinTable(tbl *tree.JoinTableExpr, ctx *BindCo
 	if err != nil {
 		return 0, err
 	}
-	ctx.views = append(ctx.views, rightCtx.views...)
 
 	if builder.qry.Nodes[rightChildID].NodeType == plan.Node_FUNCTION_SCAN {
 		if joinType != plan.Node_INNER {
@@ -4386,14 +4593,12 @@ func (builder *QueryBuilder) buildApplyTable(tbl *tree.ApplyTableExpr, ctx *Bind
 	if err != nil {
 		return 0, err
 	}
-	ctx.views = append(ctx.views, leftCtx.views...)
 
 	rightChildID, err := builder.buildTable(tbl.Right, rightCtx, leftChildID, leftCtx)
 	if err != nil {
 		return 0, err
 	}
 	builder.qry.Nodes[rightChildID].Children = nil //ignore the child of table_function in apply
-	ctx.views = append(ctx.views, rightCtx.views...)
 
 	err = ctx.mergeContexts(builder.GetContext(), leftCtx, rightCtx)
 	if err != nil {
@@ -4461,6 +4666,8 @@ func (builder *QueryBuilder) buildTableFunction(tbl *tree.TableFunction, ctx *Bi
 		nodeId, err = builder.buildFullTextIndexTokenize(tbl, ctx, exprs, childId)
 	case "stage_list":
 		nodeId, err = builder.buildStageList(tbl, ctx, exprs, childId)
+	case "moplugin_table":
+		nodeId, err = builder.buildPluginExec(tbl, ctx, exprs, childId)
 	default:
 		err = moerr.NewNotSupportedf(builder.GetContext(), "table function '%s' not supported", id)
 	}
@@ -4578,6 +4785,13 @@ func (builder *QueryBuilder) resolveTsHint(tsExpr *tree.AtTimeStamp) (snapshot *
 			}
 
 			snapshot = &Snapshot{TS: &ts, Tenant: tenant}
+		} else if tsExpr.Type == tree.ASOFTIMESTAMP {
+			var ts int64
+			if ts, err = doResolveTimeStamp(lit.Sval); err != nil {
+				return
+			}
+			tStamp := &timestamp.Timestamp{PhysicalTime: ts}
+			snapshot = &Snapshot{TS: tStamp, Tenant: tenant}
 		} else {
 			err = moerr.NewInvalidArg(builder.GetContext(), "invalid timestamp hint type", tsExpr.Type.String())
 			return
@@ -4593,6 +4807,12 @@ func (builder *QueryBuilder) resolveTsHint(tsExpr *tree.AtTimeStamp) (snapshot *
 			if lit.I64Val <= 0 {
 				err = moerr.NewInvalidArg(builder.GetContext(), "invalid timestamp value", lit.I64Val)
 				return
+			}
+			if bgSnapshot := builder.compCtx.GetSnapshot(); builder.isRestoreByTs {
+				tenant = &SnapshotTenant{
+					TenantName: bgSnapshot.Tenant.TenantName,
+					TenantID:   bgSnapshot.Tenant.TenantID,
+				}
 			}
 			snapshot = &Snapshot{TS: &timestamp.Timestamp{PhysicalTime: lit.I64Val}, Tenant: tenant}
 		} else {

@@ -1,3 +1,4 @@
+
 -- drop, and then restore
 drop database if exists db1;
 create database db1;
@@ -24,7 +25,7 @@ show tables;
 select * from t1;
 -- @session
 
-create snapshot snapshot2 for account sys;
+create snapshot snapshot2 for account;
 
 drop publication pubname1;
 drop database db1;
@@ -111,7 +112,7 @@ select * from t2;
 show subscriptions;
 -- @session
 
-create snapshot snapshot3 for account sys;
+create snapshot snapshot3 for account;
 
 drop publication pubname1;
 drop publication pubname2;
@@ -181,7 +182,7 @@ show databases like 'db%';
 
 
 -- create and then restore
-create snapshot snapshot4 for account sys;
+create snapshot snapshot4 for account;
 create database db1;
 use db1;
 create table t1(a int);
@@ -274,7 +275,7 @@ show databases like 'db%';
 show snapshots;
 
 -- create, drop and create, then restore
-create snapshot snapshot5 for account sys;
+create snapshot snapshot5 for account;
 create database db1;
 use db1;
 create table t1(a int);
@@ -300,7 +301,7 @@ show subscriptions;
 -- @session
 
 
-create snapshot snapshot6 for account sys;
+create snapshot snapshot6 for account;
 drop publication pubname1;
 drop database db1;
 

@@ -192,6 +192,7 @@ func init() {
 		"float4":                     UNUSED,
 		"float8":                     UNUSED,
 		"for":                        FOR,
+		"of":                         OF,
 		"force":                      FORCE,
 		"foreign":                    FOREIGN,
 		"format":                     FORMAT,
@@ -434,7 +435,7 @@ func init() {
 		"sqlwarning":                 UNUSED,
 		"sql_big_result":             SQL_BIG_RESULT,
 		"sql_cache":                  SQL_CACHE,
-		"sql_calc_found_rows":        UNUSED,
+		"sql_calc_found_rows":        SQL_CALC_FOUND_ROWS,
 		"sql_no_cache":               SQL_NO_CACHE,
 		"sql_small_result":           SQL_SMALL_RESULT,
 		"sql_buffer_result":          SQL_BUFFER_RESULT,
@@ -646,5 +647,8 @@ func init() {
 		"cdc":                        CDC,
 		"rollup":                     ROLLUP,
 		"apply":                      APPLY,
+		"dedup":                      DEDUP,
+		"savepoint":                  SAVEPOINT,
+		"recovery_window":            RECOVERY_WINDOW,
 	}
 }

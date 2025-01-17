@@ -337,11 +337,11 @@ func (rm *RoutineManager) kill(ctx context.Context, killConnection bool, idThatK
 	if rt != nil {
 		ses := rt.getSession()
 		if killConnection {
-			ses.Infof(ctx, "kill connection %d", id)
+			ses.Debugf(ctx, "kill connection %d", id)
 			rt.killConnection(killMyself)
 			rm.accountRoutine.deleteRoutine(int64(rt.ses.GetTenantInfo().GetTenantID()), rt)
 		} else {
-			ses.Infof(ctx, "kill query %s on the connection %d", statementId, id)
+			ses.Debugf(ctx, "kill query %s on the connection %d", statementId, id)
 			rt.killQuery(killMyself, statementId)
 		}
 	} else {
@@ -408,9 +408,13 @@ func (rm *RoutineManager) cleanKillQueue() {
 	ar := rm.accountRoutine
 	ar.killQueueMu.Lock()
 	defer ar.killQueueMu.Unlock()
-	for toKillAccount, killRecord := range ar.killIdQueue {
-		if time.Since(killRecord.killTime) > time.Duration(getPu(rm.service).SV.CleanKillQueueInterval)*time.Minute {
-			delete(ar.killIdQueue, toKillAccount)
+	pu := getPu(rm.service)
+	if pu != nil && pu.SV != nil {
+		tout := pu.SV.CleanKillQueueInterval
+		for toKillAccount, killRecord := range ar.killIdQueue {
+			if time.Since(killRecord.killTime) > time.Duration(tout)*time.Minute {
+				delete(ar.killIdQueue, toKillAccount)
+			}
 		}
 	}
 }
@@ -504,25 +508,34 @@ func NewRoutineManager(ctx context.Context, service string) (*RoutineManager, er
 		cancel:           cancel,
 		service:          service,
 	}
-	if getPu(rm.service).SV.EnableTls {
-		err := initTlsConfig(rm, getPu(rm.service).SV)
+	pu := getPu(rm.service)
+	sv := pu.SV
+	if sv != nil && sv.EnableTls {
+		err := initTlsConfig(rm, sv)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	// add kill connect routine
-	go func() {
-		for {
-			select {
-			case <-rm.ctx.Done():
-				return
-			default:
+	tout := pu.SV.KillRountinesInterval
+	if tout != 0 {
+		go func() {
+			for {
+				select {
+				case <-rm.ctx.Done():
+					return
+				default:
+				}
+				rm.KillRoutineConnections()
+				if tout != 0 {
+					time.Sleep(time.Duration(tout) * time.Second)
+				} else {
+					break
+				}
 			}
-			rm.KillRoutineConnections()
-			time.Sleep(time.Duration(time.Duration(getPu(rm.service).SV.KillRountinesInterval) * time.Second))
-		}
-	}()
+		}()
+	}
 
 	return rm, nil
 }

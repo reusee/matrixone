@@ -104,6 +104,9 @@ func initCommand(_ context.Context, inspectCtx *inspectContext) *cobra.Command {
 	inspect := &MoInspectArg{}
 	rootCmd.AddCommand(inspect.PrepareCommand())
 
+	gc := &GCArg{}
+	rootCmd.AddCommand(gc.PrepareCommand())
+
 	return rootCmd
 }
 
@@ -854,25 +857,22 @@ func (c *mergePolicyArg) Run() error {
 		if err != nil {
 			return err
 		}
-		err = c.ctx.db.MergeScheduler.ConfigPolicy(c.tbl, txn, &merge.BasicPolicyConfig{
+		if err = c.ctx.db.MergeScheduler.ConfigPolicy(c.tbl, txn, &merge.BasicPolicyConfig{
 			MergeMaxOneRun:    int(c.maxMergeObjN),
 			ObjectMinOsize:    minosize,
 			MaxOsizeMergedObj: maxosize,
 			MinCNMergeSize:    cnsize,
 			MergeHints:        c.hints,
-		})
-		if err != nil {
+		}); err != nil {
 			return err
 		}
 		if c.stopMerge {
-			err = c.ctx.db.MergeScheduler.StopMerge(c.tbl, false)
-			if err != nil {
+			if err = c.ctx.db.MergeScheduler.StopMerge(c.tbl, false); err != nil {
 				return err
 			}
 		} else {
 			if c.ctx.db.Runtime.LockMergeService.IsLockedByUser(c.tbl.GetID(), c.tbl.GetLastestSchema(false).Name) {
-				err = c.ctx.db.MergeScheduler.StartMerge(c.tbl.GetID(), false)
-				if err != nil {
+				if err = c.ctx.db.MergeScheduler.StartMerge(c.tbl.GetID(), false); err != nil {
 					return err
 				}
 			}
@@ -967,10 +967,10 @@ func (c *PolicyStatus) String() string {
 
 func (c *PolicyStatus) Run() (err error) {
 	if c.pruneAgo == 0 && c.pruneId == 0 {
-		c.ctx.resp.Payload = []byte(merge.ActiveCNObj.String())
+		c.ctx.resp.Payload = []byte(c.ctx.db.MergeScheduler.CNActiveObjectsString())
 		return nil
 	} else {
-		merge.ActiveCNObj.Prune(c.pruneId, c.pruneAgo)
+		c.ctx.db.MergeScheduler.PruneCNActiveObjects(c.pruneId, c.pruneAgo)
 		return nil
 	}
 }

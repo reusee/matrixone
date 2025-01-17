@@ -25,6 +25,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/matrixorigin/matrixone/pkg/common/moerr"
+	"github.com/matrixorigin/matrixone/pkg/common/util"
 	"github.com/matrixorigin/matrixone/pkg/config"
 	"github.com/spkg/bom"
 )
@@ -38,8 +39,9 @@ var (
 )
 
 type Field struct {
-	Val    string
-	IsNull bool
+	Val            string
+	IsNull         bool
+	HasStringQuote bool
 }
 
 type escapeFlavor uint8
@@ -261,8 +263,7 @@ func (parser *CSVParser) readRow(row []Field) ([]Field, error) {
 		return nil, err
 	}
 
-	str := string(parser.recordBuffer) // Convert to string once to batch allocations
-
+	str := util.UnsafeBytesToString(parser.recordBuffer) // convert byte to string using unsafe, reduce memory allocgit
 	// remove the last empty value
 	if parser.cfg.TrimLastSep {
 		i := len(parser.fieldIndexes) - 1
@@ -284,6 +285,7 @@ func (parser *CSVParser) readRow(row []Field) ([]Field, error) {
 		}
 		row[i].IsNull = isNull
 		row[i].Val = unescaped
+		row[i].HasStringQuote = parser.fieldIsQuoted[i]
 		preIdx = idx
 	}
 
@@ -722,7 +724,10 @@ func (parser *CSVParser) readColumns() error {
 		return nil
 	}
 
-	parser.columns = make([]string, 0, len(parser.fieldIndexes))
+	parser.columns = parser.columns[:0]
+	if cap(parser.columns) < len(parser.fieldIndexes) {
+		parser.columns = make([]string, 0, len(parser.fieldIndexes))
+	}
 	str := string(parser.recordBuffer) // Convert to string once to batch allocations
 	var preIdx int
 	for i, idx := range parser.fieldIndexes {

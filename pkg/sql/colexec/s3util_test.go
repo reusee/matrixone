@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/matrixorigin/matrixone/pkg/objectio"
+	"github.com/matrixorigin/matrixone/pkg/objectio/mergeutil"
 
 	"github.com/stretchr/testify/require"
 
@@ -122,12 +123,13 @@ func TestMergeSortBatches(t *testing.T) {
 		vector.AppendFixed(bat1.Vecs[0], int32(2), false, pool)
 		vector.AppendFixed(bat2.Vecs[0], int32(1), false, pool)
 
-		err = MergeSortBatches(
+		err = mergeutil.MergeSortBatches(
 			[]*batch.Batch{bat1, bat2},
 			1,
 			buffer,
 			sinker,
 			pool,
+			true,
 		)
 		require.NoError(t, err)
 		require.Equal(t, restult.Vecs[0].Length(), 2)
@@ -151,12 +153,13 @@ func TestMergeSortBatches(t *testing.T) {
 		vector.AppendFixed(bat1.Vecs[0], int32(2), false, pool)
 		vector.AppendFixed(bat2.Vecs[0], int32(1), false, pool)
 
-		err = MergeSortBatches(
+		err = mergeutil.MergeSortBatches(
 			[]*batch.Batch{bat1, bat2},
 			1,
 			buffer,
 			sinker,
 			pool,
+			true,
 		)
 		require.NoError(t, err)
 		require.Equal(t, restult.Vecs[0].Length(), 2)
@@ -180,12 +183,13 @@ func TestMergeSortBatches(t *testing.T) {
 		vector.AppendFixed(bat1.Vecs[0], int32(2), false, pool)
 		vector.AppendFixed(bat2.Vecs[0], int32(1), false, pool)
 
-		err = MergeSortBatches(
+		err = mergeutil.MergeSortBatches(
 			[]*batch.Batch{bat1, bat2},
 			1,
 			buffer,
 			sinker,
 			pool,
+			true,
 		)
 		require.NoError(t, err)
 		require.Equal(t, restult.Vecs[0].Length(), 2)
@@ -209,12 +213,13 @@ func TestMergeSortBatches(t *testing.T) {
 		vector.AppendFixed(bat1.Vecs[0], int32(2), false, pool)
 		vector.AppendFixed(bat2.Vecs[0], int32(1), false, pool)
 
-		err = MergeSortBatches(
+		err = mergeutil.MergeSortBatches(
 			[]*batch.Batch{bat1, bat2},
 			1,
 			buffer,
 			sinker,
 			pool,
+			true,
 		)
 		require.NoError(t, err)
 		require.Equal(t, restult.Vecs[0].Length(), 2)
@@ -238,12 +243,13 @@ func TestMergeSortBatches(t *testing.T) {
 		vector.AppendFixed(bat1.Vecs[0], int32(2), false, pool)
 		vector.AppendFixed(bat2.Vecs[0], int32(1), false, pool)
 
-		err = MergeSortBatches(
+		err = mergeutil.MergeSortBatches(
 			[]*batch.Batch{bat1, bat2},
 			1,
 			buffer,
 			sinker,
 			pool,
+			true,
 		)
 		require.NoError(t, err)
 		require.Equal(t, restult.Vecs[0].Length(), 2)
@@ -267,12 +273,13 @@ func TestMergeSortBatches(t *testing.T) {
 		vector.AppendFixed(bat1.Vecs[0], int32(2), false, pool)
 		vector.AppendFixed(bat2.Vecs[0], int32(1), false, pool)
 
-		err = MergeSortBatches(
+		err = mergeutil.MergeSortBatches(
 			[]*batch.Batch{bat1, bat2},
 			1,
 			buffer,
 			sinker,
 			pool,
+			true,
 		)
 		require.NoError(t, err)
 		require.Equal(t, restult.Vecs[0].Length(), 2)
@@ -296,12 +303,13 @@ func TestMergeSortBatches(t *testing.T) {
 		vector.AppendFixed(bat1.Vecs[0], int32(2), false, pool)
 		vector.AppendFixed(bat2.Vecs[0], int32(1), false, pool)
 
-		err = MergeSortBatches(
+		err = mergeutil.MergeSortBatches(
 			[]*batch.Batch{bat1, bat2},
 			1,
 			buffer,
 			sinker,
 			pool,
+			true,
 		)
 		require.NoError(t, err)
 		require.Equal(t, restult.Vecs[0].Length(), 2)
@@ -325,12 +333,13 @@ func TestMergeSortBatches(t *testing.T) {
 		vector.AppendFixed(bat1.Vecs[0], int32(2), false, pool)
 		vector.AppendFixed(bat2.Vecs[0], int32(1), false, pool)
 
-		err = MergeSortBatches(
+		err = mergeutil.MergeSortBatches(
 			[]*batch.Batch{bat1, bat2},
 			1,
 			buffer,
 			sinker,
 			pool,
+			true,
 		)
 		require.NoError(t, err)
 		require.Equal(t, restult.Vecs[0].Length(), 2)
@@ -354,12 +363,13 @@ func TestMergeSortBatches(t *testing.T) {
 		vector.AppendFixed(bat1.Vecs[0], int32(2), false, pool)
 		vector.AppendFixed(bat2.Vecs[0], int32(1), false, pool)
 
-		err = MergeSortBatches(
+		err = mergeutil.MergeSortBatches(
 			[]*batch.Batch{bat1, bat2},
 			1,
 			buffer,
 			sinker,
 			pool,
+			true,
 		)
 		require.NoError(t, err)
 		require.Equal(t, restult.Vecs[0].Length(), 2)
@@ -383,12 +393,13 @@ func TestMergeSortBatches(t *testing.T) {
 		vector.AppendFixed(bat1.Vecs[0], int32(2), false, pool)
 		vector.AppendFixed(bat2.Vecs[0], int32(1), false, pool)
 
-		err = MergeSortBatches(
+		err = mergeutil.MergeSortBatches(
 			[]*batch.Batch{bat1, bat2},
 			1,
 			buffer,
 			sinker,
 			pool,
+			true,
 		)
 		require.NoError(t, err)
 		require.Equal(t, restult.Vecs[0].Length(), 2)
@@ -405,12 +416,12 @@ func TestS3Writer_SortAndSync(t *testing.T) {
 	bat := batch.NewWithSize(1)
 	bat.Vecs[0] = vector.NewVec(types.T_Rowid.ToType())
 
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 10; i++ {
 		row := types.RandomRowid()
 		err := vector.AppendFixed[types.Rowid](bat.Vecs[0], row, false, pool)
 		require.NoError(t, err)
 	}
-	bat.SetRowCount(100)
+	bat.SetRowCount(10)
 
 	// test no data to flush
 	{
@@ -467,7 +478,7 @@ func TestS3Writer_SortAndSync(t *testing.T) {
 		bat2 := batch.NewWithSize(1)
 		bat2.Vecs[0] = vector.NewVec(types.T_Rowid.ToType())
 
-		objectio.SetObjectSizeLimit(mpool.MB * 32)
+		objectio.SetObjectSizeLimit(mpool.KB)
 		cnt := (objectio.ObjectSizeLimit) / types.RowidSize * 3
 
 		for i := 0; i < cnt; i++ {

@@ -27,6 +27,7 @@ const (
 	Decimal128ToFloat64Scale = 5
 	Float64PrecForMemorySize = 3
 	Float64PrecForCU         = 4
+	Float64PrecForIOInput    = 6
 )
 
 const StatsArrayVersion = StatsArrayVersionLatest
@@ -259,6 +260,12 @@ func StatsArrayToJsonString(arr []float64) []byte {
 			buf = strconv.AppendFloat(buf, v, 'f', Float64PrecForMemorySize, 64)
 		} else if idx == StatsArrayIndexCU {
 			buf = strconv.AppendFloat(buf, v, 'f', Float64PrecForCU, 64)
+		} else if idx == StatsArrayIndexS3IOInputCount {
+			if float64(int(v)) == v {
+				buf = strconv.AppendFloat(buf, v, 'f', 0, 64)
+			} else {
+				buf = strconv.AppendFloat(buf, v, 'f', Float64PrecForIOInput, 64)
+			}
 		} else {
 			buf = strconv.AppendFloat(buf, v, 'f', 0, 64)
 		}
@@ -283,13 +290,15 @@ type StatsInfo struct {
 
 	// Planning Phase Statistics
 	PlanStage struct {
-		PlanDuration       time.Duration `json:"PlanDuration"`
-		PlanStartTime      time.Time     `json:"PlanStartTime"`
-		BuildPlanS3Request S3Request     `json:"BuildPlanS3Request"`
-		BuildPlanStatsS3   S3Request     `json:"BuildPlanStatsS3"`
+		PlanDuration                time.Duration `json:"PlanDuration"`
+		PlanStartTime               time.Time     `json:"PlanStartTime"`
+		BuildPlanS3Request          S3Request     `json:"BuildPlanS3Request"`
+		BuildPlanStatsIOConsumption int64         `json:"BuildPlanStatsIOConsumption"` // unit: ns
 		// The following attributes belong to independent statistics during the `buildPlan` stage, only for analysis reference.
-		BuildPlanStatsDuration      int64 `json:"BuildPlanStatsDuration"`      // unit: ns
-		BuildPlanResolveVarDuration int64 `json:"BuildPlanResolveVarDuration"` // unit: ns
+		BuildPlanStatsS3              S3Request `json:"BuildPlanStatsS3"`
+		BuildPlanStatsDuration        int64     `json:"BuildPlanStatsDuration"`        // unit: ns
+		BuildPlanStatsInCacheDuration int64     `json:"BuildPlanStatsInCacheDuration"` // unit: ns
+		BuildPlanResolveVarDuration   int64     `json:"BuildPlanResolveVarDuration"`   // unit: ns
 	}
 
 	// Compile phase statistics
@@ -505,6 +514,20 @@ func (stats *StatsInfo) AddBuildPlanStatsConsumption(d time.Duration) {
 		return
 	}
 	atomic.AddInt64(&stats.PlanStage.BuildPlanStatsDuration, int64(d))
+}
+
+func (stats *StatsInfo) AddBuildPlanStatsIOConsumption(d time.Duration) {
+	if stats == nil {
+		return
+	}
+	atomic.AddInt64(&stats.PlanStage.BuildPlanStatsIOConsumption, int64(d))
+}
+
+func (stats *StatsInfo) AddStatsStatsInCacheDuration(d time.Duration) {
+	if stats == nil {
+		return
+	}
+	atomic.AddInt64(&stats.PlanStage.BuildPlanStatsInCacheDuration, int64(d))
 }
 
 func (stats *StatsInfo) AddBuildPlanResolveVarConsumption(d time.Duration) {
