@@ -39,6 +39,7 @@ func startCluster(
 	ctx context.Context,
 	stopper *stopper.Stopper,
 	shutdownC chan struct{},
+	
 ) error {
 	if *launchFile == "" {
 		panic("launch file not set")
