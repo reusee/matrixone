@@ -454,6 +454,12 @@ func (a *AwsSDKv2) Read(
 	err error,
 ) {
 
+	defer func() {
+		if err != nil && r != nil {
+			_ = r.Close()
+		}
+	}()
+
 	if max == nil {
 		// read to end
 		r, err := a.getObject(

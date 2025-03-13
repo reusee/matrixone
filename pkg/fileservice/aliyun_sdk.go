@@ -291,6 +291,9 @@ func (a *AliyunSDK) Read(
 		if a.is404(err) {
 			err = moerr.NewFileNotFoundNoCtx(key)
 		}
+		if err != nil && r != nil {
+			_ = r.Close()
+		}
 	}()
 
 	if max == nil {
