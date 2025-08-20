@@ -16,7 +16,6 @@ package fifocache
 
 import (
 	"context"
-	"runtime"
 	"sync"
 	"sync/atomic"
 
@@ -42,8 +41,8 @@ type Cache[K comparable, V any] struct {
 		_      cpu.CacheLinePad
 	}
 
-	enqueueJobs1 chan *_CacheItem[K, V] // items to be enqueued to queue1
-	enqueueJobs2 chan *_CacheItem[K, V] // items to be enqueued to queue2
+	enqueueJobs1 atomic.Pointer[_CacheItem[K, V]]
+	enqueueJobs2 atomic.Pointer[_CacheItem[K, V]]
 
 	queueLock sync.RWMutex
 	used1     int64
@@ -62,6 +61,7 @@ type _CacheItem[K comparable, V any] struct {
 	valueOK bool
 	size    int64
 	count   atomic.Int32
+	next    *_CacheItem[K, V] // for forming linked list
 }
 
 func (c *_CacheItem[K, V]) inc() {
@@ -100,8 +100,6 @@ func New[K comparable, V any](
 		capacity1: func() int64 {
 			return capacity() / 10
 		},
-		enqueueJobs1: make(chan *_CacheItem[K, V], runtime.GOMAXPROCS(0)*2),
-		enqueueJobs2: make(chan *_CacheItem[K, V], runtime.GOMAXPROCS(0)*2),
 		queue1:       *NewQueue[*_CacheItem[K, V]](),
 		queue2:       *NewQueue[*_CacheItem[K, V]](),
 		ghost:        *NewQueue[*_CacheItem[K, V]](),
@@ -168,52 +166,41 @@ func (c *Cache[K, V]) Set(ctx context.Context, key K, value V, size int64) {
 }
 
 func (c *Cache[K, V]) enqueue(item *_CacheItem[K, V], ghostItemSet bool) {
-	if !c.queueLock.TryLock() {
-		// try put itemQueue or itemQueue2, let the queueLock holder do the job
+	if c.queueLock.TryLock() {
+		defer c.queueLock.Unlock()
+
+		// enqueue
 		if ghostItemSet {
-			select {
-			case c.enqueueJobs2 <- item:
-				return
-			default:
-				// queue full, block until get lock
-				c.queueLock.Lock()
-				defer c.queueLock.Unlock()
-			}
+			c.queue2.enqueue(item)
+			c.used2 += item.size
 		} else {
-			select {
-			case c.enqueueJobs1 <- item:
-				return
-			default:
-				// queue full, block until get lock
-				c.queueLock.Lock()
-				defer c.queueLock.Unlock()
+			c.queue1.enqueue(item)
+			c.used1 += item.size
+		}
+
+		// help enqueue
+		c.enqueueList(&c.queue1, c.enqueueJobs1.Swap(nil))
+		c.enqueueList(&c.queue2, c.enqueueJobs2.Swap(nil))
+
+		return
+	}
+
+	// enqueue job
+	if ghostItemSet {
+		for {
+			cur := c.enqueueJobs2.Load()
+			item.next = cur
+			if c.enqueueJobs2.CompareAndSwap(cur, item) {
+				break
 			}
 		}
 	} else {
-		// locked
-		defer c.queueLock.Unlock()
-	}
-
-	// enqueue
-	if ghostItemSet {
-		c.queue2.enqueue(item)
-		c.used2 += item.size
-	} else {
-		c.queue1.enqueue(item)
-		c.used1 += item.size
-	}
-
-	// help enqueue
-	for {
-		select {
-		case item := <-c.enqueueJobs1:
-			c.queue1.enqueue(item)
-			c.used1 += item.size
-		case item := <-c.enqueueJobs2:
-			c.queue2.enqueue(item)
-			c.used2 += item.size
-		default:
-			return
+		for {
+			cur := c.enqueueJobs1.Load()
+			item.next = cur
+			if c.enqueueJobs1.CompareAndSwap(cur, item) {
+				break
+			}
 		}
 	}
 
@@ -285,6 +272,10 @@ func (c *Cache[K, V]) Evict(ctx context.Context, done chan int64, capacityCut in
 		defer c.queueLock.Unlock()
 	}
 
+	// help enqueue
+	c.enqueueList(&c.queue1, c.enqueueJobs1.Swap(nil))
+	c.enqueueList(&c.queue2, c.enqueueJobs2.Swap(nil))
+
 	var target int64
 	for {
 		globalCapacityCut := c.capacityCut.Swap(0)
@@ -307,6 +298,19 @@ func (c *Cache[K, V]) Evict(ctx context.Context, done chan int64, capacityCut in
 	}
 	if done != nil {
 		done <- target
+	}
+}
+
+func (c *Cache[K, V]) enqueueList(queue *Queue[*_CacheItem[K, V]], item *_CacheItem[K, V]) {
+	if item == nil {
+		return
+	}
+	// reverse list
+	item = reverseList(item)
+	// enqueue
+	for item != nil {
+		queue.enqueue(item)
+		item = item.next
 	}
 }
 
@@ -408,4 +412,15 @@ func (c *Cache[K, V]) deleteItem(item *_CacheItem[K, V]) {
 	if shard.values[item.key] == item {
 		delete(shard.values, item.key)
 	}
+}
+
+func reverseList[K comparable, V any](head *_CacheItem[K, V]) *_CacheItem[K, V] {
+	var prev, next *_CacheItem[K, V]
+	for head != nil {
+		next = head.next
+		head.next = prev
+		prev = head
+		head = next
+	}
+	return prev
 }

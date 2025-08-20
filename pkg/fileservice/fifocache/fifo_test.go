@@ -43,7 +43,7 @@ func TestCacheSetGet(t *testing.T) {
 func TestCacheEvict(t *testing.T) {
 	ctx := context.Background()
 	cache := New[int, int](fscache.ConstCapacity(8), ShardInt[int], nil, nil, nil)
-	for i := 0; i < 64; i++ {
+	for i := range 64 {
 		cache.Set(ctx, i, i, 1)
 		if cache.used1+cache.used2 > cache.capacity() {
 			t.Fatalf("capacity %v, used1 %v used2 %v", cache.capacity(), cache.used1, cache.used2)
@@ -96,7 +96,7 @@ func TestCacheEvict3(t *testing.T) {
 			nEvict++
 		},
 	)
-	for i := 0; i < 1024; i++ {
+	for i := range 1024 {
 		cache.Set(ctx, i, true, 1)
 		cache.Get(ctx, i)
 		cache.Get(ctx, i)
@@ -106,7 +106,7 @@ func TestCacheEvict3(t *testing.T) {
 	assert.Equal(t, 1024, nSet)
 	assert.Equal(t, 2048, nGet)
 
-	for i := 0; i < 1024; i++ {
+	for i := range 1024 {
 		cache.Set(ctx, 10000+i, true, 1)
 		assert.True(t, cache.used1+cache.used2 <= 1024)
 	}
@@ -164,4 +164,44 @@ func TestGhostQueue(t *testing.T) {
 	// 2 is in the ghost queue now
 	cache.Set(t.Context(), 3, 3, 1)
 	// 2 was evicted from ghost queue
+}
+
+func TestReverseList(t *testing.T) {
+	item := &_CacheItem[int, int]{
+		key: 1,
+		next: &_CacheItem[int, int]{
+			key: 2,
+			next: &_CacheItem[int, int]{
+				key: 3,
+			},
+		},
+	}
+	item = reverseList(item)
+	if item.key != 3 {
+		t.Fatal()
+	}
+	item = item.next
+	if item.key != 2 {
+		t.Fatal()
+	}
+	item = item.next
+	if item.key != 1 {
+		t.Fatal()
+	}
+	item = item.next
+	if item != nil {
+		t.Fatal()
+	}
+
+	item = &_CacheItem[int, int]{
+		key: 1,
+	}
+	item = reverseList(item)
+	if item.key != 1 {
+		t.Fatal()
+	}
+	item = item.next
+	if item != nil {
+		t.Fatal()
+	}
 }
