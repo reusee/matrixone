@@ -47,6 +47,25 @@ func BenchmarkParallelSet(b *testing.B) {
 	})
 }
 
+func BenchmarkParallelSetHighContention(b *testing.B) {
+	ctx := context.Background()
+	size := 65536
+	cache := New[int, int](
+		fscache.ConstCapacity(int64(size)),
+		func(i int) uint64 {
+			return 0 // same shard
+		},
+		nil, nil, nil,
+	)
+	nElements := size * 16
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for i := 0; pb.Next(); i++ {
+			cache.Set(ctx, i%nElements, i, int64(1+i%3))
+		}
+	})
+}
+
 func BenchmarkGet(b *testing.B) {
 	ctx := context.Background()
 	size := 65536
